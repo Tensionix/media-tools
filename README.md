@@ -10,12 +10,12 @@
 
 **Version 2.5.1** · 2026-08-27 · 572.3 MB
 
-- [Direct download](https://audion.dev/get/media-tools/2.5.1/Audion_Media_Tools_v2.5.1_Full.zip) — unmetered, no rate limits
+- [Direct download](https://dl.audion.dev/media-tools/2.5.1/Audion_Media_Tools_v2.5.1_Full.zip) — unmetered, no rate limits
 - [Project page](https://audion.dev/downloads/media-tools) — every version and how to install
 
 <p align="center"><img src="docs/screenshot.png" alt="The program window" width="560"></p>
 
-`SHA-256: 57d791ce3c93deb3dc957db783f8cd3092c8840d45bc566699ecabaf5bdb17d6`
+`SHA-256: 6d54b13c8ac972cc320503316e6d6a4ad709bba69d93be5beb4764b88f84ef8d`
 
 ---
 
