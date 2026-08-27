@@ -8,14 +8,14 @@
   <a href="https://github.com/Tensionix/media-tools/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Tensionix/media-tools?style=flat-square&color=5fd08a&logo=apache&logoColor=white&cacheSeconds=3600"></a>
 </p>
 
-**Version 2.5.1** · 2026-08-27 · 7.7 MB
+**Version 2.5.1** · 2026-08-27 · 572.3 MB
 
-- [Direct download](https://dl.audion.dev/media-tools/2.5.1/Audion_Media_Tools_v2.5.1.zip) — unmetered, no rate limits
+- [Direct download](https://audion.dev/get/media-tools/2.5.1/Audion_Media_Tools_v2.5.1_Full.zip) — unmetered, no rate limits
 - [Project page](https://audion.dev/downloads/media-tools) — every version and how to install
 
 <p align="center"><img src="docs/screenshot.png" alt="The program window" width="560"></p>
 
-`SHA-256: cbf3ca1755dd363ea7803157eec43598b2459dbb6a0a0a576a8a0fdc4449e2ef`
+`SHA-256: 6d54b13c8ac972cc320503316e6d6a4ad709bba69d93be5beb4764b88f84ef8d`
 
 ---
 

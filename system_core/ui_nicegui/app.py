@@ -3819,8 +3819,28 @@ def render_player_transport(field: dict[str, Any], label: str, tooltip: str, hin
         ui.label(hint).classes("audion-field-hint")
 
 
+ACTIVE_SEGMENT_CLASS = "audion-segmented-button-active"
+
+
 def render_segmented_choice(field: dict[str, Any], option_items: list[dict[str, Any]], value: Any) -> None:
     key = field_id(field)
+    # The buttons of a row have to know about each other. The active class is
+    # decided while drawing, and without this the highlight only moves when
+    # something else rebuilds the panel - so a row whose field has no
+    # `refresh_on_change` changes its value on click and looks dead.
+    row: dict[Any, Any] = {}
+
+    def light(chosen: Any) -> None:
+        for option_value, button in row.items():
+            if option_value == chosen:
+                button.classes(add=ACTIVE_SEGMENT_CLASS)
+            else:
+                button.classes(remove=ACTIVE_SEGMENT_CLASS)
+
+    def choose(item_value: Any, item_field: dict[str, Any]) -> None:
+        light(item_value)
+        set_field_value(key, item_value, refresh=field_refreshes_layout(item_field))
+
     with ui.element("div").classes(f"{field_choice_row_classes(field)} audion-segmented-choice"):
         total_items = len(option_items)
         for index, item in enumerate(option_items):
@@ -3833,19 +3853,17 @@ def render_segmented_choice(field: dict[str, Any], option_items: list[dict[str, 
             elif index == total_items - 1:
                 classes += " audion-tooltip-align-right"
             if selected:
-                classes += " audion-segmented-button-active"
+                classes += f" {ACTIVE_SEGMENT_CLASS}"
             if item["disabled"]:
                 classes += " audion-disabled-choice"
             button = ui.button(
                 item["label"],
-                on_click=lambda item_value=item["value"], item_field=field: set_field_value(
-                    key,
-                    item_value,
-                    refresh=field_refreshes_layout(item_field),
-                ),
+                on_click=lambda item_value=item["value"], item_field=field: choose(item_value, item_field),
             ).props("dense flat no-wrap").classes(classes)
             if item["disabled"]:
                 button.props("disable")
+            else:
+                row[item["value"]] = button
             add_tooltip(button, item.get("tooltip") or field_tooltip(field))
 
 
