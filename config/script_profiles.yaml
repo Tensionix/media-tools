@@ -1,0 +1,288 @@
+version: 1
+
+defaults:
+  audio_bitrate: "384k"
+  crf: 14
+  cq: 14
+  cpu_encoder_preset: "medium"
+  nvenc_preset: "p6"
+  qsv_encoder_preset: "medium"
+  amf_quality: "quality"
+  pix_fmt: "yuv420p"
+
+profiles:
+  audio-downmix-51-to-20:
+    kind: audio
+    action: downmix
+    suffix: "dmix2ch_24bit"
+    extension: "wav"
+
+  audio-extract-audio-copy:
+    kind: audio
+    action: extract_copy
+
+  audio-extract-audio-wav:
+    kind: audio
+    action: extract_wav
+    codec: "pcm_s24le"
+    suffix: "wav24"
+    extension: "wav"
+
+  audio-extract-audio-wav-32:
+    kind: audio
+    action: extract_wav
+    codec: "pcm_f32le"
+    suffix: "wav32f"
+    extension: "wav"
+
+  audio-lufs-14:
+    kind: audio
+    action: lufs
+    target_lufs: "-14"
+    true_peak: "-1.0"
+    suffix: "lufs14db"
+    extension: "wav"
+
+  audio-lufs-23:
+    kind: audio
+    action: lufs
+    target_lufs: "-23"
+    true_peak: "-2.0"
+    suffix: "lufs23db"
+    extension: "wav"
+
+  audio-resample-to-44100:
+    kind: audio
+    action: resample
+    sample_rate: "44100"
+    codec: "pcm_s24le"
+    bit_depth_label: "24b"
+
+  audio-resample-to-44100_sync:
+    kind: audio
+    action: resample
+    sample_rate: "44100"
+    codec: "pcm_s24le"
+    bit_depth_label: "24b"
+    sync: true
+
+  audio-resample-to-44100-32f:
+    kind: audio
+    action: resample
+    sample_rate: "44100"
+    codec: "pcm_f32le"
+    bit_depth_label: "32f"
+
+  audio-resample-to-44100-32f_sync:
+    kind: audio
+    action: resample
+    sample_rate: "44100"
+    codec: "pcm_f32le"
+    bit_depth_label: "32f"
+    sync: true
+
+  audio-resample-to-48000:
+    kind: audio
+    action: resample
+    sample_rate: "48000"
+    codec: "pcm_s24le"
+    bit_depth_label: "24b"
+
+  audio-resample-to-48000_sync:
+    kind: audio
+    action: resample
+    sample_rate: "48000"
+    codec: "pcm_s24le"
+    bit_depth_label: "24b"
+    sync: true
+
+  audio-resample-to-48000-32f:
+    kind: audio
+    action: resample
+    sample_rate: "48000"
+    codec: "pcm_f32le"
+    bit_depth_label: "32f"
+
+  audio-resample-to-48000-32f_sync:
+    kind: audio
+    action: resample
+    sample_rate: "48000"
+    codec: "pcm_f32le"
+    bit_depth_label: "32f"
+    sync: true
+
+  audio-to-flac:
+    kind: audio
+    action: flac
+    suffix: "flac"
+    extension: "flac"
+
+  audio-to-flac-48k:
+    kind: audio
+    action: flac
+    sample_rate: "48000"
+    suffix: "flac_48k"
+    extension: "flac"
+
+  audio-to-flac-96k:
+    kind: audio
+    action: flac
+    sample_rate: "96000"
+    suffix: "flac_96k"
+    extension: "flac"
+
+  audio-to-m4a-256:
+    kind: audio
+    action: m4a
+    audio_bitrate: "256k"
+    suffix: "m4a_256k"
+    extension: "m4a"
+
+  audio-to-m4a-384:
+    kind: audio
+    action: m4a
+    audio_bitrate: "384k"
+    suffix: "m4a_384k"
+    extension: "m4a"
+
+  ff-100to23976-varispeed: {kind: fps, source_fps: "100", target_fps: "23976", mode: "varispeed"}
+  ff-100to23976-conform: {kind: fps, source_fps: "100", target_fps: "23976", mode: "conform"}
+  ff-11988to23976-varispeed: {kind: fps, source_fps: "11988", target_fps: "23976", mode: "varispeed"}
+  ff-11988to23976-conform: {kind: fps, source_fps: "11988", target_fps: "23976", mode: "conform"}
+  ff-17982to23976-varispeed: {kind: fps, source_fps: "17982", target_fps: "23976", mode: "varispeed"}
+  ff-17982to23976-conform: {kind: fps, source_fps: "17982", target_fps: "23976", mode: "conform"}
+  ff-24to23976-varispeed: {kind: fps, source_fps: "24", target_fps: "23976", mode: "varispeed"}
+  ff-25to23976-conform: {kind: fps, source_fps: "25", target_fps: "23976", mode: "conform"}
+  ff-25to23976-varispeed: {kind: fps, source_fps: "25", target_fps: "23976", mode: "varispeed"}
+  ff-2997to23976-conform: {kind: fps, source_fps: "2997", target_fps: "23976", mode: "conform"}
+  ff-2997to23976-varispeed: {kind: fps, source_fps: "2997", target_fps: "23976", mode: "varispeed"}
+  ff-50to23976-varispeed: {kind: fps, source_fps: "50", target_fps: "23976", mode: "varispeed"}
+  ff-50to23976-conform: {kind: fps, source_fps: "50", target_fps: "23976", mode: "conform"}
+  ff-5994to23976-conform: {kind: fps, source_fps: "5994", target_fps: "23976", mode: "conform"}
+  ff-5994to23976-varispeed: {kind: fps, source_fps: "5994", target_fps: "23976", mode: "varispeed"}
+
+  ff-dnxhr-hq-mov: {kind: editing, target: dnxhr, dnx_profile: dnxhr_hq, extension: mov, suffix: dnxhr_hq}
+  ff-dnxhr-hq-mxf: {kind: editing, target: dnxhr, dnx_profile: dnxhr_hq, extension: mxf, suffix: dnxhr_hq}
+  ff-dnxhr-hqx-mov: {kind: editing, target: dnxhr, dnx_profile: dnxhr_hqx, extension: mov, suffix: dnxhr_hqx}
+  ff-dnxhr-hqx-mxf: {kind: editing, target: dnxhr, dnx_profile: dnxhr_hqx, extension: mxf, suffix: dnxhr_hqx}
+
+  ff-prores-422-mov: {kind: editing, target: prores, prores_profile: "2", extension: mov, suffix: prores422}
+  ff-prores-422-mxf: {kind: editing, target: prores, prores_profile: "2", extension: mxf, suffix: prores422}
+  ff-prores-lt-mov: {kind: editing, target: prores, prores_profile: "1", extension: mov, suffix: proresLT}
+  ff-prores-lt-mxf: {kind: editing, target: prores, prores_profile: "1", extension: mxf, suffix: proresLT}
+  ff-prores-proxy-mov: {kind: editing, target: prores, prores_profile: "0", extension: mov, suffix: prores_proxy}
+  ff-prores-proxy-mxf: {kind: editing, target: prores, prores_profile: "0", extension: mxf, suffix: prores_proxy}
+
+  ff-extract-audio: {kind: audio, action: extract_copy, suffix: audio, extension: auto, audio_copy_container: auto}
+  ff-extract-subs: {kind: subtitles}
+  ff-selftest: {kind: ff_selftest}
+
+  ff-grade-lut-only-hevc10: {kind: color, color_filter: lut, targets: [hevc10], pix_fmt: yuv420p10le}
+  ff-grade-lut-only-prores422: {kind: color, color_filter: lut, targets: [prores422]}
+  ff-grade-lut-only-proresLT: {kind: color, color_filter: lut, targets: [prores_lt]}
+  ff-grade-lut-only-x264: {kind: color, color_filter: lut, targets: [x264]}
+  ff-grade-preexpose-lut-x264: {kind: color, color_filter: preexpose_lut, pre_gamma: "1.15", targets: [x264]}
+  ff-grade-pregamma-lut-hevc10: {kind: color, color_filter: pregamma_lut, pre_gamma: "0.85", targets: [hevc10], pix_fmt: yuv420p10le}
+  ff-grade-pregamma-lut-prores422: {kind: color, color_filter: pregamma_lut, pre_gamma: "0.85", targets: [prores422]}
+  ff-grade-pregamma-lut-x264: {kind: color, color_filter: pregamma_lut, pre_gamma: "0.85", targets: [x264]}
+  ff-hdr2sdr-hable-hevc10: {kind: color, color_filter: hdr2sdr_hable, targets: [hevc10], pix_fmt: yuv420p10le}
+  ff-hdr2sdr-hable-x264: {kind: color, color_filter: hdr2sdr_hable, targets: [x264]}
+
+  ff-hevc10-crf14: {kind: encode, target: hevc10, crf: 14, extension: mp4, pix_fmt: yuv420p10le}
+  ff-av1-crf14: {kind: encode, target: av1, crf: 14, av1_preset: "6", extension: mkv, pix_fmt: yuv420p10le}
+  ff-av1-fast-crf14: {kind: encode, target: av1, crf: 14, av1_preset: "8", extension: mp4, pix_fmt: yuv420p10le}
+  ff-x264-crf14: {kind: encode, target: x264, crf: 14, extension: mp4}
+  ff-x264-crf17: {kind: encode, target: x264, crf: 17, extension: mp4}
+  ff-x264-crf21: {kind: encode, target: x264, crf: 21, extension: mp4}
+  ff-x264-4k-to-1080-crf14:
+    kind: encode
+    target: x264
+    crf: 14
+    extension: mp4
+    suffix_prefix: "1080"
+    video_filter: "scale=-2:1080:flags=lanczos"
+  ff-x264-4k-to-1080-crf17:
+    kind: encode
+    target: x264
+    crf: 17
+    extension: mp4
+    suffix_prefix: "1080"
+    video_filter: "scale=-2:1080:flags=lanczos"
+  ff-x264-4k-to-1080-crf21:
+    kind: encode
+    target: x264
+    crf: 21
+    extension: mp4
+    suffix_prefix: "1080"
+    video_filter: "scale=-2:1080:flags=lanczos"
+
+  ff-trim-start: {kind: trim, pattern: start}
+  ff-trim-end: {kind: trim, pattern: end}
+  ff-trim-both: {kind: trim, pattern: both}
+  ff-trim-middle: {kind: trim, pattern: middle}
+  ff-remux-mkv-to-mp4: {kind: remux, source: mkv, target: mp4}
+  ff-remux-mkv-to-mp4-faststart: {kind: remux, source: mkv, target: mp4}
+  ff-remux-mp4-to-mkv: {kind: remux, source: mp4, target: mkv}
+  ff-remux-mp4-to-mkv-copy: {kind: remux, source: mp4, target: mkv}
+  ff-remux-mov-to-mxf-copy: {kind: remux, source: mov, target: mxf}
+  ff-remux-mxf-to-mov-copy: {kind: remux, source: mxf, target: mov}
+
+  yt-1080p-avc-mp4:
+    kind: youtube
+    args: ["-N", "8", "-S", "res:1080,codec:avc:m4a", "--merge-output-format", "mp4"]
+  yt-480p-aac:
+    kind: youtube
+    args: ["-N", "8", "-S", "res:480,ext:mp4:m4a", "--merge-output-format", "mp4"]
+  yt-best-av1:
+    kind: youtube
+    args: ["-N", "8", "-S", "codec:av01,res,ext:mp4:m4a", "--merge-output-format", "mp4"]
+  yt-best-m4a:
+    kind: youtube
+    args: ["-N", "8", "-f", "bestaudio[acodec^=mp4a]/bestaudio", "-x", "--audio-format", "m4a", "--embed-thumbnail", "--embed-metadata"]
+  yt-best-mp4:
+    kind: youtube
+    args: ["-N", "8", "-S", "res,ext:mp4:m4a", "--merge-output-format", "mp4"]
+  yt-best-mp4-safari:
+    kind: youtube
+    args: ["--extractor-args", "youtube:player-client=web_safari,default", "-N", "8", "-S", "res,ext:mp4:m4a", "--merge-output-format", "mp4"]
+  yt-best-mp4-safe:
+    kind: youtube
+    args: ["-N", "1", "--retries", "10", "--fragment-retries", "10", "--retry-sleep", "2", "--sleep-requests", "1", "--http-chunk-size", "10M", "--force-ipv4", "--extractor-args", "youtube:player-client=web_safari,default", "-S", "res,ext:mp4:m4a", "--merge-output-format", "mp4"]
+    cookies_env: "AUDION_YTDLP_COOKIES"
+  yt-batch-480p-aac:
+    kind: youtube
+    mode: batch
+    args: ["-N", "8", "-S", "res:480,ext:mp4:m4a", "--merge-output-format", "mp4"]
+  yt-batch-best-mp4:
+    kind: youtube
+    mode: batch
+    args: ["-N", "8", "-S", "res,ext:mp4:m4a", "--merge-output-format", "mp4"]
+  yt-clip-sections:
+    kind: youtube
+    mode: clip
+    args: ["-N", "8", "-S", "res,ext:mp4:m4a", "--merge-output-format", "mp4"]
+  yt-embed-subs:
+    kind: youtube
+    args: ["-N", "8", "--write-subs", "--sub-langs", "ru,en.*", "--embed-subs", "-S", "res,ext:mp4:m4a", "--merge-output-format", "mp4"]
+  yt-mp3:
+    kind: youtube
+    args: ["-N", "8", "-x", "--audio-format", "mp3", "--audio-quality", "0", "--embed-thumbnail", "--embed-metadata"]
+  yt-opus:
+    kind: youtube
+    args: ["-N", "8", "-x", "--audio-format", "opus", "--embed-thumbnail", "--embed-metadata"]
+  yt-playlist-1080p-avc:
+    kind: youtube
+    output_template: "%(playlist_index)03d - %(title).200B [%(id)s].%(ext)s"
+    args: ["--ignore-errors", "--continue", "-N", "8", "-S", "res:1080,codec:avc:m4a", "--merge-output-format", "mp4"]
+  yt-playlist-best:
+    kind: youtube
+    output_template: "%(playlist_index)03d - %(title).200B [%(id)s].%(ext)s"
+    args: ["--ignore-errors", "--continue", "-N", "8", "-S", "res,ext:mp4:m4a", "--merge-output-format", "mp4"]
+  yt-selftest: {kind: youtube, mode: selftest}
+  yt-subs-only:
+    kind: youtube
+    args: ["-N", "8", "--skip-download", "--write-subs", "--sub-langs", "ru,en.*"]
+  yt-update: {kind: youtube, mode: update}
+  yt-webm-vp9:
+    kind: youtube
+    args: ["-N", "8", "-f", "bv*[vcodec^=vp9]+ba/best", "--merge-output-format", "webm"]

@@ -1,0 +1,2357 @@
+tool:
+  id: audion_media_tools
+  name: "Audion Media Tools"
+  category: "Media"
+  version: "2.5.1"
+
+paths:
+  input: "Source"
+  output: "Transcoded"
+  logs: "logs"
+  report: "report"
+  workspace: "workspace"
+  config: "config"
+  release: "release"
+
+ui:
+  title: "Audion Media Tools"
+  host: "127.0.0.1"
+  port: 8080
+  native: false
+  reload: false
+  open_browser: true
+
+_shared_fields:
+  input_video_formats: &input_video_formats
+    id: input_formats
+    type: "checkboxes"
+    label: "Source file filter"
+    label_ru: "Фильтр файлов источника"
+    hint: "Empty means the operation uses its own supported source file types."
+    hint_ru: "Если пусто, команда сама берёт поддерживаемые типы файлов источника."
+    default: []
+    options:
+      - {value: "mp4", label: "MP4", label_ru: "MP4"}
+      - {value: "mov", label: "MOV", label_ru: "MOV"}
+      - {value: "mkv", label: "MKV", label_ru: "MKV"}
+      - {value: "mxf", label: "MXF", label_ru: "MXF"}
+      - {value: "avi", label: "AVI", label_ru: "AVI"}
+      - {value: "webm", label: "WEBM", label_ru: "WEBM"}
+      - {value: "mts", label: "MTS", label_ru: "MTS"}
+      - {value: "m2ts", label: "M2TS", label_ru: "M2TS"}
+
+  decode_backend: &decode_backend
+    id: decode_backend
+    type: "radio"
+    choice_style: "buttons"
+    layout: "five_columns"
+    label: "Decoder"
+    label_ru: "Декодировать через"
+    default: "auto"
+    span: "full"
+    options:
+      - {value: "auto", label: "CPU/Auto", label_ru: "CPU/Auto"}
+      - {value: "cuda", label: "CUDA", label_ru: "CUDA"}
+      - {value: "qsv", label: "QuickSync", label_ru: "QuickSync"}
+      - {value: "amd", label: "AMD/D3D11VA", label_ru: "AMD/D3D11VA"}
+      - {value: "dav1d", label: "dav1d AV1", label_ru: "dav1d AV1"}
+
+  encode_backend: &encode_backend
+    id: encode_backend
+    type: "radio"
+    choice_style: "buttons"
+    layout: "four_columns"
+    label: "Encoder"
+    label_ru: "Кодер"
+    tooltip: "Select the encoder backend. Each backend exposes its own native preset/quality controls below."
+    tooltip_ru: "Выбор backend кодирования. Ниже показываются только родные параметры выбранного backend."
+    default: "cpu"
+    span: "full"
+    refresh_on_change: true
+    options:
+      - {value: "cpu", label: "CPU", label_ru: "CPU", tooltip: "Software x264/x265. Uses the CPU preset line: fast, medium, slow, slower, veryslow.", tooltip_ru: "Software x264/x265. Использует CPU-линейку preset: fast, medium, slow, slower, veryslow."}
+      - {value: "cuda", label: "NVENC", label_ru: "NVENC", tooltip: "NVIDIA hardware encoder. Uses NVENC P-presets p5/p6/p7, not CPU slow/veryslow.", tooltip_ru: "Аппаратный кодер NVIDIA. Использует NVENC P-presets p5/p6/p7, не CPU slow/veryslow."}
+      - {value: "amd", label: "AMF", label_ru: "AMF", tooltip: "AMD hardware encoder. Uses AMF quality preset: speed, balanced, quality.", tooltip_ru: "Аппаратный кодер AMD. Использует AMF quality preset: speed, balanced, quality."}
+      - {value: "qsv", label: "QSV", label_ru: "QSV", tooltip: "Intel QuickSync encoder. Uses QSV preset values veryfast through veryslow.", tooltip_ru: "Intel QuickSync. Использует QSV preset veryfast...veryslow."}
+
+  encode_tuning: &encode_tuning
+    id: encode_tuning
+    type: "checkboxes"
+    label: "Encode tuning"
+    label_ru: "Тюнинг кодирования"
+    tooltip: "x264/x265 tune values. Hardware encoders use their own quality controls and ignore this list, so it stays CPU-only."
+    tooltip_ru: "Значения tune для x264/x265. Аппаратные кодеры используют свои регуляторы качества и не читают этот список, поэтому он доступен только для CPU."
+    default: []
+    hidden_if: {encode_backend: ["cuda", "qsv", "amd"]}
+    options:
+      - {value: "grain", label: "Grain", label_ru: "Grain"}
+      - {value: "film", label: "Film", label_ru: "Film"}
+      - {value: "animation", label: "Animation", label_ru: "Animation"}
+      - {value: "fastdecode", label: "Fast decode", label_ru: "Fast decode"}
+      - {value: "zerolatency", label: "Zero latency", label_ru: "Zero latency"}
+
+  audio_mode: &audio_mode
+    id: audio_mode
+    type: "radio"
+    group: "audio"
+    choice_style: "buttons"
+    layout: "four_columns"
+    span: "full"
+    refresh_on_change: true
+    label: "Audio"
+    label_ru: "Аудио"
+    default: "source"
+    options:
+      - {value: "source", label: "COPY", label_ru: "COPY", tone: "copy"}
+      - {value: "aac_320", label: "AAC override", label_ru: "AAC override", tone: "lossy"}
+      - {value: "mp3", label: "MP3", label_ru: "MP3", tone: "lossy"}
+      - {value: "flac", label: "FLAC", label_ru: "FLAC", tone: "lossless"}
+      - {value: "pcm_s16", label: "PCM 16-bit", label_ru: "PCM 16-bit", tone: "uncompressed"}
+      - {value: "pcm_s24", label: "PCM 24-bit", label_ru: "PCM 24-bit", tone: "uncompressed"}
+      - {value: "pcm_f32", label: "PCM float", label_ru: "PCM float", tone: "uncompressed"}
+      - {value: "none", label: "No audio", label_ru: "Без аудио", tone: "utility"}
+
+  mxf_safe_audio_mode: &mxf_safe_audio_mode
+    id: audio_mode
+    type: "radio"
+    group: "audio"
+    choice_style: "buttons"
+    layout: "four_columns"
+    span: "full"
+    refresh_on_change: true
+    label: "Audio"
+    label_ru: "Аудио"
+    default: "source"
+    options:
+      - {value: "source", label: "COPY", label_ru: "COPY", tone: "copy", disabled_if: {output_container: "mxf"}}
+      - {value: "aac_320", label: "AAC override", label_ru: "AAC override", tone: "lossy", disabled_if: {output_container: "mxf"}}
+      - {value: "mp3", label: "MP3", label_ru: "MP3", tone: "lossy", disabled_if: {output_container: "mxf"}}
+      # The MOV muxer answers "flac only supported in MP4".
+      - {value: "flac", label: "FLAC", label_ru: "FLAC", tone: "lossless", disabled_if: {output_container: ["mxf", "mov"]}}
+      - {value: "pcm_s16", label: "PCM 16-bit", label_ru: "PCM 16-bit", tone: "uncompressed"}
+      - {value: "pcm_s24", label: "PCM 24-bit", label_ru: "PCM 24-bit", tone: "uncompressed"}
+      - {value: "pcm_f32", label: "PCM float", label_ru: "PCM float", tone: "uncompressed", disabled_if: {output_container: "mxf"}}
+      - {value: "none", label: "No audio", label_ru: "Без аудио", tone: "utility"}
+
+  mp3_lame_preset_encode: &mp3_lame_preset_encode
+    id: mp3_lame_preset
+    type: "radio"
+    group: "lame"
+    choice_style: "buttons"
+    layout: "three_columns"
+    span: "full"
+    refresh_on_change: true
+    visible_if: {audio_mode: "mp3"}
+    label: "MP3 / LAME"
+    label_ru: "MP3 / LAME"
+    default: "v0"
+    options:
+      - {value: "v0", label: "VBR V0", label_ru: "VBR V0", tone: "lossy",
+         description: "Best VBR V0 / Extreme, about 245 kbps.", description_ru: "Best VBR V0 / Extreme, примерно 245 kbps."}
+      - {value: "insane", label: "Insane 320", label_ru: "Insane 320", tone: "lossy",
+         description: "Insane CBR 320 kbps.", description_ru: "Insane CBR 320 kbps."}
+      - {value: "bitrate", label: "By bitrate", label_ru: "По битрейту", tone: "lossy",
+         description: "Use the Audio bitrate field, up to the 320 kbps LAME ceiling.",
+         description_ru: "Взять значение поля «Битрейт аудио», максимум 320 kbps."}
+
+  audio_bitrate: &audio_bitrate
+    id: audio_bitrate
+    type: "select"
+    label: "Audio bitrate"
+    label_ru: "Битрейт аудио"
+    default: "384k"
+    visible_if:
+      any:
+        - {audio_mode: "aac_320"}
+        - {all: [{audio_mode: "mp3"}, {mp3_lame_preset: "bitrate"}]}
+    options:
+      - {value: "192k", label: "192 kbps", label_ru: "192 kbps"}
+      - {value: "256k", label: "256 kbps", label_ru: "256 kbps"}
+      - {value: "320k", label: "320 kbps", label_ru: "320 kbps"}
+      # MPEG-1 Layer III stops at 320 kbps. The key differs per page: encode
+      # pages ask through audio_mode, the Audio page through audio_format.
+      - {value: "384k", label: "384 kbps", label_ru: "384 kbps", disabled_if: {any: [{audio_mode: "mp3"}, {audio_format: "mp3"}]}}
+
+  audio_sample_rate: &audio_sample_rate
+    id: audio_sample_rate
+    type: "radio"
+    group: "audio"
+    choice_style: "buttons"
+    layout: "four_columns"
+    span: "full"
+    visible_if: {audio_mode: ["aac_320", "mp3", "flac", "pcm_s16", "pcm_s24", "pcm_f32"]}
+    label: "Sample rate"
+    label_ru: "Частота дискретизации"
+    default: "source"
+    options:
+      - {value: "source", label: "COPY", label_ru: "COPY"}
+      - {value: "44100", label: "44.1 kHz", label_ru: "44.1 kHz"}
+      - {value: "48000", label: "48 kHz", label_ru: "48 kHz"}
+      - {value: "88200", label: "88.2 kHz", label_ru: "88.2 kHz"}
+      - {value: "96000", label: "96 kHz", label_ru: "96 kHz"}
+      - {value: "176400", label: "176.4 kHz", label_ru: "176.4 kHz"}
+      - {value: "192000", label: "192 kHz", label_ru: "192 kHz"}
+
+  cpu_encoder_preset: &cpu_encoder_preset
+    id: cpu_encoder_preset
+    type: "radio"
+    choice_style: "buttons"
+    layout: "five_columns"
+    label: "CPU preset"
+    label_ru: "CPU preset"
+    tooltip: "Software x264/x265 speed-compression preset. Slower presets spend more CPU searching for a cleaner/smaller encode at the same CRF."
+    tooltip_ru: "Software x264/x265 preset скорости/сжатия. Более медленные presets тратят больше CPU на более чистое/компактное кодирование при том же CRF."
+    default: "medium"
+    hidden_if: {encode_backend: ["cuda", "qsv", "amd"]}
+    options:
+      - {value: "fast", label: "fast", label_ru: "fast", tooltip: "Faster CPU encode; useful for review or quick tests.", tooltip_ru: "Быстрее на CPU; удобно для просмотровых файлов и быстрых тестов."}
+      - {value: "medium", label: "medium", label_ru: "medium", tooltip: "Balanced x264/x265 default-style preset.", tooltip_ru: "Сбалансированный preset в духе стандартного x264/x265."}
+      - {value: "slow", label: "slow", label_ru: "slow", tooltip: "Good production default when time is acceptable.", tooltip_ru: "Хороший рабочий вариант, когда время кодирования приемлемо."}
+      - {value: "slower", label: "slower", label_ru: "slower", tooltip: "More CPU search for difficult material or final storage masters.", tooltip_ru: "Больше CPU-поиска для сложного материала или финального хранения."}
+      - {value: "veryslow", label: "veryslow", label_ru: "veryslow", tooltip: "Maximum x264/x265 preset effort; often diminishing returns.", tooltip_ru: "Максимальное усилие x264/x265 preset; часто с убывающей отдачей."}
+
+  nvenc_preset: &nvenc_preset
+    id: nvenc_preset
+    type: "radio"
+    choice_style: "buttons"
+    layout: "three_columns"
+    label: "NVENC preset"
+    label_ru: "NVENC preset"
+    tooltip: "NVIDIA NVENC P-preset. This is a hardware encoder scale, not an equivalent of CPU slow/slower/veryslow."
+    tooltip_ru: "NVIDIA NVENC P-preset. Это шкала аппаратного кодера, не эквивалент CPU slow/slower/veryslow."
+    default: "p6"
+    visible_if: {encode_backend: "cuda"}
+    options:
+      - {value: "p5", label: "NVENC p5", label_ru: "NVENC p5", tooltip: "Good quality; useful for faster GPU delivery/review encodes.", tooltip_ru: "Good quality; быстрый GPU-вариант для delivery/review."}
+      - {value: "p6", label: "NVENC p6", label_ru: "NVENC p6", tooltip: "Better quality; good upper default for careful NVENC encodes.", tooltip_ru: "Better quality; хороший верхний default для аккуратного NVENC."}
+      - {value: "p7", label: "NVENC p7", label_ru: "NVENC p7", tooltip: "Best quality in the NVENC P-scale; slower on GPU.", tooltip_ru: "Best quality в NVENC P-scale; медленнее на GPU."}
+
+  qsv_encoder_preset: &qsv_encoder_preset
+    id: qsv_encoder_preset
+    type: "radio"
+    choice_style: "buttons"
+    layout: "seven_columns"
+    span: "full"
+    label: "QSV preset"
+    label_ru: "QSV preset"
+    tooltip: "Intel QuickSync preset. QSV has its own preset line exposed by FFmpeg: veryfast, faster, fast, medium, slow, slower, veryslow."
+    tooltip_ru: "Intel QuickSync preset. У QSV своя FFmpeg-линейка: veryfast, faster, fast, medium, slow, slower, veryslow."
+    default: "medium"
+    visible_if: {encode_backend: "qsv"}
+    options:
+      - {value: "veryfast", label: "veryfast", label_ru: "veryfast", tooltip: "Fastest QSV preset.", tooltip_ru: "Самый быстрый QSV preset."}
+      - {value: "faster", label: "faster", label_ru: "faster", tooltip: "Faster QSV preset.", tooltip_ru: "Быстрый QSV preset."}
+      - {value: "fast", label: "fast", label_ru: "fast", tooltip: "Fast QSV preset with more quality headroom than veryfast/faster.", tooltip_ru: "Быстрый QSV preset с большим запасом качества, чем veryfast/faster."}
+      - {value: "medium", label: "medium", label_ru: "medium", tooltip: "Balanced QSV preset.", tooltip_ru: "Сбалансированный QSV preset."}
+      - {value: "slow", label: "slow", label_ru: "slow", tooltip: "Higher quality QSV preset.", tooltip_ru: "Более качественный QSV preset."}
+      - {value: "slower", label: "slower", label_ru: "slower", tooltip: "More careful QSV preset.", tooltip_ru: "Более тщательный QSV preset."}
+      - {value: "veryslow", label: "veryslow", label_ru: "veryslow", tooltip: "Maximum QSV preset effort exposed by FFmpeg.", tooltip_ru: "Максимальное усилие QSV preset, доступное через FFmpeg."}
+
+  amf_quality: &amf_quality
+    id: amf_quality
+    type: "radio"
+    choice_style: "buttons"
+    layout: "three_columns"
+    label: "AMF quality"
+    label_ru: "AMF quality"
+    tooltip: "AMD AMF quality preset. This controls AMF's speed/balanced/quality mode; CQ/QP still controls quantization level."
+    tooltip_ru: "AMD AMF quality preset. Управляет AMF режимом speed/balanced/quality; CQ/QP по-прежнему задаёт уровень квантования."
+    default: "quality"
+    visible_if: {encode_backend: "amd"}
+    options:
+      - {value: "speed", label: "speed", label_ru: "speed", tooltip: "Prefer AMF encoding speed.", tooltip_ru: "Приоритет скорости AMF."}
+      - {value: "balanced", label: "balanced", label_ru: "balanced", tooltip: "Balanced AMF quality/speed mode.", tooltip_ru: "Сбалансированный режим AMF качество/скорость."}
+      - {value: "quality", label: "quality", label_ru: "quality", tooltip: "Prefer AMF quality.", tooltip_ru: "Приоритет качества AMF."}
+
+  pix_fmt: &pix_fmt
+    id: pix_fmt
+    type: "select"
+    label: "Pixel format"
+    label_ru: "Pixel format"
+    default: "auto"
+    options:
+      - {value: "auto", label: "auto", label_ru: "auto"}
+      - {value: "yuv420p", label: "yuv420p", label_ru: "yuv420p"}
+      - {value: "yuv420p10le", label: "yuv420p10le", label_ru: "yuv420p10le"}
+      - {value: "yuv422p", label: "yuv422p", label_ru: "yuv422p"}
+      - {value: "yuv422p10le", label: "yuv422p10le", label_ru: "yuv422p10le"}
+
+  output_resolution: &output_resolution
+    id: output_resolution
+    type: "select"
+    label: "Resolution"
+    label_ru: "Разрешение"
+    default: "source"
+    options:
+      - {value: "source", label: "Source", label_ru: "Исходное"}
+      - {value: "2160", label: "2160p", label_ru: "2160p"}
+      - {value: "1440", label: "1440p", label_ru: "1440p"}
+      - {value: "1080", label: "1080p", label_ru: "1080p"}
+      - {value: "720", label: "720p", label_ru: "720p"}
+      - {value: "480", label: "480p", label_ru: "480p"}
+
+  output_container: &output_container
+    id: output_container
+    type: "radio"
+    choice_style: "buttons"
+    layout: "three_columns"
+    label: "Container"
+    label_ru: "Контейнер"
+    default: "mp4"
+    span: "full"
+    refresh_on_change: true
+    options:
+      - {value: "mp4", label: "MP4", label_ru: "MP4"}
+      - {value: "mkv", label: "MKV", label_ru: "MKV"}
+      - {value: "mov", label: "MOV", label_ru: "MOV"}
+
+  editing_output_container: &editing_output_container
+    id: output_container
+    type: "radio"
+    choice_style: "buttons"
+    layout: "two_columns"
+    label: "Container"
+    label_ru: "Контейнер"
+    default: "mov"
+    span: "full"
+    refresh_on_change: true
+    options:
+      - {value: "mov", label: "MOV", label_ru: "MOV"}
+      - {value: "mxf", label: "MXF", label_ru: "MXF"}
+
+  crf: &crf
+    id: crf
+    type: "number"
+    label: "CRF"
+    label_ru: "CRF"
+    hidden_if: {encode_backend: ["cuda", "qsv", "amd"]}
+    default: 14
+    min: 0
+    max: 40
+    step: 1
+
+  cq: &cq
+    id: cq
+    type: "number"
+    label: "CQ/QP"
+    label_ru: "CQ/QP"
+    visible_if: {encode_backend: ["cuda", "qsv", "amd"]}
+    default: 14
+    min: 0
+    max: 40
+    step: 1
+
+  av1_preset: &av1_preset
+    id: av1_preset
+    type: "select"
+    label: "SVT-AV1 preset"
+    label_ru: "SVT-AV1 preset"
+    tooltip: "Software SVT-AV1 speed/quality preset. Hardware AV1 encoders use their own NVENC/QSV/AMF scales instead."
+    tooltip_ru: "Preset скорости/качества software SVT-AV1. Аппаратные AV1-кодеры используют свои шкалы NVENC/QSV/AMF."
+    default: "6"
+    visible_if: {target_codecs: ["svt_av1"]}
+    hidden_if: {encode_backend: ["cuda", "qsv", "amd"]}
+    options:
+      - {value: "4", label: "4 quality", label_ru: "4 quality"}
+      - {value: "6", label: "6 balanced", label_ru: "6 balanced"}
+      - {value: "8", label: "8 fast", label_ru: "8 fast"}
+
+  overwrite: &overwrite
+    id: overwrite
+    type: "checkbox"
+    label: "Overwrite"
+    label_ru: "Перезаписывать"
+    default: false
+
+  limit_first_file: &limit_first_file
+    id: limit_first_file
+    type: "checkbox"
+    label: "Test on first file"
+    label_ru: "Тест: первый файл"
+    hint: "Process only the first matching file, useful for checking a preset before a full batch."
+    hint_ru: "Обработать только первый найденный файл, удобно для проверки пресета перед всей папкой."
+    default: false
+
+  dry_run: &dry_run
+    id: dry_run
+    type: "checkbox"
+    label: "Dry run"
+    label_ru: "Только показать команду"
+    default: false
+
+operations:
+  - id: inventory
+    title: "Inventory"
+    title_ru: "Инвентаризация"
+    description: "Count project folders."
+    description_ru: "Посчитать Source, Transcoded, Download и LUTs."
+    service: "system_core.services.media_service:inventory"
+    kind: "safe"
+
+  - id: selftest
+    title: "Selftest"
+    title_ru: "Самопроверка"
+    description: "Check ffmpeg, ffprobe, yt-dlp and Deno."
+    description_ru: "Проверить ffmpeg, ffprobe, yt-dlp и Deno."
+    service: "system_core.services.media_service:selftest"
+    kind: "safe"
+
+operation_groups:
+  - id: youtube
+    title: "Download / YouTube"
+    title_ru: "Скачивание / YouTube"
+    description: "Native yt-dlp profiles, no download archive by default."
+    description_ru: "Нативные профили yt-dlp, архив скачиваний по умолчанию выключен."
+    fields:
+      - id: youtube_preset
+        type: "profile_select"
+        label: "Download profile"
+        label_ru: "Профиль скачивания"
+        default: "best_video"
+        presets:
+          - id: best_video
+            label: "Best MP4 video"
+            label_ru: "Best MP4 video"
+            description: "Best available MP4/M4A merge for general use."
+            description_ru: "Лучшее доступное MP4/M4A для обычной загрузки."
+            values:
+              youtube_profile: "best_mp4"
+              youtube_source_mode: "single"
+              youtube_resolution: "best"
+              youtube_video_codec: "auto"
+              youtube_audio_format: "source"
+              youtube_container: "mp4"
+              youtube_client: "default"
+              youtube_options: ["safe_retries", "embed_metadata", "no_playlist"]
+              subtitle_options: []
+              parallel_fragments: 8
+              download_archive: false
+          - id: upload_1080_avc
+            label: "1080p AVC MP4"
+            label_ru: "1080p AVC MP4"
+            description: "YouTube-friendly 1080p AVC preference."
+            description_ru: "Предпочтение 1080p AVC для совместимости и заливки."
+            values:
+              youtube_profile: "upload_ready"
+              youtube_source_mode: "single"
+              youtube_resolution: "1080"
+              youtube_video_codec: "avc"
+              youtube_audio_format: "source"
+              youtube_container: "mp4"
+              youtube_options: ["safe_retries", "embed_metadata", "no_playlist"]
+              subtitle_options: []
+              parallel_fragments: 8
+              download_archive: false
+          - id: safe_safari
+            label: "Safe Safari"
+            label_ru: "Safe Safari"
+            description: "Slower Safari client, retries and IPv4 for fragile downloads."
+            description_ru: "Медленный Safari-клиент, повторы и IPv4 для капризных ссылок."
+            values:
+              youtube_profile: "safe_mp4"
+              youtube_source_mode: "single"
+              youtube_resolution: "best"
+              youtube_video_codec: "auto"
+              youtube_audio_format: "source"
+              youtube_container: "mp4"
+              youtube_client: "safari"
+              youtube_options: ["safe_retries", "force_ipv4", "embed_metadata", "no_playlist"]
+              subtitle_options: []
+              parallel_fragments: 1
+              download_archive: false
+          - id: av1_if_available
+            label: "AV1 if available"
+            label_ru: "AV1 если доступен"
+            description: "Prefer AV1 video while keeping MP4 output."
+            description_ru: "Предпочитать AV1-видео, оставляя MP4-контейнер."
+            values:
+              youtube_profile: "video_custom"
+              youtube_source_mode: "single"
+              youtube_resolution: "best"
+              youtube_video_codec: "av1"
+              youtube_audio_format: "source"
+              youtube_container: "mp4"
+              youtube_options: ["safe_retries", "embed_metadata", "no_playlist"]
+              subtitle_options: []
+              parallel_fragments: 8
+              download_archive: false
+          - id: audio_mp3
+            label: "Audio MP3"
+            label_ru: "Audio MP3"
+            description: "Audio-only MP3 extraction."
+            description_ru: "Извлечение только аудио в MP3."
+            values:
+              youtube_profile: "audio_custom"
+              youtube_source_mode: "single"
+              youtube_audio_format: "mp3"
+              youtube_options: ["safe_retries", "embed_metadata", "no_playlist"]
+              subtitle_options: []
+              parallel_fragments: 8
+              download_archive: false
+          - id: batch_best
+            label: "Batch from urls.txt"
+            label_ru: "Batch из urls.txt"
+            description: "Read links from Download\\urls.txt."
+            description_ru: "Читать ссылки из Download\\urls.txt."
+            values:
+              youtube_profile: "best_mp4"
+              youtube_source_mode: "batch"
+              youtube_resolution: "best"
+              youtube_video_codec: "auto"
+              youtube_audio_format: "source"
+              youtube_container: "mp4"
+              youtube_options: ["safe_retries", "embed_metadata"]
+              subtitle_options: []
+              parallel_fragments: 8
+              download_archive: false
+      - id: youtube_url
+        type: "text"
+        label: "URL"
+        label_ru: "URL"
+        default: ""
+        placeholder: "https://www.youtube.com/watch?v=..."
+        span: "full"
+      - id: batch_file
+        type: "file"
+        label: "Batch file"
+        label_ru: "Файл ссылок"
+        default: "Download\\urls.txt"
+        file_filter: "Text files (*.txt)|*.txt|All files (*.*)|*.*"
+      - id: youtube_profile
+        type: "select"
+        label: "Engine profile"
+        label_ru: "Форматный профиль"
+        default: "best_mp4"
+        options:
+          - {value: "best_mp4", label: "Best MP4", label_ru: "Best MP4"}
+          - {value: "safe_mp4", label: "Safe MP4", label_ru: "Safe MP4"}
+          - {value: "video_custom", label: "Custom video", label_ru: "Custom video"}
+          - {value: "upload_ready", label: "Upload ready", label_ru: "Upload ready"}
+          - {value: "audio_custom", label: "Custom audio", label_ru: "Custom audio"}
+          - {value: "subs_only", label: "Subtitles only", label_ru: "Только субтитры"}
+      - id: youtube_resolution
+        type: "select"
+        label: "Resolution"
+        label_ru: "Разрешение"
+        default: "best"
+        options:
+          - {value: "best", label: "Best", label_ru: "Лучшее"}
+          - {value: "2160", label: "2160p", label_ru: "2160p"}
+          - {value: "1440", label: "1440p", label_ru: "1440p"}
+          - {value: "1080", label: "1080p", label_ru: "1080p"}
+          - {value: "720", label: "720p", label_ru: "720p"}
+          - {value: "480", label: "480p", label_ru: "480p"}
+      - id: youtube_video_codec
+        type: "select"
+        label: "Video codec"
+        label_ru: "Видео кодек"
+        default: "auto"
+        options:
+          - {value: "auto", label: "Auto", label_ru: "Auto"}
+          - {value: "avc", label: "AVC / H.264", label_ru: "AVC / H.264"}
+          - {value: "av1", label: "AV1", label_ru: "AV1"}
+          - {value: "vp9", label: "VP9", label_ru: "VP9"}
+      - id: youtube_audio_format
+        type: "select"
+        label: "Audio format"
+        label_ru: "Формат аудио"
+        default: "source"
+        options:
+          - {value: "source", label: "Source / native", label_ru: "Родной"}
+          - {value: "m4a", label: "M4A", label_ru: "M4A"}
+          - {value: "opus", label: "Opus", label_ru: "Opus"}
+          - {value: "mp3", label: "MP3", label_ru: "MP3"}
+      - id: youtube_container
+        type: "radio"
+        choice_style: "buttons"
+        layout: "three_columns"
+        label: "Container"
+        label_ru: "Контейнер"
+        default: "mp4"
+        options:
+          - {value: "mp4", label: "MP4", label_ru: "MP4"}
+          - {value: "mkv", label: "MKV", label_ru: "MKV"}
+          - {value: "webm", label: "WEBM", label_ru: "WEBM"}
+      - id: youtube_source_mode
+        type: "radio"
+        choice_style: "buttons"
+        layout: "two_columns"
+        label: "Source"
+        label_ru: "Источник"
+        default: "single"
+        options:
+          - {value: "single", label: "Single URL", label_ru: "Одна ссылка"}
+          - {value: "batch", label: "Download\\urls.txt", label_ru: "Download\\urls.txt"}
+      - id: youtube_options
+        type: "checkboxes"
+        label: "Download tuning"
+        label_ru: "Тюнинг скачивания"
+        default: []
+        options:
+          - {value: "safe_retries", label: "Retries", label_ru: "Повторы"}
+          - {value: "force_ipv4", label: "IPv4", label_ru: "IPv4"}
+          - {value: "embed_metadata", label: "Metadata + thumbnail", label_ru: "Метаданные + обложка"}
+          - {value: "no_playlist", label: "No playlist", label_ru: "Без плейлиста"}
+      - id: subtitle_options
+        type: "checkboxes"
+        label: "Subtitles"
+        label_ru: "Субтитры"
+        default: []
+        options:
+          - {value: "write_subs", label: "Manual", label_ru: "Ручные"}
+          - {value: "write_auto_subs", label: "Auto", label_ru: "Авто"}
+          - {value: "embed_subs", label: "Embed", label_ru: "Встроить"}
+      - id: parallel_fragments
+        type: "number"
+        label: "Parallel"
+        label_ru: "Потоки"
+        default: 8
+        min: 1
+        max: 16
+        step: 1
+      - id: youtube_client
+        type: "radio"
+        choice_style: "buttons"
+        layout: "three_columns"
+        label: "Client"
+        label_ru: "Клиент"
+        default: "default"
+        priority: "advanced"
+        options:
+          - {value: "default", label: "Default", label_ru: "Default"}
+          - {value: "safari", label: "Safari", label_ru: "Safari"}
+          - {value: "android", label: "Android", label_ru: "Android"}
+      - id: subtitle_languages
+        type: "text"
+        label: "Subtitle languages"
+        label_ru: "Языки субтитров"
+        default: "ru,en.*"
+        priority: "advanced"
+      - id: cookies_path
+        type: "text"
+        label: "Cookies"
+        label_ru: "Cookies"
+        default: "Download\\cookies.txt"
+        priority: "advanced"
+      - id: download_archive
+        type: "checkbox"
+        label: "Use download archive"
+        label_ru: "Вести архив скачиваний"
+        default: false
+        priority: "advanced"
+      - id: youtube_dry_run
+        type: "checkbox"
+        label: "Dry run"
+        label_ru: "Только показать команду"
+        default: false
+    children:
+      - id: youtube_run
+        title: "Download"
+        title_ru: "Скачать"
+        description: "Run the selected yt-dlp profile."
+        description_ru: "Запустить выбранный профиль yt-dlp."
+        service: "system_core.services.media_service:download_youtube"
+        kind: "safe"
+
+  - id: audio
+    title: "Audio streams"
+    title_ru: "Аудиопотоки"
+    description: "Extract, resample, normalize and package audio."
+    description_ru: "Извлечение, ресемплинг, нормализация и упаковка аудио."
+    fields:
+      - id: audio_profile
+        type: "profile_buttons"
+        label: "Audio mode"
+        label_ru: "Режим работы"
+        hint: "Buttons update the parameters below; you can still fine-tune streams, containers, LUFS and channels after choosing a mode."
+        hint_ru: "Кнопки меняют параметры ниже; после выбора режима можно вручную уточнить потоки, контейнеры, LUFS и каналы."
+        default: "copy_auto"
+        presets:
+          - id: copy_auto
+            group: "copy"
+            group_label: "Copy / remux"
+            group_label_ru: "Copy / remux"
+            tone: "copy"
+            label: "Copy"
+            label_ru: "Copy"
+            description: "Copy the selected audio stream without re-encoding; Auto chooses M4A/MKA/native codec file from codec and channels."
+            description_ru: "Скопировать выбранный аудиопоток без перекодирования; Auto выберет M4A/MKA/родной файл по кодеку и каналам."
+            values:
+              audio_workflow: "extract"
+              audio_stream_mode: "first"
+              audio_format: "copy"
+              audio_sample_rate: "source"
+              audio_bit_depth: "source"
+              audio_bitrate: "384k"
+              audio_resampler: "auto"
+              audio_copy_container: "auto"
+              audio_video_container: "source"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: remux_container
+            group: "copy"
+            tone: "copy"
+            label: "Remux"
+            label_ru: "Remux"
+            description: "Copy audio into a chosen audio container without re-encoding; useful for AAC to M4A or multichannel to MKA."
+            description_ru: "Скопировать аудио в выбранный аудиоконтейнер без перекодирования; удобно для AAC -> M4A или многоканала -> MKA."
+            values:
+              audio_workflow: "audio_files"
+              audio_stream_mode: "first"
+              audio_format: "copy"
+              audio_sample_rate: "source"
+              audio_bit_depth: "source"
+              audio_bitrate: "384k"
+              audio_resampler: "auto"
+              audio_copy_container: "mka"
+              audio_video_container: "source"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: wav_24_48
+            group: "lossless"
+            group_label: "Lossless / PCM"
+            group_label_ru: "Lossless / PCM"
+            tone: "lossless"
+            label: "WAV 24/48"
+            label_ru: "WAV 24/48"
+            description: "Editing-safe PCM WAV."
+            description_ru: "Монтажный PCM WAV без сжатия."
+            values:
+              audio_workflow: "extract"
+              audio_stream_mode: "first"
+              audio_format: "wav"
+              audio_sample_rate: "48000"
+              audio_bit_depth: "24"
+              audio_bitrate: "384k"
+              audio_resampler: "soxr"
+              audio_video_container: "mov"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: wav_32f_48
+            group: "lossless"
+            tone: "lossless"
+            label: "WAV 32f/48"
+            label_ru: "WAV 32f/48"
+            description: "32-bit float WAV for restoration or further processing."
+            description_ru: "WAV 32-bit float для реставрации и дальнейшей обработки."
+            values:
+              audio_workflow: "extract"
+              audio_stream_mode: "first"
+              audio_format: "wav"
+              audio_sample_rate: "48000"
+              audio_bit_depth: "32f"
+              audio_bitrate: "384k"
+              audio_resampler: "soxr"
+              audio_video_container: "mov"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: flac_24_48
+            group: "lossless"
+            tone: "lossless"
+            label: "FLAC 24/48"
+            label_ru: "FLAC 24/48"
+            description: "Lossless archive audio."
+            description_ru: "Аудио без потерь для архива."
+            values:
+              audio_workflow: "extract"
+              audio_stream_mode: "first"
+              audio_format: "flac"
+              audio_sample_rate: "48000"
+              audio_bit_depth: "24"
+              audio_bitrate: "384k"
+              audio_resampler: "soxr"
+              audio_video_container: "mkv"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: alac_m4a
+            group: "lossless"
+            tone: "lossless"
+            label: "ALAC M4A"
+            label_ru: "ALAC M4A"
+            description: "Apple Lossless inside M4A for lossless delivery without WAV size."
+            description_ru: "Apple Lossless внутри M4A: без потерь, но компактнее WAV."
+            values:
+              audio_workflow: "extract"
+              audio_stream_mode: "first"
+              audio_format: "alac"
+              audio_sample_rate: "source"
+              audio_bit_depth: "source"
+              audio_bitrate: "384k"
+              audio_resampler: "auto"
+              audio_video_container: "source"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: m4a384
+            group: "lossy"
+            group_label: "Lossy delivery"
+            group_label_ru: "Lossy delivery"
+            tone: "lossy"
+            label: "M4A 384k"
+            label_ru: "M4A 384k"
+            description: "AAC 384k for review or delivery."
+            description_ru: "AAC 384k для просмотра или публикации."
+            values:
+              audio_workflow: "extract"
+              audio_stream_mode: "first"
+              audio_format: "m4a"
+              audio_sample_rate: "source"
+              audio_bit_depth: "source"
+              audio_bitrate: "384k"
+              audio_resampler: "soxr"
+              audio_video_container: "source"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: m4a256
+            group: "lossy"
+            tone: "lossy"
+            label: "M4A 256k"
+            label_ru: "M4A 256k"
+            description: "Compact AAC 256k for upload and portable listening."
+            description_ru: "Компактный AAC 256k для заливки и портативного прослушивания."
+            values:
+              audio_workflow: "extract"
+              audio_stream_mode: "first"
+              audio_format: "m4a"
+              audio_sample_rate: "source"
+              audio_bit_depth: "source"
+              audio_bitrate: "256k"
+              audio_resampler: "soxr"
+              audio_video_container: "source"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: video_pcm24_48_soxr
+            group: "lossless"
+            tone: "lossless"
+            label: "Video PCM"
+            label_ru: "Video PCM"
+            description: "Keep video stream untouched, resample audio inside MOV."
+            description_ru: "Не трогать видеопоток, пересэмплировать аудио внутри MOV."
+            values:
+              audio_workflow: "in_video"
+              audio_stream_mode: "first"
+              audio_format: "wav"
+              audio_sample_rate: "48000"
+              audio_bit_depth: "24"
+              audio_bitrate: "384k"
+              audio_resampler: "soxr"
+              audio_video_container: "mov"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: video_aac384_48_soxr
+            group: "lossy"
+            tone: "lossy"
+            label: "Video AAC"
+            label_ru: "Video AAC"
+            description: "Keep video stream untouched, transcode audio in-container."
+            description_ru: "Не трогать видеопоток, перекодировать аудио внутри контейнера."
+            values:
+              audio_workflow: "in_video"
+              audio_stream_mode: "first"
+              audio_format: "m4a"
+              audio_sample_rate: "48000"
+              audio_bit_depth: "source"
+              audio_bitrate: "384k"
+              audio_resampler: "soxr"
+              audio_video_container: "source"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: mp3_v0
+            group: "lossy"
+            tone: "lossy"
+            label: "MP3 V0"
+            label_ru: "MP3 V0"
+            description: "Highest quality LAME VBR profile, around 245 kbps."
+            description_ru: "Самый качественный LAME VBR профиль, около 245 kbps."
+            values:
+              audio_workflow: "audio_files"
+              audio_stream_mode: "first"
+              audio_format: "mp3"
+              audio_sample_rate: "48000"
+              audio_bit_depth: "source"
+              audio_bitrate: "320k"
+              audio_resampler: "soxr"
+              audio_video_container: "source"
+              mp3_lame_preset: "v0"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: mp3_insane
+            group: "lossy"
+            tone: "lossy"
+            label: "MP3 320"
+            label_ru: "MP3 320"
+            description: "LAME CBR 320 kbps."
+            description_ru: "LAME CBR 320 kbps."
+            values:
+              audio_workflow: "audio_files"
+              audio_stream_mode: "first"
+              audio_format: "mp3"
+              audio_sample_rate: "48000"
+              audio_bit_depth: "source"
+              audio_bitrate: "320k"
+              audio_resampler: "soxr"
+              audio_video_container: "source"
+              mp3_lame_preset: "insane"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: opus192
+            group: "lossy"
+            tone: "lossy"
+            label: "Opus 192k"
+            label_ru: "Opus 192k"
+            description: "Modern compact speech/music delivery."
+            description_ru: "Современный компактный формат для речи и музыки."
+            values:
+              audio_workflow: "audio_files"
+              audio_stream_mode: "first"
+              audio_format: "opus"
+              audio_sample_rate: "48000"
+              audio_bit_depth: "source"
+              audio_bitrate: "192k"
+              audio_resampler: "soxr"
+              audio_video_container: "source"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: lufs14_m4a
+            group: "lossy"
+            tone: "lossy"
+            label: "LUFS -14 M4A"
+            label_ru: "LUFS -14 M4A"
+            description: "Two-pass loudnorm to a common streaming loudness target."
+            description_ru: "Двухпроходная нормализация под распространённую streaming loudness-цель."
+            values:
+              audio_workflow: "extract"
+              audio_stream_mode: "first"
+              audio_format: "m4a"
+              audio_sample_rate: "48000"
+              audio_bit_depth: "source"
+              audio_bitrate: "384k"
+              audio_resampler: "soxr"
+              audio_video_container: "source"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "two_pass"
+              audio_lufs: "-14"
+          - id: downmix_wav
+            group: "lossless"
+            tone: "lossless"
+            label: "Stereo WAV"
+            label_ru: "Stereo WAV"
+            description: "Downmix the first audio stream to stereo."
+            description_ru: "Свести первый аудиопоток в стерео."
+            values:
+              audio_workflow: "extract"
+              audio_stream_mode: "first"
+              audio_format: "wav"
+              audio_sample_rate: "48000"
+              audio_bit_depth: "24"
+              audio_bitrate: "384k"
+              audio_resampler: "soxr"
+              audio_video_container: "mov"
+              audio_channel_mode: "stereo"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: matrix51_wav
+            group: "lossless"
+            tone: "lossless"
+            label: "Matrix 5.1"
+            label_ru: "Matrix 5.1"
+            description: "Stereo-compatible DPLII matrix downmix."
+            description_ru: "Стерео-совместимый DPLII matrix downmix."
+            values:
+              audio_workflow: "extract"
+              audio_stream_mode: "first"
+              audio_format: "wav"
+              audio_sample_rate: "48000"
+              audio_bit_depth: "24"
+              audio_bitrate: "384k"
+              audio_resampler: "soxr"
+              audio_video_container: "mov"
+              audio_channel_mode: "stereo"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+              matrix_51: true
+          - id: copy_all_audio
+            group: "copy"
+            tone: "copy"
+            label: "Copy all"
+            label_ru: "Copy all"
+            description: "Extract every audio stream without re-encoding."
+            description_ru: "Извлечь каждый аудиопоток без перекодирования."
+            values:
+              audio_workflow: "extract"
+              audio_stream_mode: "all"
+              audio_format: "copy"
+              audio_sample_rate: "source"
+              audio_bit_depth: "source"
+              audio_bitrate: "384k"
+              audio_resampler: "auto"
+              audio_copy_container: "auto"
+              audio_video_container: "source"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "off"
+              audio_lufs: "off"
+          - id: lufs_report
+            group: "utility"
+            group_label: "Analysis"
+            group_label_ru: "Анализ"
+            tone: "utility"
+            label: "LUFS report"
+            label_ru: "LUFS отчёт"
+            description: "Analyze loudness and write report without encoding."
+            description_ru: "Проанализировать громкость и записать отчёт без кодирования."
+            values:
+              audio_workflow: "extract"
+              audio_stream_mode: "first"
+              audio_format: "m4a"
+              audio_sample_rate: "source"
+              audio_bit_depth: "source"
+              audio_bitrate: "384k"
+              audio_resampler: "auto"
+              audio_video_container: "source"
+              audio_channel_mode: "keep"
+              audio_lufs_mode: "report"
+              audio_lufs: "-23"
+      - id: audio_workflow
+        type: "radio"
+        choice_style: "segmented"
+        group: "workflow"
+        span: "full"
+        layout: "three_columns"
+        refresh_on_change: true
+        label: "Audio workflow"
+        label_ru: "Режим аудио"
+        default: "extract"
+        options:
+          - value: "extract"
+            label: "Extract audio"
+            label_ru: "Извлечь аудио"
+            tooltip: "Create separate audio files from video containers. Video is not copied to the output."
+            tooltip_ru: "Создать отдельные аудиофайлы из видео-контейнеров. Видео в результат не копируется."
+          - value: "in_video"
+            label: "Update video audio"
+            label_ru: "Звук в видео"
+            tooltip: "Create a new video file with video streams copied and selected audio streams changed in-container."
+            tooltip_ru: "Создать новый видеофайл: видеопотоки копируются, выбранные аудиопотоки меняются внутри контейнера."
+          - value: "audio_files"
+            label: "Convert audio"
+            label_ru: "Конвертировать аудио"
+            tooltip: "Process standalone audio files from Source, such as WAV, FLAC, M4A, MP3, AAC or Opus."
+            tooltip_ru: "Обработать отдельные аудиофайлы из Source: WAV, FLAC, M4A, MP3, AAC или Opus."
+      - id: input_formats
+        type: "checkboxes"
+        group: "source"
+        label: "Source file filter"
+        label_ru: "Фильтр файлов источника"
+        hint: "Source is scanned recursively; OUT keeps the same subfolder structure."
+        hint_ru: "Source обходится рекурсивно; OUT сохраняет такую же структуру подпапок."
+        default: []
+        options:
+          - {value: "wav", label: "WAV", label_ru: "WAV"}
+          - {value: "w64", label: "W64", label_ru: "W64"}
+          - {value: "flac", label: "FLAC", label_ru: "FLAC"}
+          - {value: "m4a", label: "M4A", label_ru: "M4A"}
+          - {value: "m4b", label: "M4B", label_ru: "M4B"}
+          - {value: "mp3", label: "MP3", label_ru: "MP3"}
+          - {value: "aac", label: "AAC", label_ru: "AAC"}
+          - {value: "ac3", label: "AC3", label_ru: "AC3"}
+          - {value: "eac3", label: "E-AC3", label_ru: "E-AC3"}
+          - {value: "dts", label: "DTS", label_ru: "DTS"}
+          - {value: "opus", label: "Opus", label_ru: "Opus"}
+          - {value: "oga", label: "OGA", label_ru: "OGA"}
+          - {value: "ogg", label: "OGG", label_ru: "OGG"}
+          - {value: "aif", label: "AIF", label_ru: "AIF"}
+          - {value: "aiff", label: "AIFF", label_ru: "AIFF"}
+          - {value: "caf", label: "CAF", label_ru: "CAF"}
+          - {value: "au", label: "AU", label_ru: "AU"}
+          - {value: "snd", label: "SND", label_ru: "SND"}
+          - {value: "mka", label: "MKA", label_ru: "MKA"}
+          - {value: "ape", label: "APE", label_ru: "APE"}
+          - {value: "wv", label: "WV", label_ru: "WV"}
+          - {value: "tak", label: "TAK", label_ru: "TAK"}
+          - {value: "tta", label: "TTA", label_ru: "TTA"}
+          - {value: "mpc", label: "MPC", label_ru: "MPC"}
+          - {value: "amr", label: "AMR", label_ru: "AMR"}
+          - {value: "awb", label: "AWB", label_ru: "AWB"}
+          - {value: "spx", label: "SPX", label_ru: "SPX"}
+          - {value: "dsf", label: "DSF", label_ru: "DSF"}
+          - {value: "dff", label: "DFF", label_ru: "DFF"}
+          - {value: "mp4", label: "MP4", label_ru: "MP4"}
+          - {value: "m4v", label: "M4V", label_ru: "M4V"}
+          - {value: "mov", label: "MOV", label_ru: "MOV"}
+          - {value: "mkv", label: "MKV", label_ru: "MKV"}
+          - {value: "mxf", label: "MXF", label_ru: "MXF"}
+          - {value: "avi", label: "AVI", label_ru: "AVI"}
+          - {value: "webm", label: "WEBM", label_ru: "WEBM"}
+          - {value: "mpg", label: "MPG", label_ru: "MPG"}
+          - {value: "mpeg", label: "MPEG", label_ru: "MPEG"}
+          - {value: "mts", label: "MTS", label_ru: "MTS"}
+          - {value: "m2ts", label: "M2TS", label_ru: "M2TS"}
+          - {value: "ts", label: "TS", label_ru: "TS"}
+          - {value: "3gp", label: "3GP", label_ru: "3GP"}
+      - id: audio_format
+        type: "radio"
+        choice_style: "buttons"
+        group: "format"
+        layout: "three_columns"
+        span: "full"
+        refresh_on_change: true
+        label: "Format"
+        label_ru: "Формат"
+        default: "wav"
+        options:
+          - {value: "copy", label: "Copy", label_ru: "Copy"}
+          - {value: "wav", label: "WAV", label_ru: "WAV"}
+          - {value: "flac", label: "FLAC", label_ru: "FLAC"}
+          - {value: "alac", label: "ALAC", label_ru: "ALAC"}
+          - {value: "m4a", label: "M4A / AAC", label_ru: "M4A / AAC"}
+          - {value: "mp3", label: "MP3", label_ru: "MP3"}
+          - {value: "opus", label: "Opus", label_ru: "Opus"}
+      - id: audio_copy_container
+        type: "radio"
+        choice_style: "buttons"
+        group: "format"
+        layout: "four_columns"
+        span: "full"
+        visible_if:
+          all:
+            - audio_format: "copy"
+            - audio_workflow: ["extract", "audio_files"]
+        label: "Copy container"
+        label_ru: "Контейнер Copy"
+        default: "auto"
+        options:
+          - value: "auto"
+            label: "Auto"
+            label_ru: "Auto"
+            tooltip: "Pick a practical container from codec and channels: stereo AAC becomes M4A; AC3/E-AC3/DTS become native codec files; unsupported or multichannel AAC falls back to MKA."
+            tooltip_ru: "Подобрать контейнер по кодеку и каналам: stereo AAC станет M4A; AC3/E-AC3/DTS станут родными файлами кодека; неподдержанное или многоканальное AAC уйдёт в MKA."
+          - value: "m4a"
+            label: "M4A"
+            label_ru: "M4A"
+            tooltip: "Force M4A when the copied codec is compatible with M4A, otherwise fall back to MKA."
+            tooltip_ru: "Принудительно M4A для совместимых потоков, иначе fallback в MKA."
+          - value: "mka"
+            label: "MKA"
+            label_ru: "MKA"
+            tooltip: "Force Matroska audio for every copied stream."
+            tooltip_ru: "Принудительно Matroska Audio для каждого копируемого потока."
+          - value: "elementary"
+            label: "Codec file"
+            label_ru: "Файл кодека"
+            tooltip: "Write native codec files when possible, for example AAC, AC3, E-AC3, DTS, FLAC or MP3."
+            tooltip_ru: "Писать родные файлы кодека, где возможно: AAC, AC3, E-AC3, DTS, FLAC или MP3."
+      - id: audio_sample_rate
+        type: "radio"
+        group: "format"
+        choice_style: "buttons"
+        layout: "four_columns"
+        hidden_if: {audio_format: "copy"}
+        label: "Sample rate"
+        label_ru: "Частота дискретизации"
+        default: "48000"
+        options:
+          - {value: "source", label: "COPY", label_ru: "COPY"}
+          - {value: "44100", label: "44.1 kHz", label_ru: "44.1 kHz"}
+          - {value: "48000", label: "48 kHz", label_ru: "48 kHz"}
+          - {value: "88200", label: "88.2 kHz", label_ru: "88.2 kHz"}
+          - {value: "96000", label: "96 kHz", label_ru: "96 kHz"}
+          - {value: "176400", label: "176.4 kHz", label_ru: "176.4 kHz"}
+          - {value: "192000", label: "192 kHz", label_ru: "192 kHz"}
+      - id: audio_bit_depth
+        type: "radio"
+        group: "format"
+        choice_style: "buttons"
+        layout: "four_columns"
+        hidden_if: {audio_format: "copy"}
+        label: "Bit depth"
+        label_ru: "Разрядность"
+        default: "24"
+        options:
+          - {value: "source", label: "COPY", label_ru: "COPY"}
+          - {value: "16", label: "16-bit", label_ru: "16-bit"}
+          - {value: "24", label: "24-bit", label_ru: "24-bit"}
+          - {value: "32f", label: "32-bit float", label_ru: "32-bit float"}
+      - id: audio_resampler
+        type: "radio"
+        choice_style: "buttons"
+        group: "format"
+        layout: "horizontal"
+        hidden_if: {audio_format: "copy"}
+        label: "Resampler"
+        label_ru: "Ресемплер"
+        default: "soxr"
+        options:
+          - {value: "soxr", label: "SoX 100% quality", label_ru: "SoX 100% quality"}
+      - id: audio_video_container
+        type: "radio"
+        choice_style: "buttons"
+        group: "format"
+        layout: "three_columns"
+        visible_if: {audio_workflow: "in_video"}
+        label: "Video container"
+        label_ru: "Контейнер видео"
+        default: "source"
+        options:
+          - {value: "source", label: "Source", label_ru: "Исходный"}
+          - {value: "mov", label: "MOV", label_ru: "MOV", disabled_if: {audio_format: ["flac", "opus"]}}
+          - {value: "mkv", label: "MKV", label_ru: "MKV"}
+          - {value: "mp4", label: "MP4", label_ru: "MP4", disabled_if: {audio_format: ["wav", "flac"]}}
+          - {value: "mxf", label: "MXF", label_ru: "MXF", disabled_if: {audio_format: ["flac", "alac", "m4a", "mp3", "opus"]}}
+      - <<: *audio_bitrate
+        group: "format"
+        visible_if:
+          any:
+            - {audio_format: ["m4a", "opus"]}
+            - {all: [{audio_format: "mp3"}, {mp3_lame_preset: "bitrate"}]}
+      - id: audio_stream_mode
+        type: "radio"
+        choice_style: "buttons"
+        group: "streams"
+        layout: "four_columns"
+        span: "full"
+        refresh_on_change: true
+        label: "Audio streams"
+        label_ru: "Аудиопотоки"
+        default: "first"
+        options:
+          - {value: "first", label: "First stream", label_ru: "Первый поток"}
+          - {value: "all", label: "All streams", label_ru: "Все потоки"}
+          - {value: "index", label: "By index", label_ru: "По индексу"}
+          - {value: "language", label: "By language", label_ru: "По языку"}
+      - id: audio_stream_index
+        type: "number"
+        group: "streams"
+        visible_if: {audio_stream_mode: "index"}
+        label: "Stream index"
+        label_ru: "Индекс потока"
+        default: 0
+        min: 0
+        max: 32
+        step: 1
+      - id: audio_language
+        type: "select"
+        group: "streams"
+        visible_if: {audio_stream_mode: "language"}
+        label: "Language tag"
+        label_ru: "Язык"
+        default: ""
+        options:
+          - {value: "", label: "Not selected", label_ru: "Не выбран"}
+          - {value: "eng", label: "English (eng)", label_ru: "Английский (eng)"}
+          - {value: "ara", label: "Arabic (ara)", label_ru: "Арабский (ara)"}
+          - {value: "spa", label: "Spanish (spa)", label_ru: "Испанский (spa)"}
+          - {value: "ita", label: "Italian (ita)", label_ru: "Итальянский (ita)"}
+          - {value: "zho", label: "Chinese (zho)", label_ru: "Китайский (zho)"}
+          - {value: "kor", label: "Korean (kor)", label_ru: "Корейский (kor)"}
+          - {value: "deu", label: "German (deu)", label_ru: "Немецкий (deu)"}
+          - {value: "pol", label: "Polish (pol)", label_ru: "Польский (pol)"}
+          - {value: "por", label: "Portuguese (por)", label_ru: "Португальский (por)"}
+          - {value: "rus", label: "Russian (rus)", label_ru: "Русский (rus)"}
+          - {value: "ukr", label: "Ukrainian (ukr)", label_ru: "Украинский (ukr)"}
+          - {value: "fra", label: "French (fra)", label_ru: "Французский (fra)"}
+          - {value: "jpn", label: "Japanese (jpn)", label_ru: "Японский (jpn)"}
+      - id: audio_lufs
+        type: "radio"
+        choice_style: "buttons"
+        layout: "four_columns"
+        group: "mastering"
+        visible_if:
+          all:
+            - audio_lufs_mode: ["report", "one_pass", "two_pass"]
+            - not: {audio_format: "copy"}
+        label: "LUFS"
+        label_ru: "LUFS"
+        default: "off"
+        options:
+          - {value: "off", label: "Off", label_ru: "Выкл."}
+          - {value: "-14", label: "-14", label_ru: "-14"}
+          - {value: "-16", label: "-16", label_ru: "-16"}
+          - {value: "-23", label: "-23", label_ru: "-23"}
+      - id: audio_lufs_mode
+        type: "radio"
+        choice_style: "buttons"
+        layout: "four_columns"
+        group: "mastering"
+        refresh_on_change: true
+        hidden_if: {audio_format: "copy"}
+        label: "LUFS mode"
+        label_ru: "Режим LUFS"
+        default: "off"
+        options:
+          - {value: "off", label: "Off", label_ru: "Выкл."}
+          - {value: "report", label: "Report only", label_ru: "Только отчёт"}
+          - {value: "one_pass", label: "One-pass", label_ru: "Один проход"}
+          - {value: "two_pass", label: "Two-pass", label_ru: "Два прохода"}
+      - id: audio_channel_mode
+        type: "radio"
+        choice_style: "buttons"
+        group: "channels"
+        layout: "four_columns"
+        span: "full"
+        refresh_on_change: true
+        hidden_if: {audio_format: "copy"}
+        label: "Channels"
+        label_ru: "Каналы"
+        default: "keep"
+        options:
+          - {value: "keep", label: "Keep", label_ru: "Сохранить"}
+          - {value: "stereo", label: "Stereo", label_ru: "Stereo"}
+          - {value: "mono", label: "Mono", label_ru: "Mono"}
+          - {value: "dual_mono", label: "Dual mono", label_ru: "Dual mono"}
+      - id: matrix_51
+        type: "checkbox"
+        group: "channels"
+        visible_if:
+          all:
+            - {audio_channel_mode: "stereo"}
+            - not: {audio_format: "copy"}
+        label: "5.1 Matrix"
+        label_ru: "5.1 Matrix"
+        hint: "Adds DPLII-style matrix encoding while downmixing to stereo."
+        hint_ru: "Добавляет DPLII matrix-совместимость при сведении в стерео."
+        default: false
+      - <<: *mp3_lame_preset_encode
+        group: "format"
+        visible_if: {audio_format: "mp3"}
+      - *overwrite
+      - *limit_first_file
+      - *dry_run
+    children:
+      - id: audio_run
+        title: "Run audio"
+        title_ru: "Запустить аудио"
+        description: "Process audio with the selected preset."
+        description_ru: "Обработать аудио выбранным пресетом."
+        service: "system_core.services.media_service:audio_process"
+        kind: "safe"
+
+  - id: archive
+    title: "Archive"
+    title_ru: "Архив"
+    description: "Long-term master formats: FFV1 and x264 lossless."
+    description_ru: "Долговременные мастер-форматы: FFV1 и x264 lossless."
+    fields:
+      - id: archive_profile
+        type: "profile_buttons"
+        label: "Archive preset"
+        label_ru: "Архивный пресет"
+        default: "ffv1_mkv"
+        presets:
+          - id: ffv1_mkv
+            label: "FFV1 MKV + FLAC"
+            label_ru: "FFV1 MKV + FLAC"
+            tone: "lossless"
+            description: "Archive master with all streams mapped and FLAC audio."
+            description_ru: "Архивный мастер со всеми потоками и FLAC аудио."
+            values:
+              target_codecs: ["ffv1"]
+              audio_mode: "flac"
+              output_container: "mkv"
+              pix_fmt: "auto"
+          - id: x264_lossless_mkv
+            label: "x264 lossless MKV"
+            label_ru: "x264 lossless MKV"
+            tone: "lossless"
+            description: "CRF 0 x264 archive variant, useful when FFV1 is too heavy."
+            description_ru: "CRF 0 x264 как архивный вариант, когда FFV1 слишком тяжелый."
+            values:
+              target_codecs: ["x264_lossless"]
+              audio_mode: "source"
+              output_container: "mkv"
+              pix_fmt: "auto"
+          - id: dual_archive
+            label: "FFV1 + x264 lossless"
+            label_ru: "FFV1 + x264 lossless"
+            tone: "lossless"
+            description: "Create both archive formats sequentially."
+            description_ru: "Последовательно создать оба архивных формата."
+            values:
+              target_codecs: ["ffv1", "x264_lossless"]
+              audio_mode: "flac"
+              output_container: "mkv"
+              pix_fmt: "auto"
+      - *input_video_formats
+      - id: target_codecs
+        type: "checkboxes"
+        label: "Archive formats"
+        label_ru: "Архивные форматы"
+        default: []
+        min_selected: 1
+        options:
+          - {value: "ffv1", label: "FFV1", label_ru: "FFV1"}
+          - {value: "x264_lossless", label: "x264 lossless", label_ru: "x264 lossless"}
+      - *decode_backend
+      - *audio_mode
+      - *audio_sample_rate
+      - *mp3_lame_preset_encode
+      - *audio_bitrate
+      - *cpu_encoder_preset
+      - *pix_fmt
+      - *encode_tuning
+      - *overwrite
+      - *limit_first_file
+      - *dry_run
+    children:
+      - id: archive_run
+        title: "Create archive"
+        title_ru: "Создать архив"
+        description: "Encode selected archive targets."
+        description_ru: "Кодировать выбранные архивные форматы."
+        service: "system_core.services.media_service:encode_targets"
+        kind: "safe"
+
+  - id: editing
+    title: "Editing codecs"
+    title_ru: "Монтажные кодеки"
+    description: "Mezzanine formats for NLE work: ProRes and DNxHR. Each target defines its own pixel format."
+    description_ru: "Промежуточные форматы для монтажа: ProRes и DNxHR. Pixel format задаётся самой монтажной целью."
+    fields:
+      - id: editing_profile
+        type: "profile_buttons"
+        label: "Editing preset"
+        label_ru: "Монтажный пресет"
+        default: "prores_422_mov"
+        presets:
+          - {id: "prores_proxy_mov", label: "Proxy", label_ru: "Proxy", group: "prores_mov", group_label: "ProRes · MOV", group_label_ru: "ProRes · MOV", tone: "lossless", description_ru: "Лёгкий proxy для отзывчивого монтажа.", values: {target_codecs: ["prores_proxy"], output_container: "mov", audio_mode: "pcm_s16", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_lt_mov", label: "LT", label_ru: "LT", group: "prores_mov", group_label: "ProRes · MOV", group_label_ru: "ProRes · MOV", tone: "lossless", description_ru: "Облегчённый монтажный ProRes.", values: {target_codecs: ["prores_lt"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_422_mov", label: "422", label_ru: "422", group: "prores_mov", group_label: "ProRes · MOV", group_label_ru: "ProRes · MOV", tone: "lossless", description_ru: "Сбалансированный 10-bit 4:2:2 mezzanine.", values: {target_codecs: ["prores_422"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_hq_mov", label: "HQ", label_ru: "HQ", group: "prores_mov", group_label: "ProRes · MOV", group_label_ru: "ProRes · MOV", tone: "lossless", description_ru: "Высокобитрейтный ProRes 422 HQ.", values: {target_codecs: ["prores_hq"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_proxy_mxf", label: "Proxy", label_ru: "Proxy", group: "prores_mxf", group_label: "ProRes · MXF", group_label_ru: "ProRes · MXF", tone: "lossless", description_ru: "ProRes Proxy в MXF с PCM 16-bit.", values: {target_codecs: ["prores_proxy"], output_container: "mxf", audio_mode: "pcm_s16", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_lt_mxf", label: "LT", label_ru: "LT", group: "prores_mxf", group_label: "ProRes · MXF", group_label_ru: "ProRes · MXF", tone: "lossless", description_ru: "ProRes LT в MXF с PCM 24-bit.", values: {target_codecs: ["prores_lt"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_422_mxf", label: "422", label_ru: "422", group: "prores_mxf", group_label: "ProRes · MXF", group_label_ru: "ProRes · MXF", tone: "lossless", description_ru: "ProRes 422 в MXF с PCM 24-bit.", values: {target_codecs: ["prores_422"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_hq_mxf", label: "HQ", label_ru: "HQ", group: "prores_mxf", group_label: "ProRes · MXF", group_label_ru: "ProRes · MXF", tone: "lossless", description_ru: "ProRes 422 HQ в MXF с PCM 24-bit.", values: {target_codecs: ["prores_hq"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "dnxhr_hq_mov", label: "HQ", label_ru: "HQ", group: "dnxhr_mov", group_label: "DNxHR · MOV", group_label_ru: "DNxHR · MOV", tone: "lossless", description_ru: "DNxHR HQ 8-bit в MOV.", values: {target_codecs: ["dnxhr_hq"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p"}}
+          - {id: "dnxhr_hqx_mov", label: "HQX", label_ru: "HQX", group: "dnxhr_mov", group_label: "DNxHR · MOV", group_label_ru: "DNxHR · MOV", tone: "lossless", description_ru: "DNxHR HQX 10-bit в MOV.", values: {target_codecs: ["dnxhr_hqx"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "dnxhr_hq_mxf", label: "HQ", label_ru: "HQ", group: "dnxhr_mxf", group_label: "DNxHR · MXF", group_label_ru: "DNxHR · MXF", tone: "lossless", description_ru: "DNxHR HQ 8-bit в MXF с PCM 24-bit.", values: {target_codecs: ["dnxhr_hq"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p"}}
+          - {id: "dnxhr_hqx_mxf", label: "HQX", label_ru: "HQX", group: "dnxhr_mxf", group_label: "DNxHR · MXF", group_label_ru: "DNxHR · MXF", tone: "lossless", description_ru: "DNxHR HQX 10-bit в MXF с PCM 24-bit.", values: {target_codecs: ["dnxhr_hqx"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+      - *input_video_formats
+      - id: target_codecs
+        type: "checkboxes"
+        label: "Editing targets"
+        label_ru: "Монтажные цели"
+        default: []
+        min_selected: 1
+        options:
+          - {value: "prores_proxy", label: "ProRes Proxy", label_ru: "ProRes Proxy"}
+          - {value: "prores_lt", label: "ProRes LT", label_ru: "ProRes LT"}
+          - {value: "prores_422", label: "ProRes 422", label_ru: "ProRes 422"}
+          - {value: "prores_hq", label: "ProRes HQ", label_ru: "ProRes HQ"}
+          - {value: "dnxhr_hq", label: "DNxHR HQ", label_ru: "DNxHR HQ"}
+          - {value: "dnxhr_hqx", label: "DNxHR HQX", label_ru: "DNxHR HQX"}
+      - *decode_backend
+      - *mxf_safe_audio_mode
+      - *audio_sample_rate
+      - *mp3_lame_preset_encode
+      - *audio_bitrate
+      - *editing_output_container
+      - *output_resolution
+      - *overwrite
+      - *limit_first_file
+      - *dry_run
+    children:
+      - id: editing_run
+        title: "Create editing files"
+        title_ru: "Создать монтажные файлы"
+        description: "Encode selected mezzanine targets."
+        description_ru: "Кодировать выбранные монтажные цели."
+        service: "system_core.services.media_service:encode_targets"
+        kind: "safe"
+
+  - id: storage
+    title: "Storage"
+    title_ru: "Хранение"
+    description: "Compact high-quality files for a library or handoff."
+    description_ru: "Компактные качественные файлы для библиотеки или передачи."
+    fields:
+      - id: storage_profile
+        type: "profile_buttons"
+        label: "Storage preset"
+        label_ru: "Пресет хранения"
+        default: "x264_crf14"
+        presets:
+          - id: x264_crf14
+            label: "x264 CRF 14"
+            label_ru: "x264 CRF 14"
+            tone: "lossy"
+            description: "Strong general-purpose H.264 storage encode."
+            description_ru: "Универсальное качественное H.264-хранение."
+            values:
+              target_codecs: ["x264"]
+              encode_backend: "cpu"
+              decode_backend: "auto"
+              output_container: "mp4"
+              output_resolution: "source"
+              audio_mode: "source"
+              audio_bitrate: "384k"
+              crf: 14
+              cpu_encoder_preset: "slow"
+              pix_fmt: "yuv420p"
+          - id: x264_1080_crf14
+            label: "x264 1080p CRF 14"
+            label_ru: "x264 1080p CRF 14"
+            tone: "lossy"
+            description: "Downscale 4K sources to high-quality 1080p."
+            description_ru: "Даунскейл 4K в качественный 1080p."
+            values:
+              target_codecs: ["x264"]
+              encode_backend: "cpu"
+              decode_backend: "auto"
+              output_container: "mp4"
+              output_resolution: "1080"
+              audio_mode: "aac_320"
+              audio_bitrate: "384k"
+              crf: 14
+              cpu_encoder_preset: "slow"
+              pix_fmt: "yuv420p"
+          - id: hevc10_crf14
+            label: "HEVC Main10 CRF 14"
+            label_ru: "HEVC Main10 CRF 14"
+            tone: "lossy"
+            description: "10-bit HEVC storage with smaller files."
+            description_ru: "10-bit HEVC для меньших файлов при хорошем качестве."
+            values:
+              target_codecs: ["hevc_x265"]
+              encode_backend: "cpu"
+              decode_backend: "auto"
+              output_container: "mp4"
+              output_resolution: "source"
+              audio_mode: "source"
+              audio_bitrate: "384k"
+              crf: 14
+              cpu_encoder_preset: "slow"
+              pix_fmt: "yuv420p10le"
+          - id: svt_av1_crf14
+            label: "SVT-AV1 CRF 14"
+            label_ru: "SVT-AV1 CRF 14"
+            tone: "lossy"
+            description: "Modern long-term storage codec when decode support is acceptable."
+            description_ru: "Современный кодек хранения, если поддержка декодирования подходит."
+            values:
+              target_codecs: ["svt_av1"]
+              encode_backend: "cpu"
+              decode_backend: "auto"
+              output_container: "mkv"
+              output_resolution: "source"
+              audio_mode: "source"
+              audio_bitrate: "384k"
+              crf: 14
+              av1_preset: "6"
+              pix_fmt: "yuv420p10le"
+      - *input_video_formats
+      - id: target_codecs
+        type: "checkboxes"
+        label: "Storage codecs"
+        label_ru: "Кодеки хранения"
+        default: []
+        min_selected: 1
+        options:
+          - {value: "x264", label: "x264 / H.264", label_ru: "x264 / H.264"}
+          - {value: "hevc_x265", label: "x265 / HEVC", label_ru: "x265 / HEVC"}
+          - {value: "svt_av1", label: "AV1", label_ru: "AV1", tooltip: "AV1 output. CPU encodes it with SVT-AV1; NVENC, QSV and AMF encode it with av1_nvenc, av1_qsv or av1_amf.", tooltip_ru: "Вывод AV1. На CPU кодируется через SVT-AV1; NVENC, QSV и AMF используют av1_nvenc, av1_qsv или av1_amf."}
+      - *encode_backend
+      - *decode_backend
+      - *audio_mode
+      - *audio_sample_rate
+      - *mp3_lame_preset_encode
+      - *audio_bitrate
+      - *output_container
+      - *cpu_encoder_preset
+      - *nvenc_preset
+      - *qsv_encoder_preset
+      - *amf_quality
+      - *output_resolution
+      - *av1_preset
+      - *pix_fmt
+      - *crf
+      - *cq
+      - *encode_tuning
+      - *overwrite
+      - *limit_first_file
+      - *dry_run
+    children:
+      - id: storage_run
+        title: "Encode storage files"
+        title_ru: "Кодировать хранение"
+        description: "Encode selected storage targets."
+        description_ru: "Кодировать выбранные цели хранения."
+        service: "system_core.services.media_service:encode_targets"
+        kind: "safe"
+
+  - id: delivery
+    title: "Delivery / publishing"
+    title_ru: "Доставка / публикация"
+    description: "Review, upload and streaming-oriented encodes."
+    description_ru: "Кодирование для просмотра, заливки и публикации."
+    fields:
+      - id: delivery_profile
+        type: "profile_buttons"
+        label: "Delivery preset"
+        label_ru: "Пресет публикации"
+        default: "review_h264"
+        presets:
+          - id: review_h264
+            label: "Review H.264"
+            label_ru: "Review H.264"
+            tone: "lossy"
+            description: "Fast MP4 review encode, good enough to send around."
+            description_ru: "Быстрый MP4 для просмотра и отправки."
+            values:
+              target_codecs: ["x264"]
+              encode_backend: "cpu"
+              decode_backend: "auto"
+              output_container: "mp4"
+              output_resolution: "1080"
+              audio_mode: "aac_320"
+              audio_bitrate: "384k"
+              crf: 14
+              cpu_encoder_preset: "fast"
+              pix_fmt: "yuv420p"
+          - id: upload_h264
+            label: "Upload H.264"
+            label_ru: "Upload H.264"
+            tone: "lossy"
+            description: "Cleaner H.264 MP4 for video platforms."
+            description_ru: "Более чистый H.264 MP4 для видеоплатформ."
+            values:
+              target_codecs: ["x264"]
+              encode_backend: "cpu"
+              decode_backend: "auto"
+              output_container: "mp4"
+              output_resolution: "source"
+              audio_mode: "aac_320"
+              audio_bitrate: "384k"
+              crf: 14
+              cpu_encoder_preset: "slow"
+              pix_fmt: "yuv420p"
+          - id: upload_hevc10
+            label: "Upload HEVC 10-bit"
+            label_ru: "Upload HEVC 10-bit"
+            tone: "lossy"
+            description: "HEVC Main10 for platforms that accept it."
+            description_ru: "HEVC Main10 для платформ, которые его принимают."
+            values:
+              target_codecs: ["hevc_x265"]
+              encode_backend: "cpu"
+              decode_backend: "auto"
+              output_container: "mp4"
+              output_resolution: "source"
+              audio_mode: "aac_320"
+              audio_bitrate: "384k"
+              crf: 14
+              cpu_encoder_preset: "slow"
+              pix_fmt: "yuv420p10le"
+          - id: svt_av1_delivery
+            label: "SVT-AV1 delivery"
+            label_ru: "SVT-AV1 delivery"
+            tone: "lossy"
+            description: "AV1 encode for modern delivery tests."
+            description_ru: "AV1-кодирование для современных публикаций и тестов."
+            values:
+              target_codecs: ["svt_av1"]
+              encode_backend: "cpu"
+              decode_backend: "auto"
+              output_container: "mp4"
+              output_resolution: "1080"
+              audio_mode: "aac_320"
+              audio_bitrate: "384k"
+              crf: 14
+              av1_preset: "8"
+              pix_fmt: "yuv420p10le"
+      - *input_video_formats
+      - id: target_codecs
+        type: "checkboxes"
+        label: "Delivery codecs"
+        label_ru: "Кодеки публикации"
+        default: []
+        min_selected: 1
+        options:
+          - {value: "x264", label: "x264 / H.264", label_ru: "x264 / H.264"}
+          - {value: "hevc_x265", label: "x265 / HEVC", label_ru: "x265 / HEVC"}
+          - {value: "svt_av1", label: "AV1", label_ru: "AV1", tooltip: "AV1 output. CPU encodes it with SVT-AV1; NVENC, QSV and AMF encode it with av1_nvenc, av1_qsv or av1_amf.", tooltip_ru: "Вывод AV1. На CPU кодируется через SVT-AV1; NVENC, QSV и AMF используют av1_nvenc, av1_qsv или av1_amf."}
+      - *encode_backend
+      - *decode_backend
+      - *audio_mode
+      - *audio_sample_rate
+      - *mp3_lame_preset_encode
+      - *audio_bitrate
+      - *output_container
+      - *cpu_encoder_preset
+      - *nvenc_preset
+      - *qsv_encoder_preset
+      - *amf_quality
+      - *output_resolution
+      - *av1_preset
+      - *pix_fmt
+      - *crf
+      - *cq
+      - *encode_tuning
+      - *overwrite
+      - *limit_first_file
+      - *dry_run
+    children:
+      - id: delivery_run
+        title: "Encode delivery files"
+        title_ru: "Кодировать публикацию"
+        description: "Encode selected delivery targets."
+        description_ru: "Кодировать выбранные цели публикации."
+        service: "system_core.services.media_service:encode_targets"
+        kind: "safe"
+
+  - id: remux
+    title: "Package / remux"
+    title_ru: "Упаковка / remux"
+    description: "Change containers without re-encoding where possible."
+    description_ru: "Менять контейнеры без перекодирования, где возможно."
+    fields:
+      - id: remux_stream_mode
+        type: "radio"
+        group: "streams"
+        choice_style: "buttons"
+        layout: "three_columns"
+        span: "full"
+        label: "Pipeline"
+        label_ru: "Пайплайн"
+        default: "video_audio"
+        refresh_on_change: true
+        options:
+          - {value: "video", label: "Video", label_ru: "Video", tone: "copy", tooltip: "Keep video streams only and write them to the selected output container.", tooltip_ru: "Оставить только видеотреки и записать их в выбранный контейнер."}
+          - {value: "audio", label: "Audio", label_ru: "Audio", tone: "copy", tooltip: "Extract/copy audio streams to the selected audio container.", tooltip_ru: "Отделить/скопировать аудиотреки в выбранный аудиоконтейнер."}
+          - {value: "video_audio", label: "Video&Audio", label_ru: "Video&Audio", tone: "copy", tooltip: "Copy video and audio streams together into one output container.", tooltip_ru: "Скопировать видео и аудио вместе в один выходной контейнер."}
+      - id: remux_target_format
+        type: "remux_format"
+        group: "package"
+        span: "full"
+        columns: 4
+        label: "Output container"
+        label_ru: "Контейнер вывода"
+        default: "mp4"
+        visible_if: {remux_stream_mode: ["video", "video_audio"]}
+        options:
+          - {value: "mp4", label: "MP4", label_ru: "MP4"}
+          - {value: "mov", label: "MOV", label_ru: "MOV"}
+          - {value: "mkv", label: "MKV", label_ru: "MKV"}
+          - {value: "mxf", label: "MXF", label_ru: "MXF"}
+      - id: remux_orientation
+        type: "radio"
+        choice_style: "buttons"
+        # Two rows of three rather than one row of six: at six columns the
+        # longest label was clipped by six pixels, and the Russian ones are
+        # longer still.
+        layout: "three_columns"
+        group: "package"
+        span: "full"
+        label: "Which way up"
+        label_ru: "Как разворачивать"
+        default: "none"
+        visible_if: {remux_stream_mode: ["video", "video_audio"]}
+        tooltip: "Writes into the container how the picture should be shown. Nothing is decoded and nothing is re-encoded - the pixels are copied and one header field changes. Offered for H.264 and HEVC camera originals; MP4, MOV and MKV keep it, MXF does not, and the section refuses rather than writing an unturned file."
+        tooltip_ru: "Записывает в контейнер, как показывать картинку. Ничего не декодируется и не перекодируется — пиксели копируются, меняется одно поле в заголовке. Предлагается для камерных H.264 и HEVC; MP4, MOV и MKV это хранят, MXF нет — и раздел откажет, а не выдаст неповёрнутый файл."
+        options:
+          - {value: "none", label: "As shot", label_ru: "Как снято", tone: "copy", tooltip: "Leave the orientation alone.", tooltip_ru: "Не трогать ориентацию."}
+          - {value: "cw90", label: "90 clockwise", label_ru: "90 по часовой", tone: "copy", tooltip: "For a camera turned on its side: a 960x540 file is then shown as 540x960, and the editor opens it upright.", tooltip_ru: "Для камеры, повёрнутой набок: файл 960x540 показывается как 540x960, и монтажка открывает его вертикально."}
+          - {value: "ccw90", label: "90 counter-cw", label_ru: "90 против часовой", tone: "copy", tooltip: "The same turn the other way, for a camera laid on its other side.", tooltip_ru: "Тот же поворот в другую сторону — камера легла на другой бок."}
+          - {value: "turn180", label: "Upside down", label_ru: "Перевернуть", tone: "copy", tooltip: "For a camera that filmed inverted - hung under a gimbal, mounted on a rig, or overhead. The whole take comes back the right way up in the editor.", tooltip_ru: "Для камеры, снимавшей вверх ногами: подвешенной под стабилизатором, закреплённой на риге или сверху. Весь дубль встанет в монтажке правильно."}
+          - {value: "hflip", label: "Mirror left-right", label_ru: "Зеркало по горизонтали", tone: "copy", tooltip: "For a shot filmed through a mirror rig, or a selfie-facing camera.", tooltip_ru: "Для съёмки через зеркальный риг или фронтальной камерой."}
+          - {value: "vflip", label: "Mirror top-bottom", label_ru: "Зеркало по вертикали", tone: "copy", tooltip: "Rarely wanted on its own; some optical rigs need it.", tooltip_ru: "Редко нужно само по себе, но некоторые оптические риги требуют."}
+      - id: remux_audio_target_format
+        type: "remux_format"
+        group: "package"
+        span: "full"
+        columns: 6
+        label: "Audio output container"
+        label_ru: "Аудиоконтейнер вывода"
+        default: "mka"
+        visible_if: {remux_stream_mode: "audio"}
+        options:
+          - {value: "m4a", label: "M4A", label_ru: "M4A"}
+          - {value: "alac", label: "ALAC", label_ru: "ALAC"}
+          - {value: "mka", label: "MKA", label_ru: "MKA"}
+          - {value: "aac", label: "AAC", label_ru: "AAC"}
+          - {value: "ac3", label: "AC3", label_ru: "AC3"}
+          - {value: "eac3", label: "EAC3", label_ru: "EAC3"}
+          - {value: "dts", label: "DTS", label_ru: "DTS"}
+          - {value: "flac", label: "FLAC", label_ru: "FLAC"}
+          - {value: "wav", label: "WAV", label_ru: "WAV"}
+          - {value: "mp3", label: "MP3", label_ru: "MP3"}
+          - {value: "opus", label: "OPUS", label_ru: "OPUS"}
+          - {value: "ogg", label: "OGG", label_ru: "OGG"}
+      - <<: *overwrite
+        group: "run"
+      - <<: *limit_first_file
+        group: "run"
+      - <<: *dry_run
+        group: "run"
+    children:
+      - id: remux_run
+        title: "Run remux"
+        title_ru: "Запустить remux"
+        description: "Run selected packaging operation."
+        description_ru: "Выполнить выбранную упаковку."
+        service: "system_core.services.media_service:remux_media"
+        kind: "safe"
+
+  - id: trim
+    title: "Trim"
+    title_ru: "Обрезка"
+    description: "Cut the head or the tail off camera footage without re-encoding."
+    description_ru: "Отрезать начало или конец у материала с камеры без перекодирования."
+    fields:
+      - id: trim_file
+        # A badge with an arrow on each side: a folder of takes is walked, not
+        # searched, and the name is on screen without opening anything.
+        type: "trim_file_pick"
+        options_source: "system_core.services.media_service:trim_source_file_names"
+        cache_seconds: 5
+        group: "trim"
+        span: "full"
+        label: "File to trim"
+        label_ru: "Какой файл резать"
+        tooltip: "The video files staged in Source, alphabetically. One file is trimmed at a time: takes rarely share a keyframe, let alone a cut point."
+        tooltip_ru: "Видеофайлы из Source по алфавиту. Режется один файл за раз: у дублей редко совпадают ключевые кадры, не говоря о точках реза."
+        default: ""
+      - id: trim_action
+        type: "radio"
+        choice_style: "buttons"
+        layout: "three_columns"
+        group: "trim"
+        span: "full"
+        label: "What to do with the piece between the points"
+        label_ru: "Что сделать с куском между точками"
+        default: "keep"
+        refresh_on_change: true
+        options:
+          - {value: "keep", label: "Keep it", label_ru: "Оставить", tone: "copy", tooltip: "Keeps what lies between the points and drops the rest. Which end goes is already in the fields: IN alone drops the head, OUT alone drops the tail, both drop both ends.", tooltip_ru: "Оставляет то, что между точками, остальное уходит. Какой край уйдёт, уже сказано полями: один IN — уходит начало, один OUT — конец, обе точки — оба края."}
+          - {value: "cut", label: "Cut it out", label_ru: "Вырезать", tone: "copy", tooltip: "The opposite: the piece between IN and OUT goes and the two ends are joined into one file. The tail starts at the first keyframe past OUT - starting earlier would leave part of the removed piece in - and the log says how much more than asked for went.", tooltip_ru: "Наоборот: кусок между IN и OUT уходит, а начало и конец склеиваются в один файл. Хвост начинается с первого ключевого кадра после OUT — раньше нельзя, иначе часть вырезаемого останется, — и журнал говорит, насколько больше запрошенного ушло."}
+          - {value: "split", label: "Split in two", label_ru: "Разделить надвое", tone: "copy", tooltip: "Nothing is discarded: the file is cut at IN into two files, _part1 and _part2.", tooltip_ru: "Ничего не выбрасывается: файл режется в точке IN на два — _part1 и _part2."}
+      - id: trim_start
+        type: "text"
+        group: "trim"
+        label: "IN - start of the kept piece"
+        label_ru: "IN — начало куска"
+        placeholder: "00:00:05,000"
+        tooltip: "Wall-clock position, written as 00:01:28,4 or as plain seconds. The head of a copied stream lands on the nearest keyframe before this point, and the log says where it actually went."
+        tooltip_ru: "Позиция по реальному времени: 00:01:28,4 или просто секунды. Начало копируемого потока ложится на ближайший ключевой кадр перед этой точкой, и журнал говорит, куда оно попало."
+        default: ""
+      - id: trim_end
+        type: "text"
+        group: "trim"
+        label: "OUT - end of the kept piece"
+        label_ru: "OUT — конец куска"
+        placeholder: "00:00:30,000"
+        tooltip: "The tail is counted in frames from the exact rate, so it lands on the frame asked for."
+        tooltip_ru: "Конец считается кадрами по точной дроби частоты, поэтому попадает ровно в запрошенный кадр."
+        default: ""
+      - id: trim_player
+        type: "mpv_transport"
+        group: "trim"
+        span: "full"
+        label: "Player - find the two points"
+        label_ru: "Плеер — найти две точки"
+        tooltip: "Opens the take in mpv. There, `l` sets the A point and `l` again sets B; the piece between them plays in a loop, so the cut is heard before it is written. `,` and `.` step one frame, `b` plays backwards. Then bring A and B here."
+        tooltip_ru: "Открывает дубль в mpv. Там `l` ставит точку A, второе нажатие — B; кусок между ними играет по кругу, и рез слышно до того, как он сделан. `,` и `.` — шаг в кадр, `b` — воспроизведение назад. Дальше перенести A и B сюда."
+        options:
+          - value: "open"
+            label: "Open in the player"
+            label_ru: "Открыть в плеере"
+            tooltip: "Shows the file chosen above. The window stays open between takes, so it can live on a second monitor."
+            tooltip_ru: "Показывает выбранный выше файл. Окно остаётся между дублями — его можно держать на втором мониторе."
+          - value: "both"
+            label: "Take A and B"
+            label_ru: "Взять A и B"
+            tooltip: "The loop set in the player becomes IN and OUT here, to the millisecond."
+            tooltip_ru: "Петля, поставленная в плеере, становится здесь IN и OUT, до миллисекунды."
+          - value: "mark_in"
+            label: "Mark IN"
+            label_ru: "Отметить IN"
+            tooltip: "Takes the position the player stands at, writes it into IN, and moves the player's A point there - so the piece keeps looping and a wrong point is heard at once."
+            tooltip_ru: "Берёт позицию, на которой стоит плеер, пишет её в IN и переносит туда точку A — кусок продолжает играть по кругу, и неверная точка слышна сразу."
+          - value: "mark_out"
+            label: "Mark OUT"
+            label_ru: "Отметить OUT"
+            tooltip: "The same for the end of the piece: the position becomes OUT and the player's B point."
+            tooltip_ru: "То же для конца куска: позиция становится OUT и точкой B в плеере."
+          - value: "close"
+            label: "Close the player"
+            label_ru: "Закрыть плеер"
+            tooltip: "Closes the window. It also closes by itself when the program stops."
+            tooltip_ru: "Закрывает окно. Оно и само закроется, когда программа остановится."
+      - id: trim_container
+        type: "radio"
+        choice_style: "buttons"
+        layout: "five_columns"
+        group: "package"
+        span: "full"
+        label: "Output container"
+        label_ru: "Контейнер вывода"
+        default: "source"
+        options:
+          - {value: "source", label: "As is", label_ru: "Как есть", tooltip: "Keep the container the camera wrote.", tooltip_ru: "Оставить контейнер, в котором снято."}
+          - {value: "mp4", label: "MP4", label_ru: "MP4", tooltip: "MOV from the camera into MP4 for the edit suite, without a single re-encode.", tooltip_ru: "MOV с камеры в MP4 для монтажной, без единого пережатия."}
+          - {value: "mov", label: "MOV", label_ru: "MOV", tooltip: "The safe home for ProRes and for camera PCM audio.", tooltip_ru: "Надёжный дом для ProRes и камерного PCM."}
+          - {value: "mkv", label: "MKV", label_ru: "MKV", tooltip: "Takes anything, but keeps a timecode only as a text tag. Editors may not read it.", tooltip_ru: "Примет что угодно, но таймкод хранит текстовым тегом — монтажка может его не прочитать."}
+          - {value: "mxf", label: "MXF", label_ru: "MXF", tooltip: "Premiere's own working format. PCM audio is rewritten sample-accurately, so the picture and the sound stay exactly where they were. Compressed audio — AAC, AC-3, MP3, FLAC, ALAC — MXF refuses outright; those files are skipped with the reason, and MOV takes them unchanged.", tooltip_ru: "Рабочий формат Premiere. Звук PCM переписывается сэмпл-в-сэмпл, картинка и звук остаются ровно там, где были. Сжатый звук — AAC, AC-3, MP3, FLAC, ALAC — MXF не принимает вовсе: такой файл будет пропущен с объяснением, а MOV возьмёт его как есть."}
+      - id: trim_audio
+        type: "radio"
+        choice_style: "buttons"
+        layout: "two_columns"
+        group: "package"
+        span: "full"
+        label: "Audio"
+        label_ru: "Звук"
+        default: "copy"
+        refresh_on_change: true
+        options:
+          - {value: "copy", label: "Copy", label_ru: "Копировать", tone: "copy", tooltip: "The track is copied as it is, without a generation loss.", tooltip_ru: "Дорожка копируется как есть, без потери поколения."}
+          - {value: "none", label: "Drop", label_ru: "Убрать", tooltip: "A silent file for the edit or for a GIF.", tooltip_ru: "Немой файл для монтажа или для гифки."}
+      - id: trim_audio_channel
+        type: "radio"
+        choice_style: "buttons"
+        layout: "four_columns"
+        group: "package"
+        span: "full"
+        label: "Audio channel"
+        label_ru: "Канал звука"
+        default: "both"
+        visible_if: {trim_audio: "copy"}
+        options:
+          - {value: "both", label: "Both", label_ru: "Оба", tone: "copy", tooltip: "Copy the track untouched.", tooltip_ru: "Копировать дорожку нетронутой."}
+          - {value: "first", label: "First", label_ru: "Первый", tooltip: "Usually the shotgun. Rebuilds the track: free on PCM, a generation on AAC.", tooltip_ru: "Обычно пушка. Дорожка пересобирается: на PCM бесплатно, на AAC — потеря поколения."}
+          - {value: "second", label: "Second", label_ru: "Второй", tooltip: "Usually the lav. Rebuilds the track: free on PCM, a generation on AAC.", tooltip_ru: "Обычно петличка. Дорожка пересобирается: на PCM бесплатно, на AAC — потеря поколения."}
+          - {value: "mono", label: "Fold to mono", label_ru: "Свести в моно", tooltip: "Mix both channels into one.", tooltip_ru: "Смешать оба канала в один."}
+      - id: trim_data
+        type: "checkbox"
+        group: "metadata"
+        label: "Telemetry"
+        label_ru: "Телеметрия"
+        default: true
+        tooltip: "Carries the file's data stream into the result - a GoPro writes its telemetry there, and it would otherwise vanish without a word. MOV and MP4 can hold one; MKV and MXF cannot, and the log says so before the run. A timecode track is left behind on purpose: it travels as a value instead."
+        tooltip_ru: "Переносит поток данных в результат — GoPro пишет туда телеметрию, и она иначе исчезает молча. MOV и MP4 такой поток держат, MKV и MXF нет — журнал скажет об этом до запуска. Дорожка таймкода намеренно остаётся: она переезжает значением."
+      - id: trim_subtitles
+        type: "checkbox"
+        group: "metadata"
+        label: "Subtitles"
+        label_ru: "Субтитры"
+        default: true
+        tooltip: "Carries subtitle streams over. Camera files rarely have them, but a DJI writes its flight data as subtitles, and dropping them loses the flight log."
+        tooltip_ru: "Переносит субтитры. У камерных файлов они редки, но DJI пишет субтитрами данные полёта — выбросить их значит потерять журнал полёта."
+      - id: trim_timecode
+        type: "radio"
+        choice_style: "buttons"
+        layout: "two_columns"
+        group: "metadata"
+        span: "full"
+        label: "Timecode"
+        label_ru: "Таймкод"
+        default: "shift"
+        options:
+          - {value: "shift", label: "Shift", label_ru: "Сдвинуть", tone: "copy", tooltip: "The new start is the old timecode plus the piece that was cut away. This is what the edit syncs cameras by.", tooltip_ru: "Начало нового файла — старый TC плюс отрезанное. Именно по нему на монтаже синхронизируют камеры."}
+          - {value: "zero", label: "Zero", label_ru: "Обнулить", tooltip: "Start at 00:00:00:00, for a file that leaves as a standalone piece.", tooltip_ru: "Начать с 00:00:00:00 — для файла, который уходит наружу сам по себе."}
+      - id: trim_faststart
+        type: "checkbox"
+        group: "metadata"
+        label: "faststart"
+        label_ru: "faststart"
+        tooltip: "Move the header to the front so an MP4 or MOV starts playing before it is fully downloaded."
+        tooltip_ru: "Перенести заголовок в начало, чтобы MP4 или MOV начинал играть, не скачавшись целиком."
+        default: true
+      - <<: *overwrite
+        group: "run"
+      - <<: *limit_first_file
+        group: "run"
+      - <<: *dry_run
+        group: "run"
+    children:
+      - id: trim_run
+        title: "Trim the file"
+        title_ru: "Обрезать файл"
+        description: "Cut on the nearest keyframe, copy the streams, shift the timecode."
+        description_ru: "Резать по ближайшему ключевому кадру, копировать потоки, сдвинуть таймкод."
+        service: "system_core.services.media_service:trim_media"
+        kind: "safe"
+
+  - id: fps
+    title: "FPS / cadence"
+    title_ru: "FPS / частота"
+    description: "Read the source FPS from each video stream, then choose conversion mode and target."
+    description_ru: "Исходный FPS берётся из видеопотока; выбираются режим и целевая частота."
+    fields:
+      - *input_video_formats
+      - id: fps_mode
+        type: "radio"
+        choice_style: "buttons"
+        layout: "two_columns"
+        group: "fps"
+        label: "Conversion mode"
+        label_ru: "Режим пересчёта"
+        default: "varispeed"
+        options:
+          - {value: "varispeed", label: "Varispeed", label_ru: "Varispeed"}
+          - {value: "conform", label: "Conform", label_ru: "Conform"}
+      - id: fps_target
+        type: "radio"
+        choice_style: "buttons"
+        layout: "four_columns"
+        group: "fps"
+        label: "Target FPS"
+        label_ru: "Целевая частота"
+        default: "24000/1001"
+        options:
+          - {value: "16", label: "16", label_ru: "16", tooltip: "Silent-era cinema. Material shot at 16 and shown at 24 is where the hurried walk of old newsreels comes from.", tooltip_ru: "Немое кино. Снятое на 16 и показанное на 24 — та самая суетливая походка старой хроники."}
+          - {value: "18", label: "18", label_ru: "18", tooltip: "Amateur 8 mm and late silent film.", tooltip_ru: "Любительские 8 мм и позднее немое кино."}
+          - {value: "24000/1001", label: "23.976", label_ru: "23.976", tooltip: "Cinema and streaming default: 24 pulled down by 1000/1001 for NTSC.", tooltip_ru: "Умолчание кино и стриминга: 24, притянутые на 1000/1001 под NTSC."}
+          - {value: "24", label: "24", label_ru: "24", tooltip: "True 24.000 — film projection and digital cinema.", tooltip_ru: "Честные 24,000 — киноплёнка и цифровой кинотеатр."}
+          - {value: "25", label: "25", label_ru: "25", tooltip: "PAL: television and broadcast across Europe.", tooltip_ru: "PAL: телевидение и вещание в Европе."}
+          - {value: "30000/1001", label: "29.97", label_ru: "29.97", tooltip: "NTSC standard definition.", tooltip_ru: "Стандарт NTSC."}
+          - {value: "30", label: "30", label_ru: "30", tooltip: "True 30.000 — web video and screen capture.", tooltip_ru: "Честные 30,000 — веб-видео и запись экрана."}
+          - {value: "48", label: "48", label_ru: "48", tooltip: "High frame rate cinema — twice 24.", tooltip_ru: "Кино с высокой частотой — вдвое от 24."}
+          - {value: "50", label: "50", label_ru: "50", tooltip: "PAL broadcast at double rate — sport and live.", tooltip_ru: "Вещание PAL с удвоенной частотой — спорт и прямой эфир."}
+          - {value: "60000/1001", label: "59.94", label_ru: "59.94", tooltip: "NTSC high definition.", tooltip_ru: "NTSC высокой чёткости."}
+          - {value: "60", label: "60", label_ru: "60", tooltip: "True 60.000 — web video and screen capture.", tooltip_ru: "Честные 60,000 — веб-видео и запись экрана."}
+      - id: fps_output_profile
+        type: "profile_buttons"
+        group: "fps"
+        span: "full"
+        label: "Output profile"
+        label_ru: "Профиль вывода"
+        default: "h264"
+        presets:
+          - id: "h264"
+            label: "H.264 MP4"
+            label_ru: "H.264 MP4"
+            group: "delivery"
+            group_label: "Delivery"
+            group_label_ru: "Delivery"
+            tone: "lossy"
+            description_ru: "MP4 с H.264 и AAC. Битрейт аудио выбирается ниже."
+            values: {fps_output_profile: "h264", encode_backend: "cpu", audio_bitrate: "384k", fps_audio_pcm_depth: "s24", fps_audio_oversample: "x1", crf: 14, cq: 19, cpu_encoder_preset: "medium"}
+          - id: "hevc"
+            label: "H.265 MP4"
+            label_ru: "H.265 MP4"
+            group: "delivery"
+            group_label: "Delivery"
+            group_label_ru: "Delivery"
+            tone: "lossy"
+            description_ru: "MP4 с H.265/HEVC и AAC. Битрейт аудио выбирается ниже."
+            values: {fps_output_profile: "hevc", encode_backend: "cpu", audio_bitrate: "384k", fps_audio_pcm_depth: "s24", fps_audio_oversample: "x1", crf: 16, cq: 19, cpu_encoder_preset: "medium"}
+          - id: "prores"
+            label: "ProRes MOV"
+            label_ru: "ProRes MOV"
+            group: "mezzanine"
+            group_label: "Mezzanine"
+            group_label_ru: "Монтаж"
+            tone: "lossless"
+            description: "ProRes 422 in Apple MOV with 16/24/32-float PCM; the selected internal rate can remain 96/192 kHz."
+            description_ru: "ProRes 422 в Apple MOV с PCM 16/24/32-float; выбранные 96/192 кГц сохраняются на выходе."
+            values: {fps_output_profile: "prores", fps_audio_pcm_depth: "s24", fps_audio_oversample: "x2"}
+          - id: "prores_mxf"
+            label: "ProRes MXF"
+            label_ru: "ProRes MXF"
+            group: "mezzanine"
+            group_label: "Mezzanine"
+            group_label_ru: "Монтаж"
+            tone: "lossless"
+            description: "ProRes 422 in MXF with 16/24-bit PCM at the FFmpeg MXF output rate of 48 kHz."
+            description_ru: "ProRes 422 в MXF с PCM 16/24-bit; финальная частота MXF в FFmpeg — 48 кГц."
+            values: {fps_output_profile: "prores_mxf", fps_audio_pcm_depth: "s24", fps_audio_oversample: "x2"}
+          - id: "dnxhr"
+            label: "DNxHR MOV"
+            label_ru: "DNxHR MOV"
+            group: "mezzanine"
+            group_label: "Mezzanine"
+            group_label_ru: "Монтаж"
+            tone: "lossless"
+            description: "DNxHR HQX in Apple MOV with 16/24/32-float PCM; the selected internal rate can remain 96/192 kHz."
+            description_ru: "DNxHR HQX в Apple MOV с PCM 16/24/32-float; выбранные 96/192 кГц сохраняются на выходе."
+            values: {fps_output_profile: "dnxhr", fps_audio_pcm_depth: "s24", fps_audio_oversample: "x2"}
+          - id: "dnxhr_mxf"
+            label: "DNxHR MXF"
+            label_ru: "DNxHR MXF"
+            group: "mezzanine"
+            group_label: "Mezzanine"
+            group_label_ru: "Монтаж"
+            tone: "lossless"
+            description: "DNxHR HQX in MXF with 16/24-bit PCM at the FFmpeg MXF output rate of 48 kHz."
+            description_ru: "DNxHR HQX в MXF с PCM 16/24-bit; финальная частота MXF в FFmpeg — 48 кГц."
+            values: {fps_output_profile: "dnxhr_mxf", fps_audio_pcm_depth: "s24", fps_audio_oversample: "x2"}
+      - <<: *audio_bitrate
+        group: "audio"
+        visible_if: {fps_output_profile: ["h264", "hevc"]}
+      - <<: *encode_backend
+        visible_if: {fps_output_profile: ["h264", "hevc"]}
+      - *decode_backend
+      - <<: *cpu_encoder_preset
+        visible_if: {fps_output_profile: ["h264", "hevc"]}
+      - <<: *nvenc_preset
+        visible_if: {fps_output_profile: ["h264", "hevc"], encode_backend: "cuda"}
+      - <<: *qsv_encoder_preset
+        visible_if: {fps_output_profile: ["h264", "hevc"], encode_backend: "qsv"}
+      - <<: *amf_quality
+        visible_if: {fps_output_profile: ["h264", "hevc"], encode_backend: "amd"}
+      - <<: *crf
+        visible_if: {fps_output_profile: ["h264", "hevc"]}
+      - <<: *cq
+        visible_if: {fps_output_profile: ["h264", "hevc"], encode_backend: ["cuda", "qsv", "amd"]}
+      - id: fps_audio_pcm_depth
+        type: "radio"
+        group: "audio"
+        choice_style: "buttons"
+        layout: "three_columns"
+        visible_if: {fps_output_profile: ["prores", "prores_mxf", "dnxhr", "dnxhr_mxf"]}
+        label: "PCM depth"
+        label_ru: "Разрядность PCM"
+        default: "s24"
+        options:
+          - {value: "s16", label: "PCM 16-bit", label_ru: "PCM 16-bit"}
+          - {value: "s24", label: "PCM 24-bit", label_ru: "PCM 24-bit"}
+          - value: "f32"
+            label: "PCM 32-float"
+            label_ru: "PCM 32-float"
+            enabled_if: {fps_output_profile: ["prores", "dnxhr"]}
+            tooltip: "32-bit float PCM is available for MOV mezzanine output. MXF uses PCM 24-bit because FFmpeg does not mux pcm_f32le into MXF."
+            tooltip_ru: "32-bit float PCM доступен для MOV. Для MXF используется PCM 24-bit: FFmpeg не mux-ит pcm_f32le в MXF."
+      - id: fps_audio_oversample
+        type: "radio"
+        group: "audio"
+        choice_style: "buttons"
+        layout: "three_columns"
+        visible_if: {fps_output_profile: ["prores", "prores_mxf", "dnxhr", "dnxhr_mxf"]}
+        label: "Audio oversampling"
+        label_ru: "Oversampling аудио"
+        hint: "Internal processing rate. MXF output is finalized at 48 kHz by the FFmpeg MXF muxer."
+        hint_ru: "Частота внутренней обработки. Финальный звук MXF сводится muxer-ом FFmpeg к 48 кГц."
+        default: "x2"
+        options:
+          - {value: "x1", label: "COPY", label_ru: "COPY"}
+          - {value: "x2", label: "2x 88.2/96", label_ru: "2x 88.2/96"}
+          - {value: "x4", label: "4x 176.4/192", label_ru: "4x 176.4/192"}
+      - *overwrite
+      - *dry_run
+    children:
+      - id: fps_run
+        title: "Convert FPS"
+        title_ru: "Пересчитать FPS"
+        description: "Probe source FPS and render the selected target cadence."
+        description_ru: "Прочитать FPS исходника и вывести выбранную частоту."
+        service: "system_core.services.media_service:fps_convert"
+        kind: "safe"
+
+  - id: grading
+    title: "Color / LUT"
+    title_ru: "Цвет / LUT"
+    description: "Original LUT and HDR-to-SDR script presets."
+    description_ru: "Исходные пресеты LUT и HDR-to-SDR."
+    fields:
+      - id: lut_file
+        type: "lut_select"
+        label: "LUT"
+        label_ru: "LUT"
+        hint: "Defaults to LUTs\\active.cube or the first LUT file in LUTs."
+        hint_ru: "По умолчанию LUTs\\active.cube или первый LUT-файл из папки LUTs."
+      - *input_video_formats
+      - id: grading_profile
+        type: "profile_buttons"
+        group: "color"
+        label: "Color preset"
+        label_ru: "Цветовой пресет"
+        default: "lut_x264"
+        presets:
+          - {id: "lut_x264", label: "LUT x264", label_ru: "LUT x264", tone: "lossy", description: "Apply the selected LUT without pre-gamma and encode an H.264 MP4 production default.", description_ru: "Применить выбранный LUT без pre-gamma и вывести рабочий H.264 MP4.", values: {script_preset: "ff-grade-lut-only-x264.cmd", output_container: "mp4", pix_fmt: "yuv420p", encode_backend: "cpu", decode_backend: "auto", crf: 14, cq: 14}}
+          - {id: "lut_hevc10", label: "LUT HEVC Main10", label_ru: "LUT HEVC Main10", tone: "lossy", description: "Apply the selected LUT without pre-gamma and encode 10-bit HEVC Main10.", description_ru: "Применить выбранный LUT без pre-gamma и вывести 10-bit HEVC Main10.", values: {script_preset: "ff-grade-lut-only-hevc10.cmd", output_container: "mp4", pix_fmt: "yuv420p10le", encode_backend: "cpu", decode_backend: "auto", crf: 14, cq: 14}}
+          - {id: "lut_prores422", label: "LUT ProRes 422", label_ru: "LUT ProRes 422", tone: "lossless", description: "Apply the selected LUT and create a 10-bit 4:2:2 ProRes editing intermediate.", description_ru: "Применить выбранный LUT и создать монтажный 10-bit 4:2:2 ProRes intermediate.", values: {script_preset: "ff-grade-lut-only-prores422.cmd", output_container: "mov", pix_fmt: "yuv422p10le", encode_backend: "cpu", decode_backend: "auto"}}
+          - {id: "preexpose_x264", label: "Pre-expose LUT x264", label_ru: "Pre-expose LUT x264", tone: "lossy", description: "Apply gamma 1.15 before the LUT, lifting 18% gray to about 22.5%, then encode x264.", description_ru: "До LUT применить Gamma 1.15: поднять 18% серый примерно до 22.5%, затем кодировать x264.", values: {script_preset: "ff-grade-preexpose-lut-x264.cmd", pre_gamma: 1.15, output_container: "mp4", pix_fmt: "yuv420p", encode_backend: "cpu", decode_backend: "auto", crf: 14, cq: 14}}
+          - {id: "pregamma_hevc10", label: "Pregamma HEVC Main10", label_ru: "Pregamma HEVC Main10", tone: "lossy", description: "Apply gamma 0.85 before the LUT, lowering 18% gray to about 13.3%, then encode HEVC Main10.", description_ru: "До LUT применить Gamma 0.85: опустить 18% серый примерно до 13.3%, затем кодировать HEVC Main10.", values: {script_preset: "ff-grade-pregamma-lut-hevc10.cmd", pre_gamma: 0.85, output_container: "mp4", pix_fmt: "yuv420p10le", encode_backend: "cpu", decode_backend: "auto", crf: 14, cq: 14}}
+          - {id: "hdr_hable_x264", label: "HDR to SDR x264", label_ru: "HDR to SDR x264", tone: "lossy", description: "Convert BT.2020/PQ HDR to BT.709 SDR with Hable tonemapping and encode x264.", description_ru: "Преобразовать BT.2020/PQ HDR в BT.709 SDR через Hable tonemapping и кодировать x264.", values: {script_preset: "ff-hdr2sdr-hable-x264.cmd", output_container: "mp4", pix_fmt: "yuv420p", encode_backend: "cpu", decode_backend: "auto", crf: 14, cq: 14}}
+      - id: script_preset
+        type: "select"
+        group: "color"
+        hidden: true
+        label: "Color operation"
+        label_ru: "Цветовая операция"
+        default: "ff-grade-lut-only-x264.cmd"
+        refresh_on_change: true
+        options:
+          - {value: "ff-grade-lut-only-x264.cmd", label: "LUT only", label_ru: "Только LUT"}
+          - {value: "ff-grade-lut-only-hevc10.cmd", label: "LUT only HEVC Main10", label_ru: "Только LUT HEVC Main10"}
+          - {value: "ff-grade-lut-only-prores422.cmd", label: "LUT only ProRes 422", label_ru: "Только LUT ProRes 422"}
+          - {value: "ff-grade-preexpose-lut-x264.cmd", label: "Pre-expose + LUT", label_ru: "Предэкспозиция + LUT"}
+          - {value: "ff-grade-pregamma-lut-x264.cmd", label: "Pregamma + LUT", label_ru: "Pregamma + LUT"}
+          - {value: "ff-grade-pregamma-lut-hevc10.cmd", label: "Pregamma + LUT HEVC Main10", label_ru: "Pregamma + LUT HEVC Main10"}
+          - {value: "ff-grade-pregamma-lut-prores422.cmd", label: "Pregamma + LUT ProRes 422", label_ru: "Pregamma + LUT ProRes 422"}
+          - {value: "ff-hdr2sdr-hable-x264.cmd", label: "HDR to SDR Hable", label_ru: "HDR to SDR Hable"}
+      - id: pre_gamma
+        type: "float"
+        group: "color"
+        label: "Pre-LUT gamma"
+        label_ru: "Gamma до LUT"
+        default: ""
+        min: 0.1
+        max: 5.0
+        step: 0.01
+        refresh_on_change: true
+        visible_if:
+          script_preset: ["ff-grade-preexpose-lut-x264.cmd", "ff-grade-pregamma-lut-x264.cmd", "ff-grade-pregamma-lut-hevc10.cmd", "ff-grade-pregamma-lut-prores422.cmd"]
+      - id: target_codecs
+        type: "checkboxes"
+        label: "Color output targets"
+        label_ru: "Цели цветового вывода"
+        default: []
+        options:
+          - {value: "x264", label: "x264 / H.264", label_ru: "x264 / H.264"}
+          - {value: "hevc_x265", label: "x265 / HEVC", label_ru: "x265 / HEVC"}
+          - {value: "svt_av1", label: "AV1", label_ru: "AV1", tooltip: "AV1 output. CPU encodes it with SVT-AV1; NVENC, QSV and AMF encode it with av1_nvenc, av1_qsv or av1_amf.", tooltip_ru: "Вывод AV1. На CPU кодируется через SVT-AV1; NVENC, QSV и AMF используют av1_nvenc, av1_qsv или av1_amf."}
+          - {value: "prores_422", label: "ProRes 422", label_ru: "ProRes 422"}
+          - {value: "prores_lt", label: "ProRes LT", label_ru: "ProRes LT"}
+      - *encode_backend
+      - *decode_backend
+      - *mxf_safe_audio_mode
+      - *audio_sample_rate
+      - *mp3_lame_preset_encode
+      - *audio_bitrate
+      - *output_container
+      - *cpu_encoder_preset
+      - *nvenc_preset
+      - *qsv_encoder_preset
+      - *amf_quality
+      - *output_resolution
+      - *av1_preset
+      - *pix_fmt
+      - *crf
+      - *cq
+      - *overwrite
+      - *limit_first_file
+      - *dry_run
+    children:
+      - id: grading_run
+        title: "Run color"
+        title_ru: "Запустить цвет"
+        description: "Apply selected color operation with the current overrides."
+        description_ru: "Применить выбранную цветовую операцию с текущими overrides."
+        service: "system_core.services.media_service:run_color_grade"
+        kind: "safe"
+
+  - id: diagnostics
+    title: "Diagnostics"
+    title_ru: "Диагностика"
+    description: "Project and tool checks."
+    description_ru: "Проверки проекта и portable-инструментов."
+    children:
+      - id: inventory
+        title: "Inventory"
+        title_ru: "Инвентаризация"
+        description: "Count project folders."
+        description_ru: "Посчитать Source, Transcoded, Download и LUTs."
+        service: "system_core.services.media_service:inventory"
+        kind: "safe"
+      - id: selftest
+        title: "Selftest"
+        title_ru: "Самопроверка"
+        description: "Check ffmpeg, ffprobe, yt-dlp and Deno."
+        description_ru: "Проверить ffmpeg, ffprobe, yt-dlp и Deno."
+        service: "system_core.services.media_service:selftest"
+        kind: "safe"
+      - id: profile_doctor
+        title: "Profile Doctor"
+        title_ru: "Проверка профилей"
+        description: "Validate GUI operations, script wrappers and the shared preset catalog."
+        description_ru: "Проверить операции GUI, script wrappers и общий каталог пресетов."
+        service: "system_core.services.media_service:profile_doctor"
+        kind: "safe"
+      - id: hardware_capabilities
+        title: "Hardware capabilities"
+        title_ru: "Возможности оборудования"
+        description: "Run short FFmpeg smoke tests for CPU, QSV/NVENC/AMF H.264 and HEVC, SVT-AV1 and dav1d."
+        description_ru: "Короткий FFmpeg smoke для CPU, QSV/NVENC/AMF H.264 и HEVC, SVT-AV1 и dav1d."
+        service: "system_core.services.media_service:hardware_capabilities"
+        kind: "safe"
+      - id: preset_test_matrix
+        title: "Preset Test Matrix"
+        title_ru: "Тест матрицы пресетов"
+        description: "Run portable 1-second smoke tests across audio, remux, FPS, LUT, archive, editing, storage and delivery presets."
+        description_ru: "Прогнать portable smoke на 1-секундных файлах по audio, remux, FPS, LUT, архиву, монтажу, хранению и публикации."
+        service: "system_core.services.media_service:preset_test_matrix"
+        kind: "safe"
+
+  - id: install_tools
+    title: "Install tools"
+    title_ru: "Установка инструментов"
+    description: "Explicit installers for external tool payloads."
+    description_ru: "Явная установка внешних tool payloads."
+    children:
+      - id: install_7zip
+        title: "Install 7-Zip"
+        title_ru: "Установить 7-Zip"
+        description: "Install or refresh portable 7-Zip; required before FFmpeg 7z payloads."
+        description_ru: "Установить или обновить portable 7-Zip; нужен для FFmpeg 7z payloads."
+        service: "system_core.services.media_service:install_portable_7zip"
+        kind: "safe"
+      - id: install_ffmpeg
+        title: "Install FFmpeg"
+        title_ru: "Установить FFmpeg"
+        description: "Install or refresh portable FFmpeg Gyan GPL payload into Tools/ffmpeg."
+        description_ru: "Установить или обновить portable FFmpeg Gyan GPL payload в Tools/ffmpeg."
+        service: "system_core.services.media_service:install_portable_ffmpeg"
+        kind: "safe"
+      - id: install_ytdlp
+        title: "Install yt-dlp"
+        title_ru: "Установить yt-dlp"
+        description: "Install or refresh portable yt-dlp and Deno into Tools."
+        description_ru: "Установить или обновить portable yt-dlp и Deno в Tools."
+        service: "system_core.services.media_service:install_portable_ytdlp"
+        kind: "safe"
+
+maintenance_operations:
+  - id: probe_source
+    title: "Probe Source"
+    title_ru: "Проверить источник"
+    description: "Run ffprobe once for Source, print a compact table and update the media status line."
+    description_ru: "Один раз запустить ffprobe по Source, вывести таблицу и обновить строку параметров."
+    service: "system_core.services.media_service:probe_source"
+    kind: "safe"
+    parameters:
+      sample_limit: 50
+
+  - id: source_info
+    title: "Source Info"
+    title_ru: "Инфо об источниках"
+    description: "Run ffprobe for Source and print every audio stream: codec, sample format, sample rate, bit depth, channels, bitrate and tags."
+    description_ru: "Прогнать ffprobe по Source и вывести все аудиопотоки: codec, sample_fmt, sample rate, bits, channels, bitrate, language/title."
+    service: "system_core.services.media_service:source_info"
+    kind: "safe"
+    parameters:
+      sample_limit: 0
+
+  - id: cleanup_source
+    title: "Clear Source"
+    title_ru: "Очистить Source"
+    description: "Delete files from the selected Source folder, including an external selected Source after confirmation."
+    description_ru: "Удалить файлы из выбранной папки Source, включая внешний выбранный Source после подтверждения."
+    service: "system_core.services.media_service:cleanup_source"
+    kind: "dangerous"
+
+  - id: cleanup_transcoded
+    title: "Clear OUT"
+    title_ru: "Очистить OUT"
+    description: "Delete files from the selected destination/output folder, including an external selected folder after confirmation."
+    description_ru: "Удалить файлы из выбранного назначения/OUT, включая внешнюю выбранную папку после подтверждения."
+    service: "system_core.services.media_service:cleanup_transcoded"
+    kind: "dangerous"
+
+  - id: cleanup_workspace
+    title: "Clear GUI workspace"
+    title_ru: "Очистить GUI workspace"
+    description: "Delete managed workspace and report folders."
+    description_ru: "Очистить управляемые папки workspace и report."
+    service: "system_core.services.media_service:cleanup_workspace"
+    kind: "dangerous"

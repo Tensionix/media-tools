@@ -1,0 +1,63 @@
+{
+  "updated_at": "YYYY-MM-DD HH:MM:SS",
+  "machine": "YOUR-MACHINE-NAME",
+  "statuses": [
+    {
+      "label": "CPU libx264",
+      "status": "OK",
+      "detail": "Smoke encode/decode completed."
+    },
+    {
+      "label": "SVT-AV1",
+      "status": "OK",
+      "detail": "Smoke encode/decode completed."
+    },
+    {
+      "label": "QSV H.264 encode",
+      "status": "MISS",
+      "detail": "Encoder not listed by FFmpeg: h264_qsv"
+    },
+    {
+      "label": "QSV HEVC encode",
+      "status": "MISS",
+      "detail": "Encoder not listed by FFmpeg: hevc_qsv"
+    },
+    {
+      "label": "QuickSync decode + encode",
+      "status": "MISS",
+      "detail": "Hardware decode smoke did not run."
+    },
+    {
+      "label": "NVENC H.264 encode",
+      "status": "MISS",
+      "detail": "Encoder not listed by FFmpeg: h264_nvenc"
+    },
+    {
+      "label": "NVENC HEVC encode",
+      "status": "MISS",
+      "detail": "Encoder not listed by FFmpeg: hevc_nvenc"
+    },
+    {
+      "label": "AMF H.264 encode",
+      "status": "MISS",
+      "detail": "Encoder not listed by FFmpeg: h264_amf"
+    },
+    {
+      "label": "AMF HEVC encode",
+      "status": "MISS",
+      "detail": "Encoder not listed by FFmpeg: hevc_amf"
+    },
+    {
+      "label": "dav1d AV1 decode",
+      "status": "MISS",
+      "detail": "Decoder not listed by FFmpeg: libdav1d"
+    }
+  ],
+  "summary": {
+    "ok": 2,
+    "fail": 0,
+    "miss": 8,
+    "skip": 0
+  },
+  "report": "report\\YYYY-MM-DD HH-MM-SS-hardware_capabilities\\hardware_capabilities.json"
+}

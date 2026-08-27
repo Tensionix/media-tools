@@ -1,0 +1,9 @@
+project:
+  name: "Audion Media Tools"
+  version: "2.5.1"
+
+safety:
+  cleanup_selected_source_after_confirmation: true
+  cleanup_selected_out_after_confirmation: true
+  block_broad_system_paths: true
+  probe_source_on_demand_only: true

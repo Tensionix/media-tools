@@ -1,0 +1,102 @@
+[
+  {
+    "name": "Python Embedded",
+    "version": "3.12.x",
+    "license": "PSF License Version 2 and bundled third-party notices",
+    "source": "baseline-runtime",
+    "whenPathExists": [
+      "runtime/python.exe"
+    ],
+    "files": [
+      "files/LICENSE-Python-Embedded.txt"
+    ]
+  },
+  {
+    "name": "PowerShell",
+    "version": "portable",
+    "license": "MIT",
+    "source": "baseline-runtime",
+    "whenPathExists": [
+      "system_core/powershell/pwsh.exe"
+    ],
+    "files": [
+      "files/LICENSE-PowerShell.txt"
+    ]
+  },
+  {
+    "name": "FFmpeg",
+    "version": "BtbN or Gyan / present-in-release",
+    "license": "GPL-3.0-or-later / see bundled FFmpeg license",
+    "source": "baseline-tool",
+    "whenPathExists": [
+      "Tools/ffmpeg/bin/ffmpeg.exe",
+      "Tools/ffmpeg/bin/ffprobe.exe"
+    ],
+    "files": [
+      "files/LICENSE-FFmpeg-GPL-3.0-or-later.txt",
+      "files/NOTICE-FFmpeg-Windows-Builds.md"
+    ]
+  },
+  {
+    "name": "yt-dlp",
+    "version": "present-in-release",
+    "license": "Unlicense",
+    "source": "baseline-tool",
+    "whenPathExists": [
+      "Tools/yt-dlp/bin/yt-dlp.exe"
+    ],
+    "files": [
+      "files/LICENSE-yt-dlp.txt"
+    ]
+  },
+  {
+    "name": "Deno",
+    "version": "present-in-release",
+    "license": "MIT",
+    "source": "baseline-tool",
+    "whenPathExists": [
+      "Tools/deno/deno.exe"
+    ],
+    "files": [
+      "files/NOTICE-Deno.md"
+    ]
+  },
+  {
+    "name": "7-Zip",
+    "version": "present-in-release",
+    "license": "GNU LGPL / BSD / unRAR restriction; see bundled 7-Zip license",
+    "source": "baseline-tool",
+    "whenPathExists": [
+      "Tools/7zip/bin/7za.exe",
+      "Tools/7zip/bin/7zr.exe",
+      "Tools/7zip/bin/7z.exe"
+    ],
+    "files": [
+      "files/LICENSE-7-Zip.txt"
+    ]
+  },
+  {
+    "name": "fzf",
+    "version": "bundled",
+    "license": "MIT",
+    "source": "baseline-tool",
+    "whenPathExists": [
+      "system_core/fzf.exe"
+    ],
+    "files": [
+      "files/LICENSE-fzf.txt"
+    ]
+  },
+  {
+    "name": "NiceGUI",
+    "version": "present-in-release",
+    "license": "MIT",
+    "source": "baseline-package",
+    "whenPackagePresent": [
+      "nicegui"
+    ],
+    "files": [
+      "files/LICENSE-NiceGUI.txt"
+    ]
+  }
+]
