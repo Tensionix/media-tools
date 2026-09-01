@@ -27,9 +27,9 @@ version: 2026.7.22
 url: https://pypi.org/project/certifi/2026.7.22/
 
 Component: Deno
-Version/profile: 2.9.5
+Version/profile: 2.9.6
 Method: upstream_pin
-version: 2.9.5
+version: 2.9.6
 url: https://github.com/denoland/deno/releases
 winget_id: DenoLand.Deno
 
@@ -47,11 +47,11 @@ url: https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/894da5ca7d
 path: Tools\ffmpeg-8.0.1-source.tar.gz
 
 Component: mpv
-Version/profile: mpv v0.41.0-923-g7b8915bc1
+Version/profile: mpv v0.41.0-1017-g02a595ddc
 Method: bundled_archive
-version: mpv v0.41.0-923-g7b8915bc1
-url: https://codeload.github.com/mpv-player/mpv/tar.gz/7b8915bc1
-path: Tools\mpv-7b8915bc1-source.tar.gz
+version: mpv v0.41.0-1017-g02a595ddc
+url: https://codeload.github.com/mpv-player/mpv/tar.gz/02a595ddc
+path: Tools\mpv-02a595ddc-source.tar.gz
 
 Component: orjson
 Version/profile: 3.12.0

@@ -8,7 +8,7 @@
 
 Рабочая тетрадь всего, что меряли по точности резки, синхрону и пределам
 FFmpeg. Отсюда берутся числа для таблиц отказов в коде и для решений в
-[DECISIONS.md](DECISIONS.md); тот же документ лежит в `E:\TOOLS\fps-test`
+[DECISIONS.md](DECISIONS_EN.md); тот же документ лежит в `E:\TOOLS\fps-test`
 рядом с разбором Shutter Encoder, откуда эта работа началась.
 
 Правило одно: **ни одно утверждение здесь не взято из документации.** Каждая
@@ -718,6 +718,6 @@ input». Кадр для превью приходится просить, на�
 ---
 
 Устройство раздела «Обрезка» и его отказы — в
-[TRIM_MATRIX_RU.md](TRIM_MATRIX_RU.md), замысел и решения — в
-[PLAN_TRIM_RU.md](PLAN_TRIM_RU.md) и [DECISIONS.md](DECISIONS.md). Методика
+[TRIM_MATRIX_RU.md](tools/TRIM_MATRIX_RU.md), замысел и решения — в
+[PLAN_TRIM_RU.md](tools/PLAN_TRIM_RU.md) и [DECISIONS.md](DECISIONS_EN.md). Методика
 измерений и разбор Shutter Encoder — в `E:\TOOLS\fps-test`.
