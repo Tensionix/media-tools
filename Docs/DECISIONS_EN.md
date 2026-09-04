@@ -1,5 +1,45 @@
 # Decisions
 
+**Contents**
+
+- [2026-08-26: A Real Camera File Found What Synthetic Ones Could Not](#2026-08-26-a-real-camera-file-found-what-synthetic-ones-could-not)
+- [2026-08-26: What The Camera Matrix Still Does Not Cover](#2026-08-26-what-the-camera-matrix-still-does-not-cover)
+- [2026-08-26: MXF Rewrites PCM Instead Of Copying It](#2026-08-26-mxf-rewrites-pcm-instead-of-copying-it)
+- [2026-08-26: A Channel The File Does Not Have Is Refused](#2026-08-26-a-channel-the-file-does-not-have-is-refused)
+- [2026-08-25: A/V Sync Is Measured, Not Assumed](#2026-08-25-av-sync-is-measured-not-assumed)
+- [2026-08-25: The Form Shows What Survives, Not What Is Removed](#2026-08-25-the-form-shows-what-survives-not-what-is-removed)
+- [2026-08-25: Trimming Is Per File, And The Marks Are Remembered](#2026-08-25-trimming-is-per-file-and-the-marks-are-remembered)
+- [2026-08-25: The Trim Backend Answers To A Source Matrix, Not To One Clip](#2026-08-25-the-trim-backend-answers-to-a-source-matrix-not-to-one-clip)
+- [2026-08-25: A Container That Cannot Hold The Stream Is Refused Before The Run](#2026-08-25-a-container-that-cannot-hold-the-stream-is-refused-before-the-run)
+- [2026-08-25: Cut Points Are Wall-Clock Time, Timecode Is Metadata](#2026-08-25-cut-points-are-wall-clock-time-timecode-is-metadata)
+- [2026-08-26: A Stopped Run Leaves Nothing That Cannot Be Opened](#2026-08-26-a-stopped-run-leaves-nothing-that-cannot-be-opened)
+- [2026-08-26: FFmpeg 9.0.1 Was Verified, Not Adopted Blindly](#2026-08-26-ffmpeg-901-was-verified-not-adopted-blindly)
+- [2026-08-26: The Scrub Plays One Frame, Not One Second](#2026-08-26-the-scrub-plays-one-frame-not-one-second)
+- [2026-08-26: Sound Answers Before Picture](#2026-08-26-sound-answers-before-picture)
+- [2026-08-26: The Rate Comes From The File, Unaltered](#2026-08-26-the-rate-comes-from-the-file-unaltered)
+- [2026-08-25: The Head Snaps To A Keyframe, The Tail Is Counted In Frames](#2026-08-25-the-head-snaps-to-a-keyframe-the-tail-is-counted-in-frames)
+- [2026-08-25: A Refused Overwrite Is A Skip, Not A Success](#2026-08-25-a-refused-overwrite-is-a-skip-not-a-success)
+- [2026-08-24: Trimming Targets Camera Footage, Not Film Muxing](#2026-08-24-trimming-targets-camera-footage-not-film-muxing)
+- [2026-08-24: Trimming Cuts On Keyframes Only](#2026-08-24-trimming-cuts-on-keyframes-only)
+- [2026-05-04: GUI Shell Over CLI](#2026-05-04-gui-shell-over-cli)
+- [2026-05-04: Separate Server And Window](#2026-05-04-separate-server-and-window)
+- [2026-05-04: Dark Terminal-First Layout](#2026-05-04-dark-terminal-first-layout)
+- [2026-05-04: Compact Ghost Buttons](#2026-05-04-compact-ghost-buttons)
+- [2026-05-04: Operation Buttons Left-Align Their Labels](#2026-05-04-operation-buttons-left-align-their-labels)
+- [2026-05-04: Laptop Compression Is A Baseline Requirement](#2026-05-04-laptop-compression-is-a-baseline-requirement)
+- [2026-05-07: 1600x900 Is The Roomy Default Window](#2026-05-07-1600x900-is-the-roomy-default-window)
+- [2026-05-07: Form Order Follows User Decisions](#2026-05-07-form-order-follows-user-decisions)
+- [2026-05-07: One Visible Action Per User Outcome](#2026-05-07-one-visible-action-per-user-outcome)
+- [2026-05-07: Actions Must Name Their Object](#2026-05-07-actions-must-name-their-object)
+- [2026-05-07: Advanced Fields Collapse By Default](#2026-05-07-advanced-fields-collapse-by-default)
+- [2026-05-07: Model List Is Not Model Access](#2026-05-07-model-list-is-not-model-access)
+- [2026-05-07: Visual Smoke Screenshots Are Part Of Porting](#2026-05-07-visual-smoke-screenshots-are-part-of-porting)
+- [2026-05-04: Stage External Input Locally](#2026-05-04-stage-external-input-locally)
+- [2026-05-04: Language And Theme Are Conservative](#2026-05-04-language-and-theme-are-conservative)
+- [2026-05-06: Completion State Is Persistent](#2026-05-06-completion-state-is-persistent)
+- [2026-05-06: Hide Windows CLI Helpers At Process Creation](#2026-05-06-hide-windows-cli-helpers-at-process-creation)
+- [2026-05-06: CMD Encoding Is A Build Gate](#2026-05-06-cmd-encoding-is-a-build-gate)
+
 ## 2026-08-26: A Real Camera File Found What Synthetic Ones Could Not
 
 A Canon `MVI_*.MP4` - HEVC Rext 4:2:2 10-bit UHD at 23.976, LPCM `pcm_s16be`

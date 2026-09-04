@@ -2,6 +2,18 @@
 
 [Русский](USER_GUIDE_RU.md) · [About](README_EN.md) · [Measurements](MEASUREMENTS_RU.md) · [Decisions](DECISIONS_EN.md)
 
+**Contents**
+
+- [The Order of Work](#the-order-of-work)
+- [The Workbench](#the-workbench)
+- [Trimming: the Player and Its Keys](#trimming-the-player-and-its-keys)
+- [The Pages](#the-pages)
+- [Hardware](#hardware)
+- [Terminal and Reports](#terminal-and-reports)
+- [Rules for Safe Work](#rules-for-safe-work)
+- [Checks After Changes](#checks-after-changes)
+- [Technical Reference](#technical-reference)
+
 How to work with it: the workbench, the order of running an operation, trimming
 with the player, the pages, the reports.
 

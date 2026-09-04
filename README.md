@@ -10,7 +10,7 @@
 
 **Version 2.5.2** · 2026-09-04 · 576.9 MB
 
-- [Direct download](https://dl.audion.dev/media-tools/2.5.2/Audion_Media_Tools_v2.5.2_Full.zip) — unmetered, no rate limits
+- [Direct download](https://audion.dev/get/media-tools/2.5.2/Audion_Media_Tools_v2.5.2_Full.zip) — unmetered, no rate limits
 - [Project page](https://audion.dev/downloads/media-tools) — every version and how to install
 
 <p align="center"><img src="docs/screenshot.png" alt="The program window" width="560"></p>
@@ -23,7 +23,17 @@ An **Audion** tool, published by [Tensionix](https://github.com/Tensionix).
 <!-- /audion:release -->
 
 
-[Русский](README_RU.md) · [User Guide](USER_GUIDE_EN.md) · [Measurements](MEASUREMENTS_RU.md) · [Decisions](DECISIONS_EN.md)
+[Русский](Docs/README_RU.md) · [User Guide](Docs/USER_GUIDE_EN.md) · [Measurements](Docs/MEASUREMENTS_RU.md) · [Decisions](Docs/DECISIONS_EN.md)
+
+**Contents**
+
+- [Why It Exists](#why-it-exists)
+- [The Central Decision: Newer Is Not Better](#the-central-decision-newer-is-not-better)
+- [Why You Can Trust This](#why-you-can-trust-this)
+- [Principles](#principles)
+- [What Is Inside](#what-is-inside)
+- [Next](#next)
+- [Technical Reference](#technical-reference)
 
 A portable shell for real work with video and audio: download, inspect,
 transcode, prepare for editing, package for upload, put into an archive, take
@@ -106,7 +116,7 @@ again.
 ## Why You Can Trust This
 
 Cut accuracy, audio sync, and the limits of FFmpeg here are not claimed — they are
-measured. The [body of measurements](MEASUREMENTS_RU.md) rests on one rule:
+measured. The [body of measurements](Docs/MEASUREMENTS_RU.md) rests on one rule:
 **nothing in it is taken from documentation.** Every cell in every table is an
 actual attempt, every number a measurement. Where a measurement turned out to be
 wrong, that is recorded too: a separate section collects the cases where a
@@ -182,10 +192,10 @@ an existing file answers "already exists" with **exit code 0**, so a run that
 wrote nothing reads as a success; PCM copied into MXF gains 384 extra samples at
 the head.
 
-The full list with symptoms is in the [measurements](MEASUREMENTS_RU.md),
+The full list with symptoms is in the [measurements](Docs/MEASUREMENTS_RU.md),
 section 10.
 
-The [checklist](SMOKE_TEST_RU.md) shows what is run before a release. Both
+The [checklist](Docs/SMOKE_TEST_RU.md) shows what is run before a release. Both
 documents are in Russian.
 
 ## Principles
@@ -226,11 +236,11 @@ folder and fight over a name: the subfolder structure is reproduced in the outpu
 
 ## Next
 
-* [User Guide](USER_GUIDE_EN.md) — working through the pages, the workbench,
+* [User Guide](Docs/USER_GUIDE_EN.md) — working through the pages, the workbench,
   reports.
-* [Measurements](MEASUREMENTS_RU.md) — the numbers everything rests on.
-* [Checklist](SMOKE_TEST_RU.md) — what is run before a release.
-* [Decisions](DECISIONS_EN.md) — why it works this way, dated and verified.
+* [Measurements](Docs/MEASUREMENTS_RU.md) — the numbers everything rests on.
+* [Checklist](Docs/SMOKE_TEST_RU.md) — what is run before a release.
+* [Decisions](Docs/DECISIONS_EN.md) — why it works this way, dated and verified.
 
 ---
 

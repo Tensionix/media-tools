@@ -1,13 +1,13 @@
 # Audion Build Licenses Scan Report
 
 - Project: **Audion Media Tools** (`audion-media-tools`)
-- Run: `20260901T043613Z_audion-media-tools_17d5c7f5`
+- Run: `20260904T023021Z_audion-media-tools_456e2622`
 - Project root: `S:\Release\Audion Media Tools`
 - Scan root: `S:\Release\Audion Media Tools`
 - Output: `S:\Release\Audion Media Tools\licenses`
 - Status: **PASS**
-- Components: 75
-- Bundled: 75
+- Components: 76
+- Bundled: 76
 - Optional runtime: 0
 
 ## Issues
@@ -25,7 +25,7 @@ No issues detected.
 | aiosignal | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.4.0 | 1.4.0 |
 | annotated-doc | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.0.5 | 0.0.5 |
 | annotated-types | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.8.0 | 0.8.0 |
-| anyio | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 4.14.2 | 4.14.2 |
+| anyio | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 4.15.0 | 4.15.0 |
 | attrs | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.1.0 | 26.1.0 |
 | beautifulsoup4 | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 4.15.0 | 4.15.0 |
 | bidict | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.24.1 | 0.24.1 |
@@ -54,11 +54,12 @@ No issues detected.
 | markdown2 | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 2.5.5 | 2.5.5 |
 | MarkupSafe | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.0.3 | 3.0.3 |
 | mdurl | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.1.2 | 0.1.2 |
-| mpv | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | mpv v0.41.0-1017-g02a595ddc | mpv v0.41.0-1017-g02a595ddc |
+| mpv | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | mpv v0.41.0-1023-g69e63f425 | mpv v0.41.0-1023-g69e63f425 |
 | multidict | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 6.7.1 | 6.7.1 |
 | nicegui | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.16.0 | 3.16.0 |
 | orjson | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.12.0 | 3.12.0 |
 | packaging | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.3 | 26.3 |
+| pip | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.2.1 | 26.2.1 |
 | pluggy | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.6.0 | 1.6.0 |
 | PowerShell | `UNCHANGED` | portable | portable |
 | propcache | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.5.2 | 0.5.2 |

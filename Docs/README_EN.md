@@ -2,6 +2,26 @@
 
 [Русский](README_RU.md) · [User Guide](USER_GUIDE_EN.md) · [Measurements](MEASUREMENTS_RU.md) · [Decisions](DECISIONS_EN.md)
 
+**Contents**
+
+- [Why It Exists](#why-it-exists)
+- [The Central Decision: Newer Is Not Better](#the-central-decision-newer-is-not-better)
+  - [What each path can do](#what-each-path-can-do)
+- [Why You Can Trust This](#why-you-can-trust-this)
+  - [Where this started](#where-this-started)
+  - [Verified on what cameras actually write](#verified-on-what-cameras-actually-write)
+  - [Sync measured, not assumed](#sync-measured-not-assumed)
+  - [Seventeen FFmpeg quirks — all compensated](#seventeen-ffmpeg-quirks--all-compensated)
+- [Principles](#principles)
+- [What Is Inside](#what-is-inside)
+- [Next](#next)
+- [Technical Reference](#technical-reference)
+  - [Running](#running)
+  - [The Workbench](#the-workbench)
+  - [Defaults](#defaults)
+  - [Reports](#reports)
+  - [Deliberately Out of Scope](#deliberately-out-of-scope)
+
 A portable shell for real work with video and audio: download, inspect,
 transcode, prepare for editing, package for upload, put into an archive, take
 audio apart carefully.
