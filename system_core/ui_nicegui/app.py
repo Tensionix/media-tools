@@ -541,7 +541,7 @@ LABELS = {
         "open_menu": "Открыть",
         "parameters": "Параметры",
         "advanced": "Дополнительно",
-        "trim_no_media": "\u0412 Source \u043d\u0435\u0442 \u0432\u0438\u0434\u0435\u043e",
+        "trim_no_media": "\u0412 Source \u043d\u0435\u0442 \u043d\u0438 \u0432\u0438\u0434\u0435\u043e, \u043d\u0438 \u0437\u0432\u0443\u043a\u0430",
         "trim_file_previous": "\u041f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0438\u0439 \u0444\u0430\u0439\u043b",
         "trim_file_next": "\u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0438\u0439 \u0444\u0430\u0439\u043b",
         "trim_probe_hint": "\u0427\u0442\u043e ffprobe \u0437\u043d\u0430\u0435\u0442 \u043e\u0431 \u044d\u0442\u043e\u043c \u0444\u0430\u0439\u043b\u0435",
@@ -678,7 +678,7 @@ LABELS = {
         "open_menu": "Open",
         "parameters": "Parameters",
         "advanced": "Advanced",
-        "trim_no_media": "No video in Source",
+        "trim_no_media": "No video or sound in Source",
         "trim_file_previous": "Previous file",
         "trim_file_next": "Next file",
         "trim_probe_hint": "What ffprobe knows about this file",
@@ -2809,7 +2809,19 @@ def field_refreshes_layout(field: dict[str, Any]) -> bool:
 
 
 def _condition_actual_value(key: str) -> Any:
-    return state.setdefault("field_values", {}).get(str(key))
+    values = state.setdefault("field_values", {})
+    name = str(key)
+    if name in values:
+        return values[name]
+    # A field is given its default only when it is drawn, and a section decides
+    # what to show before it draws anything. A condition therefore reads what the
+    # control will show, or a field that depends on a checkbox beside it stays
+    # hidden until the first click.
+    pending = state.get("pending_command")
+    for field in getattr(pending, "fields", None) or ():
+        if field_id(field) == name:
+            return field_default(field)
+    return None
 
 
 def _value_matches_condition(actual: Any, expected: Any) -> bool:
@@ -3590,6 +3602,15 @@ def trim_source_names() -> list[str]:
         return []
 
 
+def trim_media_kind_of(name: str) -> str:
+    """"audio" for a sound file, "video" otherwise: which controls the section shows."""
+    try:
+        module = importlib.import_module("system_core.services.media_service")
+        return str(module.trim_media_kind(name))
+    except Exception:
+        return "video"
+
+
 def trim_short_name(name: str, limit: int = 34) -> str:
     """A long name with its middle taken out, so the badge stays one line.
 
@@ -3649,6 +3670,9 @@ def render_trim_file_field(field: dict[str, Any], key: str, label: str, tooltip:
             current = names[0]
             values[key] = current
         index = names.index(current)
+        # A sound file is written by format, a video by container, timecode and
+        # streams; the fields below read this to know which of them to show.
+        values["trim_media_kind"] = trim_media_kind_of(current)
 
         def step(direction: int) -> None:
             values[key] = names[(index + direction) % len(names)]
@@ -3662,7 +3686,7 @@ def render_trim_file_field(field: dict[str, Any], key: str, label: str, tooltip:
             previous_button.props("dense unelevated").classes("audion-trim-step")
             add_tooltip(previous_button, tr("trim_file_previous"))
             with ui.element("div").classes("audion-trim-badge"):
-                ui.icon("movie").classes("audion-trim-badge-icon")
+                ui.icon("audiotrack" if values["trim_media_kind"] == "audio" else "movie").classes("audion-trim-badge-icon")
                 name_label = ui.label(trim_short_name(current)).classes("audion-trim-filename")
                 # The full name lives in the tooltip; the badge keeps one line.
                 add_tooltip(name_label, current)
@@ -4112,8 +4136,15 @@ def render_field(field: dict[str, Any], *, flat: bool = False) -> None:
                 set_field_value(key, value)
             if field_choice_style(field) in {"segmented", "tabs", "buttons", "button-toggle", "button_toggle"}:
                 render_segmented_choice(field, option_items, value)
-                if hint:
-                    ui.label(hint).classes("audion-field-hint")
+                # A choice can explain itself under the buttons while it is the
+                # one chosen; the field's own hint stays for the rest.
+                chosen = next(
+                    (option for option in field_options(field) if isinstance(option, dict) and option_value(option) == value),
+                    None,
+                )
+                caption = localized_manifest_text(chosen, "hint") if chosen else ""
+                if caption or hint:
+                    ui.label(caption or hint).classes("audion-field-hint")
                 return
             render_radio_choice(field, option_items, value)
             if dynamic_option_source(field):
@@ -4762,7 +4793,11 @@ def command_node_button(node: CommandNode) -> None:
 
     row_classes = "audion-operation-row"
     button_classes = "audion-action audion-operation-button rounded-lg"
-    if not has_children:
+    # A leaf that says what it does reads as a row, like a group: the maintenance
+    # screens (Diagnostics, Install tools) are lists of such commands, and a row
+    # of chips hid every description in a tooltip. A leaf with nothing to say
+    # stays a chip.
+    if not has_children and not description:
         row_classes += " audion-operation-row-leaf"
         button_classes += " audion-operation-button-leaf audion-tooltip-align-left"
 
@@ -4772,7 +4807,7 @@ def command_node_button(node: CommandNode) -> None:
             on_click=command_click_handler(node),
         ).props(f'dense flat no-wrap data-testid="command-{node.id}"').classes(button_classes)
         add_tooltip(button, description or label)
-        if has_children:
+        if description:
             ui.label(description).classes("audion-operation-description")
 
 

@@ -35,8 +35,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
+import bisect
+import math
 import re
+
+from system_core.core.audio_contract import (
+    mp3_bitrate,
+    mp3_encoder_args,
+    normalize_mp3_preset,
+    soxr_resample_filter,
+)
 
 
 TRIM_PATTERNS = ("start", "end", "both", "split", "middle")
@@ -518,6 +527,92 @@ def plan_gap(
     )
 
 
+@dataclass(frozen=True)
+class TrimSplitPart:
+    """One part of a split: it starts on a keyframe and ends where the next begins."""
+
+    index: int
+    start: float
+    end: float | None
+    frames: int | None
+    seconds: float
+
+
+@dataclass(frozen=True)
+class TrimSplit:
+    """Where the points were asked for, where they landed, and the parts between."""
+
+    requested: tuple[float, ...]
+    boundaries: tuple[float, ...]
+    offsets: tuple[float, ...]
+    parts: tuple[TrimSplitPart, ...]
+
+
+def plan_split(
+    *,
+    points: Iterable[Any],
+    duration: float,
+    rate: Fraction,
+    keyframes: Iterable[float],
+    frame_exact: bool = True,
+) -> TrimSplit:
+    """Plan a split at one point or two, so the parts add back up to the file.
+
+    Each point snaps to its nearest keyframe, and that keyframe is the joint for
+    both neighbours: the part before ends on the frame just ahead of it, the part
+    after starts on it. Nothing lands in two parts and nothing falls between.
+    """
+    if duration <= 0:
+        raise ValueError("Source duration could not be read.")
+    requested = sorted(parse_seconds(item) for item in points if str(item if item is not None else "").strip())
+    if not requested:
+        raise ValueError("A split needs a point: set IN, or IN and OUT for three parts.")
+    if len(requested) > 2:
+        raise ValueError("A split takes one point or two.")
+    for point in requested:
+        if point <= 0 or point >= duration:
+            raise ValueError(f"The point {format_seconds(point)} lies outside the file.")
+
+    candidates = [float(item) for item in keyframes]
+    boundaries: list[float] = []
+    for point in requested:
+        keyframe = nearest_keyframe(candidates, point)
+        if keyframe is None:
+            raise ValueError(f"No keyframe was found near {format_seconds(point)}.")
+        if keyframe <= 0 or keyframe >= duration:
+            raise ValueError(
+                f"The point {format_seconds(point)} lands on the keyframe at the edge of the file, "
+                "so there is nothing to split off there."
+            )
+        boundaries.append(keyframe)
+    if len(boundaries) == 2 and boundaries[0] == boundaries[1]:
+        raise ValueError(
+            f"Both points land on the keyframe at {format_seconds(boundaries[0])}, "
+            "so the middle part would be empty. Move them further apart."
+        )
+
+    starts = [0.0, *boundaries]
+    ends: list[float | None] = [*boundaries, None]
+    parts: list[TrimSplitPart] = []
+    for index, (start, end) in enumerate(zip(starts, ends), start=1):
+        if end is None:
+            parts.append(TrimSplitPart(index=index, start=start, end=None, frames=None, seconds=float(duration) - start))
+            continue
+        if frame_exact:
+            # Round, not ceil: a keyframe timestamp is already a frame boundary.
+            frames = seconds_to_frames(end, rate) - seconds_to_frames(start, rate)
+            parts.append(TrimSplitPart(index=index, start=start, end=end, frames=frames, seconds=frames_to_seconds(frames, rate)))
+        else:
+            parts.append(TrimSplitPart(index=index, start=start, end=end, frames=None, seconds=end - start))
+
+    return TrimSplit(
+        requested=tuple(requested),
+        boundaries=tuple(boundaries),
+        offsets=tuple(boundary - point for boundary, point in zip(boundaries, requested)),
+        parts=tuple(parts),
+    )
+
+
 # Containers that will take a data stream at all. Measured, and one of them the
 # hard way: Matroska answers "Only audio, video, and subtitles are supported for
 # Matroska" and takes none. MXF was assumed to be the same and is not - a broadcast
@@ -774,5 +869,725 @@ def build_trim_command(
         if faststart:
             flags += "+faststart"
         command.extend(["-movflags", flags])
+    command.append(target)
+    return command
+
+
+# ---------------------------------------------------------------------------
+# Sound files
+#
+# A file of sound alone has no keyframes, so nothing has to snap: a point is the
+# sample nearest to it. Each piece is decoded from the start of the file and cut
+# by sample number with `atrim`, which is exact for every codec. Measured on WAV,
+# FLAC, MP3, AAC and Vorbis: the piece is, bit for bit, the same slice of the
+# fully decoded source. `asetpts=N/SR/TB` numbers the samples as the decoder
+# hands them over, so a file whose clock starts late - an MP3 with its encoder
+# delay - still counts from the first sample a player plays.
+# ---------------------------------------------------------------------------
+
+# Codecs that give back exactly the samples they were given.
+LOSSLESS_AUDIO_CODECS = {"flac", "alac", "wavpack", "tta", "ape", "tak", "mlp", "truehd", "shorten", "mp4als", "ralf"}
+
+
+def audio_codec_is_lossless(codec: str) -> bool:
+    name = str(codec or "").strip().lower()
+    return name.startswith("pcm_") or name in LOSSLESS_AUDIO_CODECS
+
+
+@dataclass(frozen=True)
+class AudioPiece:
+    """Samples from `start` up to, and not including, `end`; no `end` runs to the end of the file."""
+
+    start: int
+    end: int | None
+
+
+@dataclass(frozen=True)
+class AudioTrim:
+    """Where a sound file is cut, in samples."""
+
+    action: str
+    sample_rate: int
+    total: int
+    requested: tuple[float, ...]
+    pieces: tuple[AudioPiece, ...]
+    # A cut joins its pieces into one file; a keep or a split writes each to its own.
+    joined: bool
+
+    def length(self, piece: AudioPiece) -> int:
+        return (self.total if piece.end is None else piece.end) - piece.start
+
+    @property
+    def kept(self) -> int:
+        return sum(self.length(piece) for piece in self.pieces)
+
+
+def seconds_to_sample(seconds: float, sample_rate: int) -> int:
+    """The sample nearest to a wall-clock position; a tie goes to the later one."""
+    return int(math.floor(float(seconds) * int(sample_rate) + 0.5))
+
+
+def _point_given(value: Any) -> bool:
+    return str(value if value is not None else "").strip() != ""
+
+
+def plan_audio_trim(
+    *,
+    pattern: str,
+    start: Any,
+    end: Any,
+    duration: float,
+    sample_rate: int,
+    total_samples: int | None = None,
+) -> AudioTrim:
+    """Turn a trim pattern into sample numbers for a file of sound alone.
+
+    The patterns and the refusals are the ones the picture uses, so both paths
+    answer the same question the same way. Only nothing snaps: there is no
+    keyframe to wait for, and the joint between two pieces is one sample
+    boundary.
+    """
+    mode = str(pattern or "").strip().lower()
+    if mode not in TRIM_PATTERNS:
+        raise ValueError(f"Unknown trim pattern: {pattern!r}")
+    rate = int(sample_rate or 0)
+    if rate <= 0:
+        raise ValueError("The sample rate could not be read.")
+    # A count the file states outright beats one worked out from its duration.
+    total = int(total_samples or 0)
+    if total <= 0:
+        total = seconds_to_sample(float(duration or 0.0), rate)
+    if total <= 0:
+        raise ValueError("Source duration could not be read.")
+
+    def sample(value: Any) -> int:
+        return min(max(seconds_to_sample(parse_seconds(value), rate), 0), total)
+
+    if mode == "split":
+        asked = sorted(parse_seconds(item) for item in (start, end) if _point_given(item))
+        if not asked:
+            raise ValueError("A split needs a point: set IN, or IN and OUT for three parts.")
+        cuts: list[int] = []
+        for point in asked:
+            at = seconds_to_sample(point, rate)
+            if at <= 0 or at >= total:
+                raise ValueError(f"The point {format_seconds(point)} lies outside the file.")
+            cuts.append(at)
+        if len(cuts) == 2 and cuts[0] == cuts[1]:
+            raise ValueError(
+                f"Both points fall on sample {cuts[0]}, so the middle part would be empty. Move them further apart."
+            )
+        starts = [0, *cuts]
+        ends: list[int | None] = [*cuts, None]
+        pieces = tuple(AudioPiece(first, last) for first, last in zip(starts, ends))
+        return AudioTrim("split", rate, total, tuple(asked), pieces, joined=False)
+
+    if mode == "middle":
+        if not (_point_given(start) and _point_given(end)):
+            raise ValueError("Cutting a piece out needs both IN and OUT.")
+        first, last = parse_seconds(start), parse_seconds(end)
+        gap_start, gap_end = sample(start), sample(end)
+        if gap_start >= gap_end:
+            raise ValueError(f"The piece to remove is empty: {format_seconds(first)} .. {format_seconds(last)}")
+        if gap_start <= 0:
+            raise ValueError("The piece to remove starts at zero: Keep it with IN alone does exactly that.")
+        if gap_end >= total:
+            raise ValueError("The piece to remove reaches the end of the file: Keep it with OUT alone does exactly that.")
+        pieces = (AudioPiece(0, gap_start), AudioPiece(gap_end, None))
+        return AudioTrim("cut", rate, total, (first, last), pieces, joined=True)
+
+    head_given = mode in {"start", "both"} and _point_given(start)
+    tail_given = mode in {"end", "both"} and _point_given(end)
+    first = parse_seconds(start) if head_given else 0.0
+    last = parse_seconds(end) if tail_given else total / rate
+    head = sample(start) if head_given else 0
+    tail = sample(end) if tail_given else total
+    if head <= 0 and tail >= total:
+        raise ValueError("Nothing would be trimmed: no cut point is set.")
+    if head >= tail:
+        raise ValueError(f"The kept piece is empty: {format_seconds(first)} .. {format_seconds(last)}")
+    piece = AudioPiece(head, None if tail >= total else tail)
+    return AudioTrim("keep", rate, total, (first, last), (piece,), joined=False)
+
+
+def _atrim(piece: AudioPiece) -> str:
+    bounds = []
+    if piece.start > 0:
+        bounds.append(f"start_sample={piece.start}")
+    if piece.end is not None:
+        bounds.append(f"end_sample={piece.end}")
+    return f"atrim={':'.join(bounds)}," if bounds else ""
+
+
+def audio_trim_filter(piece: AudioPiece, tail_filter: str = "") -> str:
+    """One piece: number the samples, cut on them, start the piece's clock at zero."""
+    chain = f"asetpts=N/SR/TB,{_atrim(piece)}asetpts=PTS-STARTPTS"
+    return f"{chain},{tail_filter}" if tail_filter else chain
+
+
+def audio_join_graph(pieces: Sequence[AudioPiece], tail_filter: str = "") -> str:
+    """Pieces of one file joined into one, in a single pass - a cut.
+
+    Measured: the result is bit for bit the source without the removed samples,
+    on WAV and on FLAC. Nothing is written in between.
+    """
+    count = len(pieces)
+    head = f"[0:a:0]asetpts=N/SR/TB,asplit={count}" + "".join(f"[s{index}]" for index in range(count))
+    chains = [f"[s{index}]{_atrim(piece)}asetpts=PTS-STARTPTS[p{index}]" for index, piece in enumerate(pieces)]
+    join = "".join(f"[p{index}]" for index in range(count)) + f"concat=n={count}:v=0:a=1"
+    if tail_filter:
+        join += f",{tail_filter}"
+    return ";".join([head, *chains, join + "[out]"])
+
+
+def build_audio_trim_command(
+    *,
+    ffmpeg: str,
+    source: str,
+    target: str,
+    overwrite: bool,
+    pieces: Sequence[AudioPiece],
+    codec_args: Sequence[str],
+    tail_filter: str = "",
+    keep_cover: bool = False,
+    metadata: Sequence[str] = (),
+    muxer_args: Sequence[str] = (),
+) -> list[str]:
+    """The FFmpeg call for a piece of a sound file, or for several joined into one."""
+    if not pieces:
+        raise ValueError("There is no piece to write.")
+    command = [ffmpeg, "-hide_banner", "-stats", "-y" if overwrite else "-n", "-nostdin", "-i", source]
+    if len(pieces) == 1:
+        command += ["-map", "0:a:0", "-af", audio_trim_filter(pieces[0], tail_filter)]
+    else:
+        command += ["-filter_complex", audio_join_graph(pieces, tail_filter), "-map", "[out]"]
+    if keep_cover:
+        # Cover art is a still picture: copied as it is, and marked as the cover again.
+        command += ["-map", "0:v?", "-c:v", "copy", "-disposition:v:0", "attached_pic"]
+    else:
+        command.append("-vn")
+    command += ["-sn", "-dn", *codec_args, "-map_metadata", "0", *metadata, *muxer_args, target]
+    return command
+
+
+AUDIO_TRIM_FORMATS = ("source", "wav", "flac", "alac", "m4a", "mp3", "opus")
+
+# Where a codec can be written back as itself, by the extension the file came in.
+AUDIO_AS_IS_CONTAINERS = {
+    "pcm": {"wav", "w64", "aif", "aiff", "aifc", "caf", "au", "snd", "mka"},
+    "flac": {"flac", "mka", "oga", "ogg"},
+    "alac": {"m4a", "m4b", "caf", "mka"},
+    "wavpack": {"wv", "mka"},
+    "tta": {"tta", "mka"},
+    "mp3": {"mp3", "mka"},
+    "aac": {"m4a", "m4b", "aac", "mka"},
+    "opus": {"opus", "ogg", "oga", "mka"},
+    "vorbis": {"ogg", "oga", "mka"},
+    "ac3": {"ac3", "mka"},
+    "eac3": {"eac3", "mka"},
+}
+
+# A compressed codec written back as itself: the encoder, the bitrate used when
+# the file states none, and the ceiling.
+AUDIO_LOSSY_REWRITERS = {
+    "mp3": ("libmp3lame", 320, 320),
+    "aac": ("aac", 256, 512),
+    "opus": ("libopus", 192, 510),
+    "vorbis": ("libvorbis", 320, 500),
+    "ac3": ("ac3", 448, 640),
+    "eac3": ("eac3", 640, 1536),
+}
+MP3_CBR_STEPS = (32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+OPUS_SAMPLE_RATES = {8000, 12000, 16000, 24000, 48000}
+# Containers that keep an attached cover picture. Measured: WAV and Opus refuse one.
+AUDIO_COVER_CONTAINERS = {"mp3", "m4a", "m4b", "flac", "mka"}
+# Extensions FFmpeg does not map to their muxer on its own.
+AUDIO_MUXER_BY_EXTENSION = {"snd": "au"}
+WAV_CODEC_BY_DEPTH = {
+    "u8": "pcm_u8",
+    "s16": "pcm_s16le",
+    "s24": "pcm_s24le",
+    "s32": "pcm_s32le",
+    "f32": "pcm_f32le",
+    "f64": "pcm_f64le",
+}
+DEPTH_WORDS = {
+    "u8": "8-bit",
+    "s16": "16-bit",
+    "s24": "24-bit",
+    "s32": "32-bit",
+    "f32": "32-bit float",
+    "f64": "64-bit float",
+}
+
+
+@dataclass(frozen=True)
+class AudioEncoding:
+    """How a piece of a sound file is written, and what that costs."""
+
+    codec_args: tuple[str, ...]
+    extension: str
+    output_rate: int
+    # True when the piece holds exactly the samples the decoder gives for that stretch.
+    lossless: bool
+    label: str
+    tail_filter: str = ""
+    muxer_args: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+
+
+def audio_sample_depth(codec: str, sample_fmt: str = "", bits: Any = None) -> str:
+    """What the source's samples really hold: u8, s16, s24, s32, f32 or f64.
+
+    A 24-bit FLAC decodes to 32-bit integers, so the format alone overstates it;
+    `bits_per_raw_sample` says what is really there.
+    """
+    name = str(codec or "").strip().lower()
+    match = re.match(r"pcm_([suf])(\d+)", name)
+    if match:
+        kind, width = match.group(1), int(match.group(2))
+        if kind == "f":
+            return "f64" if width == 64 else "f32"
+        if kind == "u" and width == 8:
+            return "u8"
+        return "s16" if width <= 16 else "s24" if width <= 24 else "s32"
+    fmt = str(sample_fmt or "").strip().lower()
+    if fmt.endswith("p"):
+        fmt = fmt[:-1]
+    if fmt in {"flt", "dbl", "u8", "s16"}:
+        return {"flt": "f32", "dbl": "f64", "u8": "u8", "s16": "s16"}[fmt]
+    try:
+        width = int(bits or 0)
+    except (TypeError, ValueError):
+        width = 0
+    if 0 < width <= 16:
+        return "s16"
+    if 0 < width <= 24:
+        return "s24"
+    return "s32"
+
+
+def _kbps(value: Any, default: int) -> int:
+    text = str(value or "").strip().lower()
+    for suffix in ("kbps", "kb/s", "k"):
+        if text.endswith(suffix):
+            text = text[: -len(suffix)]
+            break
+    try:
+        number = int(float(text))
+    except ValueError:
+        return default
+    return number if number > 0 else default
+
+
+def _rewrite_kbps(family: str, bit_rate: Any) -> int:
+    """The source's own bitrate, raised to a step the encoder takes, never above its ceiling."""
+    _encoder, fallback, ceiling = AUDIO_LOSSY_REWRITERS[family]
+    try:
+        kbps = math.ceil(int(bit_rate) / 1000)
+    except (TypeError, ValueError):
+        kbps = fallback
+    if kbps <= 0:
+        kbps = fallback
+    if family == "mp3":
+        kbps = next((step for step in MP3_CBR_STEPS if step >= kbps), MP3_CBR_STEPS[-1])
+    return min(kbps, ceiling)
+
+
+def audio_trim_encoding(
+    *,
+    choice: str,
+    codec: str,
+    extension: str,
+    sample_rate: int,
+    channels: int,
+    sample_fmt: str = "",
+    bits: Any = None,
+    bit_rate: Any = None,
+    mp3_preset: Any = "v0",
+    bitrate: Any = "320k",
+) -> AudioEncoding:
+    """Decide what a piece is written as: what the source was, or a format from the Audio set.
+
+    Every path starts from the decoded sound, cut on the sample. What is decided
+    here is only what that sound is written as, and whether writing it spends a
+    generation.
+    """
+    wanted = str(choice or "source").strip().lower()
+    if wanted not in AUDIO_TRIM_FORMATS:
+        raise ValueError(f"Unknown format for a piece of sound: {choice!r}")
+    name = str(codec or "").strip().lower()
+    title = name.upper() or "This codec"
+    ext = str(extension or "").strip().lower().lstrip(".")
+    rate = int(sample_rate)
+    count = int(channels or 0)
+    lossless_source = audio_codec_is_lossless(name)
+    # A compressed source decodes to float, and float is the sound there is to keep.
+    depth = audio_sample_depth(name, sample_fmt, bits) if lossless_source else "f32"
+
+    if wanted == "source":
+        if name.startswith("dsd_"):
+            raise ValueError("DSD cannot be written back as DSD. Choose FLAC or WAV: they keep the decoded sound.")
+        family = "pcm" if name.startswith("pcm_") else name
+        containers = AUDIO_AS_IS_CONTAINERS.get(family)
+        if containers is None:
+            raise ValueError(
+                f"{title} cannot be written back as it is. "
+                "Choose FLAC or WAV for the same sound, or M4A, MP3 or Opus to compress it."
+            )
+        if ext not in containers:
+            raise ValueError(f"{title} cannot be written back into .{ext}. Choose FLAC or WAV for the same sound.")
+        muxer: tuple[str, ...] = ("-f", AUDIO_MUXER_BY_EXTENSION[ext]) if ext in AUDIO_MUXER_BY_EXTENSION else ()
+        if ext == "wav":
+            # A piece of a long multichannel take can pass 4 GB, where plain RIFF ends.
+            muxer += ("-rf64", "auto")
+        if lossless_source:
+            args = ("-c:a", "flac", "-compression_level", "8") if family == "flac" else ("-c:a", name)
+            return AudioEncoding(args, ext, rate, True, f"{title} as it was, sample for sample", muxer_args=muxer)
+        encoder = AUDIO_LOSSY_REWRITERS[family][0]
+        kbps = _rewrite_kbps(family, bit_rate)
+        return AudioEncoding(
+            ("-c:a", encoder, "-b:a", f"{kbps}k"),
+            ext,
+            rate,
+            False,
+            f"{title} encoded again at {kbps} kbps",
+            muxer_args=muxer,
+            warnings=(
+                f"{title} is compressed, so a cut on the sample encodes it once more: one generation. "
+                "WAV or FLAC keep the decoded sound with nothing lost after the cut.",
+            ),
+        )
+
+    if wanted == "wav":
+        return AudioEncoding(
+            ("-c:a", WAV_CODEC_BY_DEPTH[depth]),
+            "wav",
+            rate,
+            True,
+            f"WAV {DEPTH_WORDS[depth]}",
+            muxer_args=("-rf64", "auto"),
+        )
+
+    if wanted in {"flac", "alac"}:
+        title_out = wanted.upper()
+        if count > 8:
+            raise ValueError(f"{title_out} holds up to eight channels; this file has {count}. Choose WAV.")
+        fits = depth in {"u8", "s16", "s24"}
+        warnings: tuple[str, ...] = ()
+        if lossless_source and not fits:
+            warnings = (
+                f"{title_out} holds 24 bits at most, so this {DEPTH_WORDS[depth]} source is stored at 24. WAV keeps every bit.",
+            )
+        stored = {"u8": "16-bit", "s16": "16-bit"}.get(depth, "24-bit")
+        if wanted == "flac":
+            args: tuple[str, ...] = ("-c:a", "flac", "-compression_level", "8")
+            return AudioEncoding(args, "flac", rate, lossless_source and fits, f"FLAC {stored}", warnings=warnings)
+        return AudioEncoding(("-c:a", "alac"), "m4a", rate, lossless_source and fits, f"ALAC {stored}", warnings=warnings)
+
+    if wanted == "m4a":
+        kbps = min(_kbps(bitrate, 320), 512)
+        return AudioEncoding(("-c:a", "aac", "-b:a", f"{kbps}k"), "m4a", rate, False, f"AAC {kbps} kbps")
+
+    if wanted == "mp3":
+        if count > 2:
+            raise ValueError(f"MP3 holds one or two channels; this file has {count}. Choose M4A, Opus, FLAC or WAV.")
+        # LAME stops at 48 kHz; below that the rate stays as it is.
+        tail = soxr_resample_filter(48000) if rate > 48000 else ""
+        preset = normalize_mp3_preset(mp3_preset)
+        label = {"v0": "MP3 VBR V0", "insane": "MP3 CBR 320 kbps"}.get(preset) or (
+            f"MP3 CBR {mp3_bitrate(bitrate).removesuffix('k')} kbps"
+        )
+        return AudioEncoding(
+            tuple(mp3_encoder_args(mp3_preset, bitrate)),
+            "mp3",
+            48000 if tail else rate,
+            False,
+            label,
+            tail_filter=tail,
+        )
+
+    if count > 8:
+        raise ValueError(f"Opus holds up to eight channels; this file has {count}. Choose WAV or FLAC.")
+    kbps = min(_kbps(bitrate, 256), 256)
+    # Opus works at 48 kHz and a few divisions of it; anything else goes there through soxr.
+    tail = "" if rate in OPUS_SAMPLE_RATES else soxr_resample_filter(48000)
+    return AudioEncoding(
+        ("-c:a", "libopus", "-b:a", f"{kbps}k"),
+        "opus",
+        48000 if tail else rate,
+        False,
+        f"Opus {kbps} kbps",
+        tail_filter=tail,
+    )
+
+
+# FFmpeg reads a Broadcast WAV's `bext` chunk into tags named its own way and
+# writes the chunk back only when asked, from tags named another way again.
+# Measured: without `-write_bext 1` the chunk is gone; with it, description,
+# originator, date and time come back empty unless handed over by these names.
+BEXT_FIELDS_FROM_TAGS = (
+    ("description", "comment"),
+    ("originator", "encoded_by"),
+    ("origination_date", "date"),
+    ("origination_time", "creation_time"),
+)
+
+
+def audio_trim_metadata(
+    tags: dict[str, Any] | None,
+    *,
+    start_sample: int,
+    extension: str,
+    broadcast_wav: bool,
+) -> tuple[list[str], list[str], tuple[int, int] | None]:
+    """Tags and muxer options for one piece, and the time reference before and after.
+
+    A recorder stamps its WAV with the samples since midnight at which the take
+    began. A piece that starts later began later, exactly as a shifted timecode
+    says for picture, so the reference moves by the samples cut off the head.
+    """
+    values = {str(key).lower(): str(value) for key, value in (tags or {}).items()}
+    metadata: list[str] = []
+    muxer: list[str] = []
+    moved: tuple[int, int] | None = None
+    reference = values.get("time_reference", "").strip()
+    if reference.isdigit():
+        moved = (int(reference), int(reference) + int(start_sample))
+        if moved[1] != moved[0]:
+            metadata += ["-metadata", f"time_reference={moved[1]}"]
+    if broadcast_wav and str(extension or "").strip().lower() == "wav":
+        muxer += ["-write_bext", "1"]
+        for field, tag in BEXT_FIELDS_FROM_TAGS:
+            value = values.get(tag, "").strip()
+            if value:
+                metadata += ["-metadata", f"{field}={value}"]
+    return metadata, muxer, moved
+
+
+# ---------------------------------------------------------------------------
+# Sound copied packet by packet - for the purist, with Exact cut off.
+#
+# Nothing is decoded and nothing is encoded, so no generation is spent, and each
+# point moves to the nearest packet boundary instead of the sample. What a joint
+# then costs depends on the codec. Every rule below was measured on a 30 s stereo
+# take by decoding the pieces and comparing them, sample by sample, with the
+# decoded source.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PacketCopyRule:
+    """How one codec is copied, and what that was measured to cost."""
+
+    codec: str
+    containers: frozenset[str]
+    # Packets copied ahead of a piece: a Vorbis decoder throws the first packet's sound away.
+    lead_in: int
+    # MP3 keeps its encoder-delay header only on a piece that starts the file;
+    # anywhere else the decoder would cut the delay off again and shift the sound.
+    header_only_at_start: bool
+    # An AAC join replays the priming the source's edit list hid, unless its
+    # clock is moved back by exactly that much.
+    join_clock_back: bool
+    warning: str
+
+
+PACKET_COPY_RULES = {
+    "mp3": PacketCopyRule(
+        "mp3",
+        frozenset({"mp3"}),
+        0,
+        True,
+        False,
+        "MP3 copied packet by packet: after a joint the first 34 ms sound slightly different, because an MP3 frame "
+        "borrows bits from the frame before it (1 632 samples, measured). A piece that runs to the end without "
+        "starting the file keeps the encoder's end padding, under one frame.",
+    ),
+    "aac": PacketCopyRule(
+        "aac",
+        frozenset({"m4a", "m4b"}),
+        0,
+        False,
+        True,
+        "AAC copied packet by packet: after a joint the first 21 ms sound slightly different, because each frame "
+        "overlaps the one before it (1 024 samples, measured).",
+    ),
+    "vorbis": PacketCopyRule(
+        "vorbis",
+        frozenset({"ogg", "oga"}),
+        1,
+        False,
+        False,
+        "Vorbis copied packet by packet: a piece starts one packet early, since the decoder throws its first packet "
+        "away, and is then the source bit for bit. The joint of a cut sounds different for 21 ms (1 024 samples, measured).",
+    ),
+    "opus": PacketCopyRule(
+        "opus",
+        frozenset({"opus", "ogg", "oga"}),
+        0,
+        False,
+        False,
+        "Opus copied packet by packet: after a joint the decoder takes about half a second to settle, and a piece "
+        "that does not start the file begins late by the codec's pre-skip - 312 samples on the measured take. "
+        "Exact cut avoids both.",
+    ),
+}
+
+
+@dataclass(frozen=True)
+class PacketPiece:
+    """A piece copied packet by packet, and where its sound sits in the decoded source."""
+
+    packet: int
+    end_packet: int | None
+    start_sample: int
+    end_sample: int | None
+    # Output seek points, halfway through the packet before a boundary, so no
+    # rounding can put a packet on the wrong side. None: from the first packet, or to the end.
+    copy_from: float | None
+    copy_to: float | None
+    # MP3 only: whether the encoder-delay header is written.
+    header: bool
+
+
+@dataclass(frozen=True)
+class PacketCopy:
+    """A sound trim moved onto packet boundaries."""
+
+    trim: AudioTrim
+    rule: PacketCopyRule
+    # Each point asked for, and the packet boundary it landed on, in samples.
+    moves: tuple[tuple[int, int], ...]
+    pieces: tuple[PacketPiece, ...]
+
+    def length(self, piece: PacketPiece) -> int:
+        return (self.trim.total if piece.end_sample is None else piece.end_sample) - piece.start_sample
+
+    @property
+    def kept(self) -> int:
+        return sum(self.length(piece) for piece in self.pieces)
+
+
+def plan_packet_copy(*, trim: AudioTrim, rule: PacketCopyRule, packet_starts: Sequence[int]) -> PacketCopy:
+    """Move every sample boundary of a sound trim to the nearest packet boundary.
+
+    `packet_starts` holds where each packet's sound begins in the decoded source,
+    in samples - negative for the priming an MP3 or an AAC file hides.
+    """
+    starts = [int(item) for item in packet_starts]
+    if len(starts) < 2:
+        raise ValueError("The packets of this file could not be read.")
+    rate = trim.sample_rate
+    moves: list[tuple[int, int]] = []
+    landed: dict[int, int] = {}
+
+    def land(sample: int) -> int:
+        if sample not in landed:
+            index = bisect.bisect_left(starts, sample)
+            candidates = [item for item in (index - 1, index) if 1 <= item < len(starts)]
+            if candidates:
+                packet = min(candidates, key=lambda item: (abs(starts[item] - sample), item))
+            else:
+                packet = 1 if index <= 1 else len(starts) - 1
+            landed[sample] = packet
+            moves.append((sample, starts[packet]))
+        return landed[sample]
+
+    def seek(packet: int) -> float:
+        return (starts[packet] + starts[packet - 1]) / (2 * rate)
+
+    pieces: list[PacketPiece] = []
+    for piece in trim.pieces:
+        first = 0 if piece.start <= 0 else land(piece.start)
+        last = None if piece.end is None else land(piece.end)
+        if last is not None and first >= last:
+            raise ValueError(
+                f"Both points land on the packet boundary at {format_seconds(starts[last] / rate)}, so the piece "
+                "between them would be empty. Move them further apart, or turn Exact cut on."
+            )
+        # A joined stream decodes straight on through the joint, so nothing is thrown away there.
+        lead = 0 if (trim.joined or first == 0) else rule.lead_in
+        copy_packet = max(0, first - lead)
+        pieces.append(
+            PacketPiece(
+                packet=first,
+                end_packet=last,
+                start_sample=0 if first == 0 else starts[first],
+                end_sample=None if last is None else starts[last],
+                copy_from=None if copy_packet == 0 else seek(copy_packet),
+                copy_to=None if last is None else seek(last),
+                header=trim.joined or first == 0 or not rule.header_only_at_start,
+            )
+        )
+    if trim.joined and pieces[0].end_packet is not None and pieces[0].end_packet >= pieces[-1].packet:
+        raise ValueError(
+            "The piece to remove is shorter than a packet, so nothing would be removed. Turn Exact cut on to remove it on the sample."
+        )
+    return PacketCopy(trim, rule, tuple(moves), tuple(pieces))
+
+
+def build_packet_copy_command(
+    *,
+    ffmpeg: str,
+    source: str,
+    target: str,
+    overwrite: bool,
+    piece: PacketPiece,
+    keep_cover: bool = False,
+    metadata: Sequence[str] = (),
+) -> list[str]:
+    """One piece, packets copied untouched. The seek is an output option: it drops packets, it decodes nothing."""
+    command = [ffmpeg, "-hide_banner", "-stats", "-y" if overwrite else "-n", "-nostdin", "-i", source, "-map", "0:a:0"]
+    if keep_cover:
+        command += ["-map", "0:v?", "-c:v", "copy", "-disposition:v:0", "attached_pic"]
+    else:
+        command.append("-vn")
+    command += ["-sn", "-dn", "-c:a", "copy", "-map_metadata", "0", *metadata]
+    if not piece.header:
+        command += ["-write_xing", "0"]
+    if piece.copy_from is not None:
+        command += ["-ss", f"{piece.copy_from:.6f}"]
+    if piece.copy_to is not None:
+        command += ["-to", f"{piece.copy_to:.6f}"]
+    command.append(target)
+    return command
+
+
+def build_packet_join_command(
+    *,
+    ffmpeg: str,
+    list_file: str,
+    source: str,
+    target: str,
+    overwrite: bool,
+    clock_back: float = 0.0,
+    keep_cover: bool = False,
+) -> list[str]:
+    """Copied pieces glued by the concat demuxer; tags and the cover come from the source itself."""
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-stats",
+        "-y" if overwrite else "-n",
+        "-nostdin",
+        "-f",
+        "concat",
+        "-safe",
+        "0",
+        "-i",
+        list_file,
+        "-i",
+        source,
+        "-map",
+        "0:a:0",
+    ]
+    if keep_cover:
+        command += ["-map", "1:v?", "-c:v", "copy", "-disposition:v:0", "attached_pic"]
+    command += ["-c:a", "copy", "-map_metadata", "1"]
+    if clock_back > 0:
+        # Measured on AAC in M4A: with the clock moved back by the priming, the
+        # join is exactly as long as planned; without it, 1 024 samples long and shifted.
+        command += ["-output_ts_offset", f"{-clock_back:.6f}"]
     command.append(target)
     return command

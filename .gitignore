@@ -172,21 +172,26 @@
 # so a clone has its folders back after the first cleanup or build. Present in 28
 # of 31 projects; the three Build tools create their own folders in code.
 # Storing markers here too would give one fact two owners. The script is the owner.
-runtime/
-wheelhouse/
-Tools/
-tools/
-install/download/
-install/downloads/
-logs/
-output/
-report/
-release/
-work/
-workspace/
-input/
-data/cache/
-licenses/
+#
+# Every rule here starts with a slash, which ties it to the project root. Without
+# one a rule matches at any depth: `tools/` hid Docs\tools with every document in
+# it, and on Windows, where git does not tell case apart, `Tools/` alone did the
+# same. Measured on a bare repository before the change.
+/runtime/
+/wheelhouse/
+/Tools/
+/tools/
+/install/download/
+/install/downloads/
+/logs/
+/output/
+/report/
+/release/
+/work/
+/workspace/
+/input/
+/data/cache/
+/licenses/
 
 # No marker needed: these are never expected to exist in a fresh clone.
 node_modules/

@@ -213,7 +213,7 @@ folder and fight over a name: the subfolder structure is reproduced in the outpu
 |---|---|
 | Download | a link or a list, format profiles, resolution, subtitles, threads |
 | Audio streams | extraction, resampling, normalisation, packaging; audio into video without re-encoding the picture |
-| Trimming | frame-accurate or on keyframes, with marks remembered per file |
+| Trimming | frame-accurate or on keyframes, with marks remembered per file; sound files on the sample |
 | Remux, frame rate, colour tables | changing the container, working with frame rate, applying lookup tables |
 | Archive | long-term masters: FFV1, lossless x264 |
 | Editing codecs | ProRes and DNxHR in MOV or MXF |

@@ -17,10 +17,11 @@
 | Раздел «Обрезка» | `config/tool_manifest.yaml`, группа `trim` | да |
 | Превью: кадр, волны, два фейдера | `system_core/ui_nicegui/app.py`, поля `trim_points`, `trim_file_pick` | да |
 | CLI | `Scripts/ff-trim-start.cmd`, `-end`, `-both`, `kind: trim` | да |
-| Проверки арифметики | `tests/test_trim_contract.py`, 57 тестов | да |
+| Проверки арифметики | `tests/test_trim_contract.py`, 95 тестов | да |
 | Матрица форматов и методы проверки | [TRIM_MATRIX_RU.md](TRIM_MATRIX_RU.md) | да |
 | Приёмка на матрице источников | ProRes, HEVC long-GOP, all-intra, 29,97 DF, VFR, 4 канала, MPEG-TS, кириллица | да |
-| Разделение файла надвое по точке | `pattern: split`, два выхода `_part1` / `_part2` | да |
+| Разделение на две или три части | `pattern: split`, `_part1` … `_part3`, стыки на ключевых кадрах | да |
+| Звуковые файлы: рез по сэмплу, формат из набора «Аудиопотоков», копирование пакетов | `plan_audio_trim`, `plan_packet_copy`, `_trim_audio_plans` | да |
 | Снимок кадра в PNG/JPG | `trim_save_still`, `Transcoded/Stills` | да |
 | Вырезание куска из середины, склейка, кроссфейд | — | нет |
 

@@ -1,13 +1,13 @@
 # Audion Build Licenses Scan Report
 
 - Project: **Audion Media Tools** (`audion-media-tools`)
-- Run: `20260904T023021Z_audion-media-tools_456e2622`
-- Project root: `S:\Release\Audion Media Tools`
-- Scan root: `S:\Release\Audion Media Tools`
-- Output: `S:\Release\Audion Media Tools\licenses`
+- Run: `20260918T025701Z_audion-media-tools_bda41d6f`
+- Project root: `S:\Releases\Audion Media Tools`
+- Scan root: `S:\Releases\Audion Media Tools`
+- Output: `S:\Releases\Audion Media Tools\licenses`
 - Status: **PASS**
-- Components: 76
-- Bundled: 76
+- Components: 77
+- Bundled: 77
 - Optional runtime: 0
 
 ## Issues
@@ -18,15 +18,16 @@ No issues detected.
 
 | Component | Change | Old | New |
 |---|---|---:|---:|
-| 7-Zip | `UNCHANGED` | 26.2.0 | 26.2.0 |
+| 7-Zip | `UNCHANGED` | 26.3.0 | 26.3.0 |
 | aiofiles | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 25.1.0 | 25.1.0 |
 | aiohappyeyeballs | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 2.7.1 | 2.7.1 |
 | aiohttp | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.14.3 | 3.14.3 |
 | aiosignal | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.4.0 | 1.4.0 |
 | annotated-doc | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.0.5 | 0.0.5 |
 | annotated-types | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.8.0 | 0.8.0 |
-| anyio | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 4.15.0 | 4.15.0 |
+| anyio | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 4.15.1 | 4.15.1 |
 | attrs | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.1.0 | 26.1.0 |
+| Audion launcher | `NEW_COMPONENT_APPROVED_PROFILE` | - | bundled |
 | beautifulsoup4 | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 4.15.0 | 4.15.0 |
 | bidict | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.24.1 | 0.24.1 |
 | bottle | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.13.4 | 0.13.4 |
@@ -35,7 +36,7 @@ No issues detected.
 | click | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 8.5.0 | 8.5.0 |
 | clr_loader | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.3.1 | 0.3.1 |
 | colorama | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.4.6 | 0.4.6 |
-| Deno | `UNCHANGED` | 2.9.6 | 2.9.6 |
+| Deno | `UNCHANGED` | 2.9.7 | 2.9.7 |
 | docutils | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.23 | 0.23 |
 | fastapi | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.141.1 | 0.141.1 |
 | FFmpeg | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 8.0.1-full_build-www.gyan.dev | 8.0.1-full_build-www.gyan.dev |
@@ -45,7 +46,7 @@ No issues detected.
 | httpcore | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.0.9 | 1.0.9 |
 | httptools | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.8.0 | 0.8.0 |
 | httpx | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.28.1 | 0.28.1 |
-| idna | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.19 | 3.19 |
+| idna | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.20 | 3.20 |
 | ifaddr | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.2.0 | 0.2.0 |
 | iniconfig | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 2.3.0 | 2.3.0 |
 | itsdangerous | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 2.2.0 | 2.2.0 |
@@ -55,14 +56,14 @@ No issues detected.
 | MarkupSafe | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.0.3 | 3.0.3 |
 | mdurl | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.1.2 | 0.1.2 |
 | mpv | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | mpv v0.41.0-1023-g69e63f425 | mpv v0.41.0-1023-g69e63f425 |
-| multidict | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 6.7.1 | 6.7.1 |
-| nicegui | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.16.0 | 3.16.0 |
+| multidict | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 6.8.0 | 6.8.0 |
+| nicegui | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.17.0 | 3.17.0 |
 | orjson | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.12.0 | 3.12.0 |
 | packaging | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.3 | 26.3 |
 | pip | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.2.1 | 26.2.1 |
 | pluggy | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.6.0 | 1.6.0 |
 | PowerShell | `UNCHANGED` | portable | portable |
-| propcache | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.5.2 | 0.5.2 |
+| propcache | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.5.4 | 0.5.4 |
 | proxy_tools | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.1.0 | 0.1.0 |
 | pycparser | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.0 | 3.0 |
 | pydantic | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 2.13.5 | 2.13.5 |
@@ -73,7 +74,7 @@ No issues detected.
 | Python Embedded | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.12.x | 3.12.x |
 | python-engineio | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 4.14.0 | 4.14.0 |
 | python-multipart | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.0.32 | 0.0.32 |
-| python-socketio | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 5.16.4 | 5.16.4 |
+| python-socketio | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 5.17.0 | 5.17.0 |
 | pythonnet | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 3.1.0 | 3.1.0 |
 | pywebview | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 6.2.1 | 6.2.1 |
 | PyYAML | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 6.0.3 | 6.0.3 |
@@ -83,16 +84,16 @@ No issues detected.
 | soupsieve | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 2.9.2 | 2.9.2 |
 | starlette | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.6.0 | 1.6.0 |
 | tinycss2 | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.5.1 | 1.5.1 |
-| tqdm | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 4.70.0 | 4.70.0 |
+| tqdm | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 4.70.1 | 4.70.1 |
 | typing_extensions | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 4.16.0 | 4.16.0 |
 | typing-inspection | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.4.4 | 0.4.4 |
-| uvicorn | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.52.4 | 0.52.4 |
+| uvicorn | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.53.0 | 0.53.0 |
 | watchfiles | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.2.0 | 1.2.0 |
 | webencodings | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.6.1 | 0.6.1 |
 | websockets | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 17.1 | 17.1 |
 | wheel | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.48.0 | 0.48.0 |
 | wsproto | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.3.2 | 1.3.2 |
-| yarl | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.24.5 | 1.24.5 |
+| yarl | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.25.1 | 1.25.1 |
 | yt-dlp | `UNCHANGED` | 2026.8.19 | 2026.8.19 |
 
 ## Scope

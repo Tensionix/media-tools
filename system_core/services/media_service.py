@@ -70,6 +70,16 @@ from system_core.core.trim_contract import (
     audio_channel_complaint,
     audio_channel_filter,
     audio_reencode_args,
+    AUDIO_COVER_CONTAINERS,
+    PACKET_COPY_RULES,
+    audio_codec_is_lossless,
+    audio_trim_encoding,
+    audio_trim_metadata,
+    build_audio_trim_command,
+    build_packet_copy_command,
+    build_packet_join_command,
+    plan_audio_trim,
+    plan_packet_copy,
     build_trim_command,
     format_offset,
     format_seconds,
@@ -80,6 +90,8 @@ from system_core.core.trim_contract import (
     extra_stream_plan,
     parse_keyframe_times,
     plan_gap,
+    plan_split,
+    TrimCut,
     parse_rate,
     parse_seconds,
     plan_cut,
@@ -4011,12 +4023,23 @@ def trim_source_path(name: str, root: Path | str | None = None) -> Path | None:
 
 
 def trim_source_file_names(root: Path | str | None = None) -> list[str]:
-    """Video files staged in Source, in alphabetical order, as plain names."""
+    """Video and sound files staged in Source, in alphabetical order, as plain names."""
     project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
     source_dir = cached_source_path(project_root)
     if not source_dir.exists():
         return []
-    return [_source_display_name(path, source_dir) for path in _media_files(source_dir, TRIM_VIDEO_EXTENSIONS)]
+    staged = _media_files(source_dir, TRIM_VIDEO_EXTENSIONS | PURE_AUDIO_EXTENSIONS)
+    return [_source_display_name(path, source_dir) for path in staged]
+
+
+def trim_media_kind(name: str) -> str:
+    """"audio" for a file of sound alone, "video" for everything else.
+
+    Told by the extension, because the panel asks on every step through the
+    folder; the run then looks at the streams before it cuts anything.
+    """
+    suffix = Path(str(name or "")).suffix.lower().lstrip(".")
+    return "audio" if suffix in PURE_AUDIO_EXTENSIONS else "video"
 
 
 def trim_file_key(path: Path | str) -> str:
@@ -4423,7 +4446,7 @@ def _trim_seek_warnings(source: Path) -> list[str]:
     return []
 
 
-def _discard_unusable_trim(context: JobContext, target: Path) -> None:
+def _discard_unusable_trim(context: JobContext, target: Path, *, sound: bool = False) -> None:
     """Remove a result that cannot be opened; keep one that can.
 
     A run stopped mid-write leaves a file with no index - gigabytes that no
@@ -4442,7 +4465,9 @@ def _discard_unusable_trim(context: JobContext, target: Path) -> None:
         context.log(f"    [WARN] Could not inspect {target.name}: {exc}")
         return
 
-    duration = _video_stream_duration(context.paths.root, target)
+    # A sound piece has no picture to measure; its own stream says whether it opens.
+    root = context.paths.root
+    duration = _audio_stream_duration(root, target) if sound else _video_stream_duration(root, target)
     if duration > 0:
         context.log(f"    [KEPT] {target.name} stops early but opens: {format_seconds(duration)}.")
         return
@@ -4457,6 +4482,87 @@ def _discard_unusable_trim(context: JobContext, target: Path) -> None:
         context.log(f"    [WARN] Could not remove {target.name}: {exc}")
 
 
+def _trim_split_plans(
+    context: JobContext,
+    source: Path,
+    params: dict[str, Any],
+    *,
+    source_dir: Path,
+    output_dir: Path,
+) -> list[dict[str, Any]]:
+    """A split at IN alone gives two parts; at IN and OUT, three.
+
+    The joints come from `plan_split`, which snaps each point to its nearest
+    keyframe and makes that keyframe the end of one part and the start of the
+    next - so the parts add back up to the file, frame for frame.
+    """
+    root = context.paths.root
+    facts = _trim_stream_facts(root, source)
+    duration = facts["duration"]
+    if duration <= 0:
+        raise RuntimeError("duration could not be read")
+    variable_rate = is_variable_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate"))
+    rate = parse_rate((facts.get("r_frame_rate") if variable_rate else facts.get("avg_frame_rate")) or "")
+    origin = float(facts.get("origin") or 0.0)
+
+    points = [params.get("trim_start"), params.get("trim_end")]
+    asked: list[float] = []
+    for point in points:
+        if str(point if point is not None else "").strip():
+            try:
+                asked.append(parse_seconds(point))
+            except ValueError as exc:
+                raise RuntimeError(str(exc)) from exc
+    keyframes = sorted({item - origin for point in asked for item in _trim_keyframes(root, source, point + origin)})
+    try:
+        split = plan_split(
+            points=points,
+            duration=duration,
+            rate=rate,
+            keyframes=keyframes,
+            frame_exact=not variable_rate,
+        )
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    label = _source_display_name(source, source_dir)
+    context.log(f"Split {label} into {len(split.parts)} parts:")
+    for point, boundary, offset in zip(split.requested, split.boundaries, split.offsets):
+        if abs(offset) < 1e-6:
+            context.log(f"    point {format_seconds(point)} is a keyframe")
+        else:
+            context.log(f"    point {format_seconds(point)} -> keyframe {format_seconds(boundary)} ({format_offset(offset)})")
+
+    plans: list[dict[str, Any]] = []
+    for part in split.parts:
+        last = part.end is None
+        cut = TrimCut(
+            requested_start=part.start,
+            requested_end=float(duration) if last else float(part.end),
+            start=part.start,
+            keyframe_offset=0.0,
+            frames=part.frames,
+            tail_seconds=None if (last or part.frames is not None) else part.seconds,
+            kept=part.seconds,
+            to_end_of_file=last,
+        )
+        # Sample-exact sound for every part: neighbouring parts meet at the same
+        # joint for sound as for picture, or the sound doubles or drops there.
+        part_params = {**params, "trim_pattern": "both", "trim_sample_exact": True}
+        plans.append(
+            _trim_plan(
+                context,
+                source,
+                part_params,
+                source_dir=source_dir,
+                output_dir=output_dir,
+                name_suffix=f"part{part.index}",
+                forced_cut=cut,
+            )
+        )
+    return plans
+
+
 def _trim_plan(
     context: JobContext,
     source: Path,
@@ -4465,6 +4571,7 @@ def _trim_plan(
     source_dir: Path,
     output_dir: Path,
     name_suffix: str = "",
+    forced_cut: TrimCut | None = None,
 ) -> dict[str, Any]:
     """Everything decided about one file before FFmpeg is called."""
     root = context.paths.root
@@ -4503,22 +4610,27 @@ def _trim_plan(
         raise RuntimeError("cutting a piece out of the middle is planned as two cuts, not as one")
     # Keyframes are only probed when the head actually moves; a cut that starts
     # at zero needs no snapping and no scan.
-    head = parse_seconds(params.get("trim_start") or 0) if pattern in {"start", "both"} else 0.0
-    # ffprobe reports keyframes in the stream's timeline; the cut is planned in
-    # the operator's, so the origin comes off here and goes back on at seek time.
-    keyframes = [item - origin for item in _trim_keyframes(root, source, head + origin)] if head > 0 else []
-    try:
-        cut = plan_cut(
-            pattern=pattern,
-            start=params.get("trim_start"),
-            end=params.get("trim_end"),
-            duration=duration,
-            rate=rate,
-            keyframes=keyframes,
-            frame_exact=not variable_rate,
-        )
-    except ValueError as exc:
-        raise RuntimeError(str(exc)) from exc
+    if forced_cut is not None:
+        # A part of a split: its joint with the neighbouring parts was decided
+        # once, for all of them, so the start and the length arrive as given.
+        cut = forced_cut
+    else:
+        head = parse_seconds(params.get("trim_start") or 0) if pattern in {"start", "both"} else 0.0
+        # ffprobe reports keyframes in the stream's timeline; the cut is planned in
+        # the operator's, so the origin comes off here and goes back on at seek time.
+        keyframes = [item - origin for item in _trim_keyframes(root, source, head + origin)] if head > 0 else []
+        try:
+            cut = plan_cut(
+                pattern=pattern,
+                start=params.get("trim_start"),
+                end=params.get("trim_end"),
+                duration=duration,
+                rate=rate,
+                keyframes=keyframes,
+                frame_exact=not variable_rate,
+            )
+        except ValueError as exc:
+            raise RuntimeError(str(exc)) from exc
     start = cut.start
     requested_end = cut.requested_end
 
@@ -5086,8 +5198,519 @@ def _verify_trim_output(context: JobContext, plan: dict[str, Any]) -> dict[str, 
     }
 
 
+def _sound_number(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return number if number > 0 else 0.0
+
+
+def _trim_sound_probe(root: Path, source: Path) -> dict[str, Any]:
+    """What a sound cut needs from ffprobe: the streams, cover pictures, and the tags."""
+    command = [
+        _ffprobe(root),
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration,bit_rate:format_tags:stream=index,codec_type,codec_name,sample_fmt,sample_rate,channels,"
+        "bits_per_raw_sample,bit_rate,duration,duration_ts,time_base,start_time:stream_disposition=attached_pic",
+        "-of",
+        "json",
+        str(source),
+    ]
+    return _capture_probe_json(root, command)
+
+
+def _trim_sound_packet_starts(root: Path, source: Path, *, rate: int, origin: float) -> list[int]:
+    """Where each packet's sound begins in the decoded source, in samples."""
+    result = _capture_tool(
+        root,
+        [
+            _ffprobe(root),
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "packet=pts_time",
+            "-of",
+            "csv=p=0",
+            str(source),
+        ],
+    )
+    starts: list[int] = []
+    for line in (result.stdout or "").splitlines():
+        try:
+            starts.append(round((float(line.strip().rstrip(",")) - origin) * rate))
+        except ValueError:
+            continue
+    return starts
+
+
+def _riff_chunk_ids(path: Path) -> list[str]:
+    """The chunk names of a RIFF or RF64 WAV, read from the bytes; empty for anything else."""
+    try:
+        with path.open("rb") as handle:
+            head = handle.read(12)
+            if len(head) < 12 or head[:4] not in {b"RIFF", b"RF64", b"BW64"} or head[8:12] != b"WAVE":
+                return []
+            names: list[str] = []
+            data_size: int | None = None
+            while len(names) < 512:
+                header = handle.read(8)
+                if len(header) < 8:
+                    break
+                name, size = header[:4], int.from_bytes(header[4:8], "little")
+                if name == b"ds64" and size >= 16:
+                    body = handle.read(size + (size & 1))
+                    data_size = int.from_bytes(body[8:16], "little")
+                    names.append("ds64")
+                    continue
+                if name == b"data" and size == 0xFFFFFFFF and data_size is not None:
+                    size = data_size
+                names.append(name.decode("latin-1"))
+                handle.seek(size + (size & 1), 1)
+            return names
+    except OSError:
+        return []
+
+
+def _trim_audio_plans(
+    context: JobContext,
+    source: Path,
+    params: dict[str, Any],
+    *,
+    source_dir: Path,
+    output_dir: Path,
+) -> list[dict[str, Any]]:
+    """A file of sound alone, cut on the sample - or, with Exact cut off, on packets."""
+    root = context.paths.root
+    data = _trim_sound_probe(root, source)
+    streams = [item for item in (data.get("streams") or []) if isinstance(item, dict)]
+    sounds = [item for item in streams if item.get("codec_type") == "audio"]
+    if not sounds:
+        raise RuntimeError("no audio stream")
+    pictures = [item for item in streams if item.get("codec_type") == "video"]
+    covers = [item for item in pictures if (item.get("disposition") or {}).get("attached_pic")]
+    if len(covers) != len(pictures):
+        raise RuntimeError("the file carries moving pictures as well as sound, so it is not cut as a sound file")
+    stream = sounds[0]
+    fmt = data.get("format") if isinstance(data.get("format"), dict) else {}
+    tags = fmt.get("tags") if isinstance(fmt.get("tags"), dict) else {}
+    codec = str(stream.get("codec_name") or "").strip().lower()
+    rate = int(_sound_number(stream.get("sample_rate")))
+    duration = _sound_number(stream.get("duration")) or _sound_number(fmt.get("duration"))
+    stated = str(stream.get("duration_ts") or "")
+    # The count a lossless file states is exact - measured on WAV, FLAC, ALAC,
+    # WavPack and TTA. A compressed header is not: an AAC file decoded 768
+    # samples past its stated duration, and an Opus header counts its pre-skip.
+    lossless = audio_codec_is_lossless(codec)
+    total = int(stated) if lossless and stated.isdigit() and str(stream.get("time_base") or "") == f"1/{rate}" else None
+    arguments = {
+        "pattern": _trim_pattern(params),
+        "start": params.get("trim_start"),
+        "end": params.get("trim_end"),
+        "duration": duration,
+        "sample_rate": rate,
+    }
+    try:
+        trim = plan_audio_trim(**arguments, total_samples=total)
+        if total is None and any(piece.end is None for piece in trim.pieces):
+            # A piece runs to the end: count that end the way a decoder gives it,
+            # or the plan promises a length the file never had.
+            trim = plan_audio_trim(**arguments, total_samples=_decoded_sample_count(root, source))
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    chunks = _riff_chunk_ids(source)
+    warnings: list[str] = []
+    if len(sounds) > 1:
+        warnings.append(f"Only the first of {len(sounds)} audio tracks is cut.")
+    if "iXML" in chunks:
+        warnings.append(
+            "The recorder's iXML chunk - track names, scene and take - stays behind: FFmpeg can neither read nor "
+            "write it. The bext chunk and its time reference do travel."
+        )
+    facts = {
+        "label": _source_display_name(source, source_dir),
+        "stream": stream,
+        "format": fmt,
+        "tags": tags,
+        "codec": codec,
+        "rate": rate,
+        "channels": int(_sound_number(stream.get("channels"))),
+        "duration": duration,
+        "covers": covers,
+        "broadcast_wav": "bext" in chunks or any(str(key).lower() == "time_reference" for key in tags),
+        "warnings": warnings,
+    }
+    exact = _as_bool(params.get("trim_exact"), True)
+    if exact or audio_codec_is_lossless(codec):
+        return _trim_sound_exact_plans(context, source, params, trim, facts, exact=exact, source_dir=source_dir, output_dir=output_dir)
+    return _trim_sound_packet_plans(context, source, params, trim, facts, source_dir=source_dir, output_dir=output_dir)
+
+
+def _trim_sound_exact_plans(
+    context: JobContext,
+    source: Path,
+    params: dict[str, Any],
+    trim: Any,
+    facts: dict[str, Any],
+    *,
+    exact: bool,
+    source_dir: Path,
+    output_dir: Path,
+) -> list[dict[str, Any]]:
+    """Decoded, cut on the sample, written as the source was or in the chosen format."""
+    root = context.paths.root
+    stream, fmt = facts["stream"], facts["format"]
+    codec, rate = facts["codec"], facts["rate"]
+    try:
+        encoding = audio_trim_encoding(
+            choice=str(params.get("trim_audio_format") or "source") if exact else "source",
+            codec=codec,
+            extension=source.suffix,
+            sample_rate=rate,
+            channels=facts["channels"],
+            sample_fmt=str(stream.get("sample_fmt") or ""),
+            bits=stream.get("bits_per_raw_sample"),
+            bit_rate=stream.get("bit_rate") or fmt.get("bit_rate"),
+            mp3_preset=params.get("trim_mp3_preset") or "v0",
+            bitrate=params.get("trim_audio_bitrate") or "320k",
+        )
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+    warnings = [*facts["warnings"], *encoding.warnings]
+    notes: list[str] = []
+    if not exact:
+        notes.append(f"Exact cut is off, but {codec.upper()} loses nothing on the sample, so it is cut there all the same.")
+    keep_cover = bool(facts["covers"]) and encoding.extension in AUDIO_COVER_CONTAINERS
+    if facts["covers"] and not keep_cover:
+        warnings.append(f"The cover picture stays behind: {encoding.extension.upper()} cannot hold one.")
+    base = _output_path(
+        source,
+        output_dir,
+        "",
+        encoding.extension,
+        source_root=source_dir,
+        operation=_operation_output_folder(context, "Trim"),
+    )
+    groups = [trim.pieces] if trim.joined else [(piece,) for piece in trim.pieces]
+    if trim.action == "split":
+        context.log(f"Split {facts['label']} into {len(groups)} parts on the sample:")
+        for piece in trim.pieces[1:]:
+            context.log(f"    at {format_seconds(piece.start / rate)} (sample {piece.start})")
+    common = {
+        "kind": "audio",
+        "source": source,
+        "action": trim.action,
+        "sample_rate": rate,
+        "output_rate": encoding.output_rate,
+        "channels": facts["channels"],
+        "codec": codec,
+        "container": encoding.extension,
+        "duration": facts["duration"],
+        "codec_label": encoding.label,
+        "lossless": encoding.lossless,
+        "notes": notes,
+        "warnings": warnings,
+    }
+    plans: list[dict[str, Any]] = []
+    for index, group in enumerate(groups, start=1):
+        suffix = f"part{index}" if trim.action == "split" else ""
+        target = base.with_name(f"{base.stem}_{suffix}{base.suffix}") if suffix else base
+        metadata, muxer, moved = audio_trim_metadata(
+            facts["tags"],
+            start_sample=group[0].start,
+            extension=encoding.extension,
+            broadcast_wav=facts["broadcast_wav"],
+        )
+        kept = sum(trim.length(piece) for piece in group)
+        command = build_audio_trim_command(
+            ffmpeg=_ffmpeg(root),
+            source=str(source),
+            target=str(target),
+            overwrite=_as_bool(params.get("overwrite"), True),
+            pieces=group,
+            codec_args=encoding.codec_args,
+            tail_filter=encoding.tail_filter,
+            keep_cover=keep_cover,
+            metadata=metadata,
+            muxer_args=(*encoding.muxer_args, *muxer),
+        )
+        plans.append(
+            {
+                **common,
+                "label": f"{facts['label']} [{suffix}]" if suffix else facts["label"],
+                "target": target,
+                "command": command,
+                "spans": [(piece.start, piece.end) for piece in group],
+                "kept_samples": kept,
+                "expected_samples": round(kept * encoding.output_rate / rate),
+                "time_reference": moved if moved and moved[0] != moved[1] else None,
+            }
+        )
+    return plans
+
+
+def _trim_sound_packet_plans(
+    context: JobContext,
+    source: Path,
+    params: dict[str, Any],
+    trim: Any,
+    facts: dict[str, Any],
+    *,
+    source_dir: Path,
+    output_dir: Path,
+) -> list[dict[str, Any]]:
+    """Compressed packets copied untouched, every point moved to a packet boundary."""
+    root = context.paths.root
+    codec, rate = facts["codec"], facts["rate"]
+    extension = source.suffix.lower().lstrip(".")
+    rule = PACKET_COPY_RULES.get(codec)
+    if rule is None or extension not in rule.containers:
+        raise RuntimeError(
+            f"Copying {codec.upper()} out of .{extension} packet by packet has not been measured, so it is not "
+            "offered. Turn Exact cut on: it cuts on the sample."
+        )
+    starts = _trim_sound_packet_starts(root, source, rate=rate, origin=_sound_number(facts["stream"].get("start_time")))
+    try:
+        copy = plan_packet_copy(trim=trim, rule=rule, packet_starts=starts)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+    context.log(f"Copying {facts['label']} packet by packet (Exact cut is off):")
+    for asked, landed in copy.moves:
+        context.log(
+            f"    point {format_seconds(asked / rate)} -> packet boundary {format_seconds(landed / rate)} "
+            f"({(landed - asked) * 1000 / rate:+.1f} ms, sample {landed})"
+        )
+    warnings = [*facts["warnings"], rule.warning]
+    keep_cover = bool(facts["covers"]) and extension in AUDIO_COVER_CONTAINERS
+    if facts["covers"] and not keep_cover:
+        warnings.append(f"The cover picture stays behind: {extension.upper()} cannot hold one.")
+    overwrite = _as_bool(params.get("overwrite"), True)
+    base = _output_path(
+        source,
+        output_dir,
+        "",
+        extension,
+        source_root=source_dir,
+        operation=_operation_output_folder(context, "Trim"),
+    )
+    common = {
+        "kind": "audio",
+        "source": source,
+        "action": trim.action,
+        "sample_rate": rate,
+        "output_rate": rate,
+        "channels": facts["channels"],
+        "codec": codec,
+        "container": extension,
+        "duration": facts["duration"],
+        "codec_label": f"{codec.upper()} packets, copied untouched",
+        "lossless": False,
+        "notes": [],
+        "warnings": warnings,
+    }
+    if trim.joined:
+        # Two pieces into workspace, glued by the concat demuxer, and taken away afterwards.
+        stage = context.paths.workspace / "trim_gap"
+        stage.mkdir(parents=True, exist_ok=True)
+        parts = []
+        for index, piece in enumerate(copy.pieces, start=1):
+            part_target = stage / f"{base.stem}_sound_piece{index}{base.suffix}"
+            parts.append(
+                {
+                    "label": f"{facts['label']} [piece {index}]",
+                    "source": source,
+                    "target": part_target,
+                    "command": build_packet_copy_command(
+                        ffmpeg=_ffmpeg(root), source=str(source), target=str(part_target), overwrite=True, piece=piece
+                    ),
+                }
+            )
+        list_file = stage / f"{base.stem}_sound_pieces.txt"
+        clock_back = -starts[0] / rate if rule.join_clock_back and starts[0] < 0 else 0.0
+        command = build_packet_join_command(
+            ffmpeg=_ffmpeg(root),
+            list_file=str(list_file),
+            source=str(source),
+            target=str(base),
+            overwrite=overwrite,
+            clock_back=clock_back,
+            keep_cover=keep_cover,
+        )
+        return [
+            {
+                **common,
+                "label": facts["label"],
+                "target": base,
+                "command": command,
+                "parts": parts,
+                "list_file": list_file,
+                "spans": [(piece.start_sample, piece.end_sample) for piece in copy.pieces],
+                "kept_samples": copy.kept,
+                "expected_samples": copy.kept,
+                "time_reference": None,
+            }
+        ]
+    plans: list[dict[str, Any]] = []
+    for index, piece in enumerate(copy.pieces, start=1):
+        suffix = f"part{index}" if trim.action == "split" else ""
+        target = base.with_name(f"{base.stem}_{suffix}{base.suffix}") if suffix else base
+        metadata, _muxer, moved = audio_trim_metadata(
+            facts["tags"], start_sample=piece.start_sample, extension=extension, broadcast_wav=False
+        )
+        command = build_packet_copy_command(
+            ffmpeg=_ffmpeg(root),
+            source=str(source),
+            target=str(target),
+            overwrite=overwrite,
+            piece=piece,
+            keep_cover=keep_cover,
+            metadata=metadata,
+        )
+        plans.append(
+            {
+                **common,
+                "label": f"{facts['label']} [{suffix}]" if suffix else facts["label"],
+                "target": target,
+                "command": command,
+                "spans": [(piece.start_sample, piece.end_sample)],
+                "kept_samples": copy.length(piece),
+                "expected_samples": copy.length(piece),
+                "time_reference": moved if moved and moved[0] != moved[1] else None,
+            }
+        )
+    return plans
+
+
+def _log_audio_trim_plan(context: JobContext, plan: dict[str, Any], index: int, total: int) -> None:
+    rate = int(plan["sample_rate"])
+    context.log(
+        f"[{index}/{total}] {plan['label']} | {plan['codec'].upper()} {rate} Hz {plan['channels']} ch | "
+        f"{format_seconds(plan['duration'])} | -> {plan['container'].upper()}"
+    )
+
+    def at(sample: int | None) -> str:
+        return "end of file" if sample is None else f"{format_seconds(sample / rate)} (sample {sample})"
+
+    spans = plan["spans"]
+    if plan["action"] == "cut":
+        context.log(f"    remove  {at(spans[0][1])} .. {at(spans[1][0])}")
+    else:
+        for first, last in spans:
+            context.log(f"    piece   {at(first)} .. {at(last)}")
+    context.log(f"    keeping {plan['kept_samples']} samples ({format_seconds(plan['kept_samples'] / rate)})")
+    context.log(f"    writes  {plan['codec_label']}")
+    moved = plan.get("time_reference")
+    if moved:
+        context.log(f"    time reference {moved[0]} -> {moved[1]} (samples since midnight)")
+    for note in plan.get("notes") or ():
+        context.log(f"    {note}")
+    for warning in plan["warnings"]:
+        context.log(f"    [WARNING] {warning}")
+
+
+def _decoded_sample_count(root: Path, target: Path) -> int:
+    """Samples a decoder hands over for the first audio stream, counted one by one.
+
+    Headers disagree with the sound: an AAC header measured 29 samples short
+    while its decoder gave 243 more, an Opus header 312 long. One byte per
+    sample of one channel costs little to count and answers exactly.
+    """
+    command = [
+        _ffmpeg(root),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-i",
+        str(target),
+        "-map",
+        "0:a:0",
+        "-af",
+        "pan=mono|c0=c0",
+        "-c:a",
+        "pcm_u8",
+        "-f",
+        "u8",
+        "-",
+    ]
+    process = subprocess.Popen(
+        command,
+        cwd=str(root),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=utf8_subprocess_env(_tool_env(root)),
+        **hidden_subprocess_kwargs(),
+    )
+    count = 0
+    stream = process.stdout
+    if stream is not None:
+        while True:
+            chunk = stream.read(1 << 20)
+            if not chunk:
+                break
+            count += len(chunk)
+    _unused, stderr = process.communicate()
+    if process.returncode != 0:
+        lines = (stderr or b"").decode("utf-8", errors="replace").strip().splitlines()
+        raise RuntimeError(lines[-1] if lines else f"ffmpeg exited {process.returncode}")
+    return count
+
+
+def _audio_stream_duration(root: Path, target: Path) -> float:
+    result = _capture_tool(
+        root,
+        [
+            _ffprobe(root),
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=duration:format=duration",
+            "-of",
+            "default=nokey=1:noprint_wrappers=1",
+            str(target),
+        ],
+    )
+    for line in (result.stdout or "").splitlines():
+        value = _sound_number(line.strip())
+        if value > 0:
+            return value
+    return 0.0
+
+
+def _verify_audio_trim_output(context: JobContext, plan: dict[str, Any]) -> dict[str, Any]:
+    """Count what a decoder gets back from the piece, rather than trust a header."""
+    root = context.paths.root
+    try:
+        counted = _decoded_sample_count(root, plan["target"])
+    except RuntimeError as exc:
+        context.log(f"    [ERROR] The result cannot be read back: {exc}")
+        return {"short": True, "unreadable": True}
+    rate = int(plan["output_rate"])
+    expected = int(plan["expected_samples"])
+    drift = counted - expected
+    context.log(f"    result  {counted} samples, {format_seconds(counted / rate)} ({drift:+d} from the plan)")
+    if drift and plan.get("lossless"):
+        context.log(f"    [WARNING] A lossless piece lands on the sample, and this one is {drift:+d} samples off.")
+    elif drift:
+        context.log(f"    {plan['codec_label']}: the end is {drift:+d} samples off the sample, {abs(drift) * 1000 / rate:.1f} ms")
+    short = expected > rate * 0.2 and counted < expected * 0.5
+    if short:
+        context.log(
+            f"    [ERROR] Only {format_seconds(counted / rate)} of the planned {format_seconds(expected / rate)} came back."
+        )
+    return {"samples": counted, "drift": drift, "short": short}
+
+
 def trim_media(context: JobContext) -> dict[str, object]:
-    """Cut the head, the tail, or both off camera footage without re-encoding."""
+    """Cut the head, the tail, or both off camera footage without re-encoding; sound files on the sample."""
     params = dict(context.operation.parameters)
     root = context.paths.root
     source_dir = cached_source_path(root)
@@ -5125,8 +5748,8 @@ def trim_media(context: JobContext) -> dict[str, object]:
     dry_run = _as_bool(params.get("dry_run"), False)
     overwrite = _as_bool(params.get("overwrite"), True)
     plans: list[dict[str, Any]] = []
-    # A split is the same operation twice: everything up to the point into one
-    # file, everything from it into another. Nothing is thrown away.
+    # A split throws nothing away: IN alone gives two parts, IN and OUT give
+    # three, and the parts join on keyframes so they add back up to the file.
     split_mode = _trim_pattern(params) == "split"
     # And the fifth: the piece between the points goes, and what is left is
     # joined. Two cuts and a concat, planned as one job.
@@ -5140,14 +5763,13 @@ def trim_media(context: JobContext) -> dict[str, object]:
             file_params["trim_start"] = marks.get("start", "")
             file_params["trim_end"] = marks.get("end", "")
         try:
-            if gap_mode:
+            if source.suffix.lower().lstrip(".") in PURE_AUDIO_EXTENSIONS:
+                # Sound alone has no keyframe to wait for: every action lands on the sample.
+                plans.extend(_trim_audio_plans(context, source, file_params, source_dir=source_dir, output_dir=output_dir))
+            elif gap_mode:
                 plans.append(_trim_gap_plan(context, source, file_params, source_dir=source_dir, output_dir=output_dir))
             elif split_mode:
-                point = file_params.get("trim_start") or file_params.get("trim_end") or ""
-                head = {**file_params, "trim_pattern": "end", "trim_end": point, "trim_start": ""}
-                tail = {**file_params, "trim_pattern": "start", "trim_start": point, "trim_end": ""}
-                plans.append(_trim_plan(context, source, head, source_dir=source_dir, output_dir=output_dir, name_suffix="part1"))
-                plans.append(_trim_plan(context, source, tail, source_dir=source_dir, output_dir=output_dir, name_suffix="part2"))
+                plans.extend(_trim_split_plans(context, source, file_params, source_dir=source_dir, output_dir=output_dir))
             else:
                 plans.append(_trim_plan(context, source, file_params, source_dir=source_dir, output_dir=output_dir))
         except Exception as exc:
@@ -5163,10 +5785,12 @@ def trim_media(context: JobContext) -> dict[str, object]:
     for index, plan in enumerate(plans, start=1):
         if context.cancelled():
             context.log("Trim cancelled by user.")
-            _discard_unusable_trim(context, plan["target"])
+            _discard_unusable_trim(context, plan["target"], sound=plan.get("kind") == "audio")
             return {"cancelled": True, "processed": processed, "files": total}
         if plan.get("kind") == "gap":
             _log_gap_plan(context, plan, index, total)
+        elif plan.get("kind") == "audio":
+            _log_audio_trim_plan(context, plan, index, total)
         else:
             _log_trim_plan(context, plan, index, total)
         if not overwrite and plan["target"].exists():
@@ -5183,7 +5807,8 @@ def trim_media(context: JobContext) -> dict[str, object]:
             context.progress(index / total)
             continue
         try:
-            if plan.get("kind") == "gap":
+            if plan.get("parts"):
+                # Pieces first, then the join: a cut out of a video, or a packet-copied sound.
                 _run_gap_plan(context, plan)
             else:
                 _run_ffmpeg_media_process(
@@ -5199,11 +5824,13 @@ def trim_media(context: JobContext) -> dict[str, object]:
             failed += 1
             # Includes the cancel path: `run_process` terminates FFmpeg and
             # raises, and whatever it had written so far is usually headless.
-            _discard_unusable_trim(context, plan["target"])
+            _discard_unusable_trim(context, plan["target"], sound=plan.get("kind") == "audio")
             context.log(f"    [FAIL] {plan['label']}: {exc}")
             context.progress(index / total)
             continue
-        verified = _verify_trim_output(context, plan)
+        verified = (
+            _verify_audio_trim_output(context, plan) if plan.get("kind") == "audio" else _verify_trim_output(context, plan)
+        )
         if verified.get("short"):
             failed += 1
             context.progress(index / total)

@@ -8,14 +8,14 @@
   <a href="https://github.com/Tensionix/media-tools/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Tensionix/media-tools?style=flat-square&color=5fd08a&logo=apache&logoColor=white&cacheSeconds=3600"></a>
 </p>
 
-**Version 2.5.2** · 2026-09-18 · 12.4 MB
+**Version 2.5.2** · 2026-09-20 · 577.7 MB
 
-- [Direct download](https://dl.audion.dev/media-tools/2.5.2/Audion_Media_Tools_v2.5.2.zip) — unmetered, no rate limits
+- [Direct download](https://audion.dev/get/media-tools/2.5.2/Audion_Media_Tools_v2.5.2_Full.zip) — unmetered, no rate limits
 - [Project page](https://audion.dev/downloads/media-tools) — every version and how to install
 
 <p align="center"><img src="docs/screenshot.png" alt="The program window" width="560"></p>
 
-`SHA-256: 1e11229d9089764efc4572cbe6e9256ae648fba891d99803008613eb715fc33d`
+`SHA-256: cfa2a2c74bdc22d88f8d32412abe2ed249fb482df9cd3eac2e280499d07c8e71`
 
 ---
 
@@ -29,11 +29,21 @@ An **Audion** tool, published by [Tensionix](https://github.com/Tensionix).
 
 - [Why It Exists](#why-it-exists)
 - [The Central Decision: Newer Is Not Better](#the-central-decision-newer-is-not-better)
+  - [What each path can do](#what-each-path-can-do)
 - [Why You Can Trust This](#why-you-can-trust-this)
+  - [Where this started](#where-this-started)
+  - [Verified on what cameras actually write](#verified-on-what-cameras-actually-write)
+  - [Sync measured, not assumed](#sync-measured-not-assumed)
+  - [Seventeen FFmpeg quirks — all compensated](#seventeen-ffmpeg-quirks--all-compensated)
 - [Principles](#principles)
 - [What Is Inside](#what-is-inside)
 - [Next](#next)
 - [Technical Reference](#technical-reference)
+  - [Running](#running)
+  - [The Workbench](#the-workbench)
+  - [Defaults](#defaults)
+  - [Reports](#reports)
+  - [Deliberately Out of Scope](#deliberately-out-of-scope)
 
 A portable shell for real work with video and audio: download, inspect,
 transcode, prepare for editing, package for upload, put into an archive, take
@@ -226,7 +236,7 @@ folder and fight over a name: the subfolder structure is reproduced in the outpu
 |---|---|
 | Download | a link or a list, format profiles, resolution, subtitles, threads |
 | Audio streams | extraction, resampling, normalisation, packaging; audio into video without re-encoding the picture |
-| Trimming | frame-accurate or on keyframes, with marks remembered per file |
+| Trimming | frame-accurate or on keyframes, with marks remembered per file; sound files on the sample |
 | Remux, frame rate, colour tables | changing the container, working with frame rate, applying lookup tables |
 | Archive | long-term masters: FFV1, lossless x264 |
 | Editing codecs | ProRes and DNxHR in MOV or MXF |

@@ -2,6 +2,8 @@
 
 **Contents**
 
+- [2026-09-14: A Split Decides Each Joint Once](#2026-09-14-a-split-decides-each-joint-once)
+- [2026-09-14: Sound Files Are Cut On The Sample, And The Purist May Copy Packets](#2026-09-14-sound-files-are-cut-on-the-sample-and-the-purist-may-copy-packets)
 - [2026-08-26: A Real Camera File Found What Synthetic Ones Could Not](#2026-08-26-a-real-camera-file-found-what-synthetic-ones-could-not)
 - [2026-08-26: What The Camera Matrix Still Does Not Cover](#2026-08-26-what-the-camera-matrix-still-does-not-cover)
 - [2026-08-26: MXF Rewrites PCM Instead Of Copying It](#2026-08-26-mxf-rewrites-pcm-instead-of-copying-it)
@@ -39,6 +41,44 @@
 - [2026-05-06: Completion State Is Persistent](#2026-05-06-completion-state-is-persistent)
 - [2026-05-06: Hide Windows CLI Helpers At Process Creation](#2026-05-06-hide-windows-cli-helpers-at-process-creation)
 - [2026-05-06: CMD Encoding Is A Build Gate](#2026-05-06-cmd-encoding-is-a-build-gate)
+
+## 2026-09-14: A Split Decides Each Joint Once
+
+A split used to be two independent cuts - drop the tail up to the point, drop the
+head from it - and only the head snapped to a keyframe, so the two parts met only
+when the point already was one. Measured on 750 frames with a keyframe every
+second: a point at 10.2 s put 5 frames into both parts, a point at 10.7 s left 7
+frames in neither.
+
+Now `plan_split` snaps each point to its nearest keyframe once, and that keyframe
+is the shared joint: one part ends just before it, the next starts on it. IN alone
+gives two parts, IN and OUT give three. Part lengths are counted with `round`, not
+`ceil`: a keyframe timestamp already sits on a frame boundary, and at 23.976 frame
+240 reads 10.010010 s - 240.00024 frames, which `ceil` would put into both parts.
+Five cases were checked by hashing every decoded frame and comparing raw samples:
+the parts laid end to end are the source.
+
+## 2026-09-14: Sound Files Are Cut On The Sample, And The Purist May Copy Packets
+
+A file of sound alone has no keyframes, so nothing snaps: each point is the
+nearest sample, every piece is decoded and cut with `atrim` by sample number, and
+the result is written as it was or in a format from the Audio set. Decoding costs
+nothing here: the piece is bit for bit the same slice of the fully decoded source,
+measured on WAV, FLAC, MP3, AAC and Vorbis. For a compressed source the lossless
+choice is WAV or FLAC; "As is" encodes it once more and says so.
+
+`Exact cut` can be turned off. Then compressed packets are copied untouched, each
+point moves to a packet boundary, and a joint costs what was measured for that
+codec - 34 ms on MP3, 21 ms on AAC and Vorbis, about half a second on Opus - which
+the log states. Two container defects were found and removed rather than written
+up: MP3 pieces carried the source's encoder-delay header and shifted the sound
+after every joint, and an AAC join replayed the priming the edit list had hidden.
+Codecs and containers that were not measured are not offered in this mode.
+
+A Broadcast WAV's time reference shifts with the cut, exactly as a video timecode
+does. FFmpeg drops the `bext` chunk unless asked and hands four of its fields back
+under names its own writer does not read; they are passed back under the right
+ones. iXML cannot be written by FFmpeg at all, and the log says it stays behind.
 
 ## 2026-08-26: A Real Camera File Found What Synthetic Ones Could Not
 

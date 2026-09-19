@@ -1,6 +1,6 @@
 gui:
   # Change to "en" for public GitHub builds.
-  language: "ru"
+  language: "en"
   theme: "code_dark"
   emoji: false
   allow_runtime_switching: true

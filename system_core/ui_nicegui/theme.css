@@ -578,13 +578,16 @@
             color: #93c5fd;
             font-size: 14px !important;
           }
+          /* Single lines under overflow:hidden need room for descenders: at
+             line-height 1.15 every badge line measured a pixel taller than its
+             box and lost the bottoms of its letters. */
           .audion-hardware-title {
             min-width: 0;
             flex: 1;
             color: #ffffff;
             font-size: 13px;
             font-weight: 800;
-            line-height: 1.15;
+            line-height: 1.3;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -600,7 +603,7 @@
             color: #ffffff;
             font-size: 12px;
             font-weight: 800;
-            line-height: 1.15;
+            line-height: 1.3;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -610,7 +613,7 @@
             color: #cbd5e1;
             font-size: 10.5px;
             font-weight: 600;
-            line-height: 1.15;
+            line-height: 1.3;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -620,7 +623,7 @@
             color: #bfdbfe;
             font-size: 12px;
             font-weight: 800;
-            line-height: 1.15;
+            line-height: 1.3;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -630,9 +633,9 @@
             color: #dbeafe;
             font-size: 10.5px;
             font-weight: 600;
-            line-height: 1.18;
+            line-height: 1.3;
             display: -webkit-box;
-            -webkit-line-clamp: 2;
+            -webkit-line-clamp: 3;
             -webkit-box-orient: vertical;
             overflow: hidden;
           }
@@ -1092,12 +1095,19 @@
             margin: 0 0 4px 2px;
             text-transform: uppercase;
           }
+          /* A wrapping row rather than a grid, so a short last row stretches
+             across the group instead of leaving a lone button one column wide.
+             The 96 px floor gives the same count per row the grid had. */
           .audion-preset-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+            display: flex;
+            flex-wrap: wrap;
             gap: 4px;
             min-width: 0;
             overflow: hidden;
+          }
+          .audion-preset-grid > .audion-preset-button {
+            flex: 1 1 96px;
+            width: auto !important;
           }
           .audion-preset-button {
             width: 100% !important;

@@ -37,6 +37,21 @@ from system_core.core.trim_contract import (
     parse_timecode,
     plan_cut,
     plan_gap,
+    plan_split,
+    AudioPiece,
+    audio_join_graph,
+    audio_sample_depth,
+    audio_trim_encoding,
+    audio_trim_filter,
+    audio_trim_metadata,
+    build_audio_trim_command,
+    plan_audio_trim,
+    seconds_to_sample,
+    PACKET_COPY_RULES,
+    PacketPiece,
+    build_packet_copy_command,
+    build_packet_join_command,
+    plan_packet_copy,
     seconds_to_frames,
     shift_timecode,
     timecode_base,
@@ -564,3 +579,311 @@ def test_mxf_holds_a_data_stream_after_all() -> None:
     """It was assumed not to, on no evidence, until a real file said otherwise."""
     assert "mxf" in DATA_STREAM_CONTAINERS
     assert "mkv" not in DATA_STREAM_CONTAINERS
+
+
+KEYS_EVERY_SECOND = [float(second) for second in range(31)]
+
+
+def test_one_point_splits_in_two_and_the_parts_add_up() -> None:
+    """The joint is one keyframe: the first part ends just before it, the second starts on it."""
+    split = plan_split(points=["00:00:10,000", ""], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
+    assert split.boundaries == (10.0,)
+    assert [part.frames for part in split.parts] == [250, None]
+    assert split.parts[1].start == 10.0
+    assert split.parts[0].frames + round(split.parts[1].seconds * 25) == 750
+
+
+def test_two_points_split_in_three() -> None:
+    split = plan_split(points=[12.0, 20.0], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
+    assert split.boundaries == (12.0, 20.0)
+    assert [part.index for part in split.parts] == [1, 2, 3]
+    assert [part.start for part in split.parts] == [0.0, 12.0, 20.0]
+    assert [part.frames for part in split.parts] == [300, 200, None]
+    assert sum(part.frames or round(part.seconds * 25) for part in split.parts) == 750
+
+
+def test_a_point_between_keyframes_moves_to_the_nearest_and_both_parts_follow() -> None:
+    """Measured on the old split: at 10.7 s the tail snapped to 11.0 while the head
+    still ended at 10.7, and 7 frames belonged to neither file; at 10.2 s, 5 frames
+    landed in both."""
+    split = plan_split(points=[10.7], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
+    assert split.boundaries == (11.0,)
+    assert split.offsets[0] == pytest.approx(0.3)
+    assert split.parts[0].frames == 275
+    assert split.parts[1].start == 11.0
+
+
+def test_the_joint_is_counted_by_rounding_not_by_ceiling() -> None:
+    """A keyframe timestamp is a frame boundary already. At 23.976 the keyframe of
+    frame 240 reads 10.010010 s, which is 240.00024 frames: ceil would put frame 240
+    into both parts."""
+    keyframe = 10.010010
+    split = plan_split(points=[10.0], duration=30.0, rate=NTSC_24, keyframes=[0.0, keyframe, 20.02])
+    assert split.parts[0].frames == 240
+
+
+def test_points_arrive_in_any_order() -> None:
+    split = plan_split(points=[20.0, 12.0], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
+    assert split.requested == (12.0, 20.0)
+
+
+def test_a_split_that_would_leave_nothing_says_so() -> None:
+    with pytest.raises(ValueError, match="needs a point"):
+        plan_split(points=["", None], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
+    with pytest.raises(ValueError, match="middle part would be empty"):
+        plan_split(points=[10.2, 10.4], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
+    with pytest.raises(ValueError, match="edge of the file"):
+        plan_split(points=[0.3], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
+    with pytest.raises(ValueError, match="outside the file"):
+        plan_split(points=[31.0], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
+
+
+def test_a_variable_rate_split_travels_by_time() -> None:
+    split = plan_split(points=[10.0], duration=30.0, rate=Fraction(30), keyframes=KEYS_EVERY_SECOND, frame_exact=False)
+    assert split.parts[0].frames is None
+    assert split.parts[0].seconds == pytest.approx(10.0)
+
+
+# Sound files. The numbers come from the measured take: 30 s of stereo noise at
+# 48 kHz, 1 440 000 samples, cut at 10.2345 s and 20.0001 s.
+
+
+def test_a_sound_point_is_the_nearest_sample() -> None:
+    assert seconds_to_sample(10.2345, 48000) == 491256
+    assert seconds_to_sample(20.0001, 48000) == 960005
+    assert seconds_to_sample(10.0, 44100) == 441000
+
+
+def test_sound_keeps_what_lies_between_the_points() -> None:
+    trim = plan_audio_trim(pattern="both", start="00:00:10,000", end="00:00:20,000", duration=30.0, sample_rate=48000)
+    assert trim.pieces == (AudioPiece(480000, 960000),)
+    assert trim.kept == 480000
+    assert not trim.joined
+
+
+def test_sound_in_alone_drops_the_head_and_out_alone_the_tail() -> None:
+    head = plan_audio_trim(pattern="start", start=10.0, end="", duration=30.0, sample_rate=44100)
+    assert head.pieces == (AudioPiece(441000, None),)
+    assert head.kept == 1323000 - 441000
+    tail = plan_audio_trim(pattern="end", start="", end=10.0, duration=30.0, sample_rate=44100)
+    assert tail.pieces == (AudioPiece(0, 441000),)
+
+
+def test_the_sample_count_a_file_states_wins_over_its_duration() -> None:
+    trim = plan_audio_trim(pattern="start", start=1.0, end="", duration=30.0, sample_rate=48000, total_samples=1440768)
+    assert trim.total == 1440768
+    assert trim.kept == 1440768 - 48000
+
+
+def test_sound_cut_out_joins_the_two_ends() -> None:
+    """Measured bit for bit on WAV and FLAC: 971 251 samples remain."""
+    trim = plan_audio_trim(pattern="middle", start=10.2345, end=20.0001, duration=30.0, sample_rate=48000)
+    assert trim.joined
+    assert trim.pieces == (AudioPiece(0, 491256), AudioPiece(960005, None))
+    assert trim.kept == 971251
+
+
+def test_sound_split_gives_two_or_three_parts_that_add_up() -> None:
+    two = plan_audio_trim(pattern="split", start=10.0, end="", duration=30.0, sample_rate=48000)
+    assert two.pieces == (AudioPiece(0, 480000), AudioPiece(480000, None))
+    three = plan_audio_trim(pattern="split", start=20.0001, end=10.2345, duration=30.0, sample_rate=48000)
+    assert three.pieces == (AudioPiece(0, 491256), AudioPiece(491256, 960005), AudioPiece(960005, None))
+    assert [three.length(piece) for piece in three.pieces] == [491256, 468749, 479995]
+    assert three.kept == 1440000
+
+
+def test_sound_refuses_what_the_picture_refuses() -> None:
+    with pytest.raises(ValueError, match="no cut point"):
+        plan_audio_trim(pattern="both", start="", end="", duration=30.0, sample_rate=48000)
+    with pytest.raises(ValueError, match="kept piece is empty"):
+        plan_audio_trim(pattern="both", start=20.0, end=10.0, duration=30.0, sample_rate=48000)
+    with pytest.raises(ValueError, match="needs both IN and OUT"):
+        plan_audio_trim(pattern="middle", start=10.0, end="", duration=30.0, sample_rate=48000)
+    with pytest.raises(ValueError, match="starts at zero"):
+        plan_audio_trim(pattern="middle", start=0.0, end=10.0, duration=30.0, sample_rate=48000)
+    with pytest.raises(ValueError, match="reaches the end"):
+        plan_audio_trim(pattern="middle", start=10.0, end=31.0, duration=30.0, sample_rate=48000)
+    with pytest.raises(ValueError, match="needs a point"):
+        plan_audio_trim(pattern="split", start="", end=None, duration=30.0, sample_rate=48000)
+    with pytest.raises(ValueError, match="outside the file"):
+        plan_audio_trim(pattern="split", start=30.0, end="", duration=30.0, sample_rate=48000)
+    with pytest.raises(ValueError, match="middle part would be empty"):
+        plan_audio_trim(pattern="split", start=10.000001, end=10.000002, duration=30.0, sample_rate=48000)
+    with pytest.raises(ValueError, match="sample rate"):
+        plan_audio_trim(pattern="both", start=1.0, end=2.0, duration=30.0, sample_rate=0)
+
+
+def test_a_sound_piece_is_numbered_cut_and_restarted() -> None:
+    assert audio_trim_filter(AudioPiece(491256, 960005)) == (
+        "asetpts=N/SR/TB,atrim=start_sample=491256:end_sample=960005,asetpts=PTS-STARTPTS"
+    )
+    assert audio_trim_filter(AudioPiece(0, 480000)) == "asetpts=N/SR/TB,atrim=end_sample=480000,asetpts=PTS-STARTPTS"
+    assert audio_trim_filter(AudioPiece(480000, None), "aresample=48000") == (
+        "asetpts=N/SR/TB,atrim=start_sample=480000,asetpts=PTS-STARTPTS,aresample=48000"
+    )
+
+
+def test_a_sound_cut_is_one_graph_with_a_concat() -> None:
+    assert audio_join_graph((AudioPiece(0, 491256), AudioPiece(960005, None))) == (
+        "[0:a:0]asetpts=N/SR/TB,asplit=2[s0][s1];"
+        "[s0]atrim=end_sample=491256,asetpts=PTS-STARTPTS[p0];"
+        "[s1]atrim=start_sample=960005,asetpts=PTS-STARTPTS[p1];"
+        "[p0][p1]concat=n=2:v=0:a=1[out]"
+    )
+
+
+def test_the_sound_command_maps_a_cover_only_when_asked() -> None:
+    common = dict(ffmpeg="ffmpeg", source="in.flac", overwrite=True, codec_args=("-c:a", "flac"))
+    plain = build_audio_trim_command(target="out.wav", pieces=(AudioPiece(0, 100),), muxer_args=("-rf64", "auto"), **common)
+    assert plain[plain.index("-af") + 1].startswith("asetpts=N/SR/TB,")
+    assert "-vn" in plain and "0:v?" not in plain
+    assert plain[-3:] == ["-rf64", "auto", "out.wav"]
+    covered = build_audio_trim_command(target="out.flac", pieces=(AudioPiece(0, 100),), keep_cover=True, **common)
+    at = covered.index("0:v?")
+    assert covered[at + 1:at + 5] == ["-c:v", "copy", "-disposition:v:0", "attached_pic"]
+    assert "-vn" not in covered
+    joined = build_audio_trim_command(target="out.flac", pieces=(AudioPiece(0, 10), AudioPiece(20, None)), **common)
+    assert "-filter_complex" in joined and joined[joined.index("-map") + 1] == "[out]"
+    with pytest.raises(ValueError):
+        build_audio_trim_command(target="out.flac", pieces=(), **common)
+
+
+def test_lossless_sound_is_written_back_as_itself() -> None:
+    wav = audio_trim_encoding(choice="source", codec="pcm_s24le", extension="wav", sample_rate=48000, channels=2, sample_fmt="s32", bits=24)
+    assert wav.codec_args == ("-c:a", "pcm_s24le") and wav.extension == "wav" and wav.lossless
+    assert wav.muxer_args == ("-rf64", "auto")
+    flac = audio_trim_encoding(choice="source", codec="flac", extension="flac", sample_rate=96000, channels=2, sample_fmt="s32", bits=24)
+    assert flac.codec_args[:2] == ("-c:a", "flac") and flac.lossless and not flac.warnings
+    aiff = audio_trim_encoding(choice="source", codec="pcm_s24be", extension="aif", sample_rate=48000, channels=2)
+    assert aiff.codec_args == ("-c:a", "pcm_s24be") and aiff.extension == "aif"
+    snd = audio_trim_encoding(choice="source", codec="pcm_s16be", extension="snd", sample_rate=8000, channels=1)
+    assert snd.muxer_args == ("-f", "au")
+
+
+def test_compressed_sound_as_is_spends_a_generation_and_says_so() -> None:
+    mp3 = audio_trim_encoding(choice="source", codec="mp3", extension="mp3", sample_rate=44100, channels=2, bit_rate="245000")
+    assert mp3.codec_args == ("-c:a", "libmp3lame", "-b:a", "256k")
+    assert not mp3.lossless and "one generation" in mp3.warnings[0]
+    aac = audio_trim_encoding(choice="source", codec="aac", extension="m4a", sample_rate=48000, channels=2, bit_rate="N/A")
+    assert aac.codec_args == ("-c:a", "aac", "-b:a", "256k")
+
+
+def test_what_cannot_be_written_back_as_it_is_says_what_can() -> None:
+    with pytest.raises(ValueError, match="Choose FLAC or WAV"):
+        audio_trim_encoding(choice="source", codec="ape", extension="ape", sample_rate=44100, channels=2)
+    with pytest.raises(ValueError, match="DSD"):
+        audio_trim_encoding(choice="source", codec="dsd_lsbf_planar", extension="dsf", sample_rate=352800, channels=2)
+    with pytest.raises(ValueError, match="one or two channels"):
+        audio_trim_encoding(choice="mp3", codec="pcm_s24le", extension="wav", sample_rate=48000, channels=6)
+    with pytest.raises(ValueError, match="Unknown format"):
+        audio_trim_encoding(choice="wma", codec="pcm_s24le", extension="wav", sample_rate=48000, channels=2)
+
+
+def test_wav_keeps_the_depth_the_samples_really_have() -> None:
+    assert audio_sample_depth("flac", "s32", 24) == "s24"
+    assert audio_sample_depth("pcm_f32le") == "f32"
+    assert audio_trim_encoding(choice="wav", codec="flac", extension="flac", sample_rate=44100, channels=2, sample_fmt="s16").codec_args == ("-c:a", "pcm_s16le")
+    assert audio_trim_encoding(choice="wav", codec="flac", extension="flac", sample_rate=48000, channels=2, sample_fmt="s32", bits=24).codec_args == ("-c:a", "pcm_s24le")
+    # A compressed source decodes to float, and float is what is kept: measured bit for bit.
+    from_mp3 = audio_trim_encoding(choice="wav", codec="mp3", extension="mp3", sample_rate=44100, channels=2, sample_fmt="fltp")
+    assert from_mp3.codec_args == ("-c:a", "pcm_f32le") and from_mp3.lossless
+
+
+def test_flac_and_alac_say_when_24_bits_are_not_enough() -> None:
+    flac = audio_trim_encoding(choice="flac", codec="pcm_f32le", extension="wav", sample_rate=48000, channels=2)
+    assert not flac.lossless and "24 bits at most" in flac.warnings[0]
+    alac = audio_trim_encoding(choice="alac", codec="pcm_s24le", extension="wav", sample_rate=48000, channels=2)
+    assert alac.extension == "m4a" and alac.lossless and not alac.warnings
+
+
+def test_encoders_get_a_rate_they_take() -> None:
+    opus = audio_trim_encoding(choice="opus", codec="pcm_s24le", extension="wav", sample_rate=44100, channels=2, bitrate="320k")
+    assert opus.codec_args == ("-c:a", "libopus", "-b:a", "256k")
+    assert "soxr" in opus.tail_filter and opus.output_rate == 48000
+    mp3 = audio_trim_encoding(choice="mp3", codec="pcm_s24le", extension="wav", sample_rate=96000, channels=2, mp3_preset="insane")
+    assert mp3.output_rate == 48000 and mp3.codec_args == ("-c:a", "libmp3lame", "-b:a", "320k")
+    native = audio_trim_encoding(choice="mp3", codec="pcm_s16le", extension="wav", sample_rate=44100, channels=2)
+    assert native.tail_filter == "" and native.output_rate == 44100 and native.label == "MP3 VBR V0"
+
+
+def test_the_time_reference_moves_with_the_piece() -> None:
+    tags = {
+        "time_reference": "172800000",
+        "comment": "Scene 12 take 3",
+        "encoded_by": "ZOOM F8n",
+        "date": "2026-09-14",
+        "creation_time": "10:00:00",
+    }
+    metadata, muxer, moved = audio_trim_metadata(tags, start_sample=491256, extension="wav", broadcast_wav=True)
+    assert moved == (172800000, 173291256)
+    assert muxer == ["-write_bext", "1"]
+    assert metadata == [
+        "-metadata", "time_reference=173291256",
+        "-metadata", "description=Scene 12 take 3",
+        "-metadata", "originator=ZOOM F8n",
+        "-metadata", "origination_date=2026-09-14",
+        "-metadata", "origination_time=10:00:00",
+    ]
+
+
+def test_a_piece_from_the_start_keeps_its_reference_and_flac_takes_it_as_a_tag() -> None:
+    metadata, muxer, moved = audio_trim_metadata({"TIME_REFERENCE": "5"}, start_sample=0, extension="flac", broadcast_wav=True)
+    assert moved == (5, 5) and metadata == [] and muxer == []
+
+
+# Packet copy. The packet positions are the measured files': MP3 frames of 1 152
+# samples behind 1 105 of encoder delay, AAC frames of 1 024 behind one priming
+# frame, Vorbis blocks of 1 024.
+
+MP3_STARTS = [1152 * index - 1105 for index in range(1251)]
+
+
+def test_packet_copy_lands_on_the_nearest_packet_and_mp3_keeps_its_header_only_at_the_start() -> None:
+    trim = plan_audio_trim(pattern="split", start=10.2345, end=20.0001, duration=30.0, sample_rate=48000, total_samples=1440000)
+    copy = plan_packet_copy(trim=trim, rule=PACKET_COPY_RULES["mp3"], packet_starts=MP3_STARTS)
+    assert copy.moves == ((491256, 490799), (960005, 959663))
+    assert [piece.packet for piece in copy.pieces] == [0, 427, 834]
+    assert [piece.header for piece in copy.pieces] == [True, False, False]
+    assert copy.pieces[0].copy_from is None and copy.pieces[2].copy_to is None
+    assert copy.pieces[1].copy_from == pytest.approx((490799 + 489647) / 96000)
+    assert copy.kept == 1440000
+
+
+def test_vorbis_pieces_start_one_packet_early_but_a_join_does_not() -> None:
+    starts = [1024 * index for index in range(1407)]
+    split = plan_audio_trim(pattern="split", start=10.2345, end="", duration=30.0, sample_rate=48000, total_samples=1440000)
+    copy = plan_packet_copy(trim=split, rule=PACKET_COPY_RULES["vorbis"], packet_starts=starts)
+    assert copy.pieces[1].packet == 480
+    assert copy.pieces[1].start_sample == 491520
+    assert copy.pieces[1].copy_from == pytest.approx((490496 + 489472) / 96000)
+    cut = plan_audio_trim(pattern="middle", start=10.2345, end=20.0001, duration=30.0, sample_rate=48000, total_samples=1440000)
+    joined = plan_packet_copy(trim=cut, rule=PACKET_COPY_RULES["vorbis"], packet_starts=starts)
+    assert joined.pieces[1].packet == 938
+    assert joined.pieces[1].copy_from == pytest.approx((960512 + 959488) / 96000)
+    assert all(piece.header for piece in joined.pieces)
+
+
+def test_a_packet_copy_that_would_leave_nothing_says_so() -> None:
+    starts = [1024 * (index - 1) for index in range(1408)]
+    assert PACKET_COPY_RULES["aac"].join_clock_back
+    cut = plan_audio_trim(pattern="middle", start=10.0, end=10.01, duration=30.0, sample_rate=48000, total_samples=1440768)
+    with pytest.raises(ValueError, match="shorter than a packet"):
+        plan_packet_copy(trim=cut, rule=PACKET_COPY_RULES["aac"], packet_starts=starts)
+    keep = plan_audio_trim(pattern="both", start=10.0, end=10.01, duration=30.0, sample_rate=48000, total_samples=1440768)
+    with pytest.raises(ValueError, match="would be empty"):
+        plan_packet_copy(trim=keep, rule=PACKET_COPY_RULES["aac"], packet_starts=starts)
+    with pytest.raises(ValueError, match="could not be read"):
+        plan_packet_copy(trim=keep, rule=PACKET_COPY_RULES["aac"], packet_starts=[0])
+
+
+def test_packet_copy_commands_seek_on_the_output_and_join_from_the_source() -> None:
+    piece = PacketPiece(packet=427, end_packet=834, start_sample=490799, end_sample=959663, copy_from=10.2, copy_to=19.97, header=False)
+    command = build_packet_copy_command(ffmpeg="ffmpeg", source="in.mp3", target="out.mp3", overwrite=True, piece=piece)
+    assert command[-7:] == ["-write_xing", "0", "-ss", "10.200000", "-to", "19.970000", "out.mp3"]
+    assert command[command.index("-c:a") + 1] == "copy"
+    assert command.index("-i") < command.index("-ss")
+    join = build_packet_join_command(ffmpeg="ffmpeg", list_file="parts.txt", source="in.m4a", target="out.m4a", overwrite=True, clock_back=1024 / 48000)
+    assert join[join.index("-output_ts_offset") + 1] == "-0.021333"
+    assert join[join.index("-map_metadata") + 1] == "1"
+    plain = build_packet_join_command(ffmpeg="ffmpeg", list_file="parts.txt", source="in.mp3", target="out.mp3", overwrite=True)
+    assert "-output_ts_offset" not in plain

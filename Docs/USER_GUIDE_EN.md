@@ -107,7 +107,7 @@ in `tools\TRIM_RU.md`; what is compatible with what when cutting is in
 |---|---|---|
 | Download | a link or a list, format profiles, resolution, subtitles, threads | `tools\YOUTUBE_DOWNLOAD_RU.md` |
 | Audio streams | extraction, resampling, loudness, packaging; audio into video without re-encoding the picture | `tools\AUDIO_WORKFLOWS_RU.md` |
-| Trimming | frame-accurate and keyframe cuts, marks remembered per file | `tools\TRIM_RU.md` |
+| Trimming | frame-accurate and keyframe cuts, marks remembered per file; sound files on the sample | `tools\TRIM_RU.md` |
 | Remux, frame rate, colour | container changes, frame rate, lookup tables, HDR to SDR | `tools\REMUX_FPS_LUT_RU.md` |
 | Archive, editing, storage, delivery | lossless FFV1 and x264, ProRes and DNxHR, x264/x265/AV1, upload profiles | `tools\ENCODING_PIPELINES_RU.md` |
 | Diagnostics | what hardware is present, what it can do, profile checks | `tools\HARDWARE_DIAGNOSTICS_RU.md` |

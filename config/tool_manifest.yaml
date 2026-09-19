@@ -666,6 +666,9 @@ operation_groups:
         hint: "Buttons update the parameters below; you can still fine-tune streams, containers, LUFS and channels after choosing a mode."
         hint_ru: "Кнопки меняют параметры ниже; после выбора режима можно вручную уточнить потоки, контейнеры, LUFS и каналы."
         default: "copy_auto"
+        # A profile sets the sound, never the workflow: the operator's choice of
+        # Extract / Convert stays put. Only the two VIDEO presets switch to
+        # in_video, because they describe nothing outside it.
         presets:
           - id: copy_auto
             group: "copy"
@@ -677,7 +680,6 @@ operation_groups:
             description: "Copy the selected audio stream without re-encoding; Auto chooses M4A/MKA/native codec file from codec and channels."
             description_ru: "Скопировать выбранный аудиопоток без перекодирования; Auto выберет M4A/MKA/родной файл по кодеку и каналам."
             values:
-              audio_workflow: "extract"
               audio_stream_mode: "first"
               audio_format: "copy"
               audio_sample_rate: "source"
@@ -697,7 +699,6 @@ operation_groups:
             description: "Copy audio into a chosen audio container without re-encoding; useful for AAC to M4A or multichannel to MKA."
             description_ru: "Скопировать аудио в выбранный аудиоконтейнер без перекодирования; удобно для AAC -> M4A или многоканала -> MKA."
             values:
-              audio_workflow: "audio_files"
               audio_stream_mode: "first"
               audio_format: "copy"
               audio_sample_rate: "source"
@@ -719,7 +720,6 @@ operation_groups:
             description: "Editing-safe PCM WAV."
             description_ru: "Монтажный PCM WAV без сжатия."
             values:
-              audio_workflow: "extract"
               audio_stream_mode: "first"
               audio_format: "wav"
               audio_sample_rate: "48000"
@@ -738,7 +738,6 @@ operation_groups:
             description: "32-bit float WAV for restoration or further processing."
             description_ru: "WAV 32-bit float для реставрации и дальнейшей обработки."
             values:
-              audio_workflow: "extract"
               audio_stream_mode: "first"
               audio_format: "wav"
               audio_sample_rate: "48000"
@@ -757,7 +756,6 @@ operation_groups:
             description: "Lossless archive audio."
             description_ru: "Аудио без потерь для архива."
             values:
-              audio_workflow: "extract"
               audio_stream_mode: "first"
               audio_format: "flac"
               audio_sample_rate: "48000"
@@ -776,7 +774,6 @@ operation_groups:
             description: "Apple Lossless inside M4A for lossless delivery without WAV size."
             description_ru: "Apple Lossless внутри M4A: без потерь, но компактнее WAV."
             values:
-              audio_workflow: "extract"
               audio_stream_mode: "first"
               audio_format: "alac"
               audio_sample_rate: "source"
@@ -797,7 +794,6 @@ operation_groups:
             description: "AAC 384k for review or delivery."
             description_ru: "AAC 384k для просмотра или публикации."
             values:
-              audio_workflow: "extract"
               audio_stream_mode: "first"
               audio_format: "m4a"
               audio_sample_rate: "source"
@@ -816,7 +812,6 @@ operation_groups:
             description: "Compact AAC 256k for upload and portable listening."
             description_ru: "Компактный AAC 256k для заливки и портативного прослушивания."
             values:
-              audio_workflow: "extract"
               audio_stream_mode: "first"
               audio_format: "m4a"
               audio_sample_rate: "source"
@@ -873,7 +868,6 @@ operation_groups:
             description: "Highest quality LAME VBR profile, around 245 kbps."
             description_ru: "Самый качественный LAME VBR профиль, около 245 kbps."
             values:
-              audio_workflow: "audio_files"
               audio_stream_mode: "first"
               audio_format: "mp3"
               audio_sample_rate: "48000"
@@ -893,7 +887,6 @@ operation_groups:
             description: "LAME CBR 320 kbps."
             description_ru: "LAME CBR 320 kbps."
             values:
-              audio_workflow: "audio_files"
               audio_stream_mode: "first"
               audio_format: "mp3"
               audio_sample_rate: "48000"
@@ -913,7 +906,6 @@ operation_groups:
             description: "Modern compact speech/music delivery."
             description_ru: "Современный компактный формат для речи и музыки."
             values:
-              audio_workflow: "audio_files"
               audio_stream_mode: "first"
               audio_format: "opus"
               audio_sample_rate: "48000"
@@ -932,7 +924,6 @@ operation_groups:
             description: "Two-pass loudnorm to a common streaming loudness target."
             description_ru: "Двухпроходная нормализация под распространённую streaming loudness-цель."
             values:
-              audio_workflow: "extract"
               audio_stream_mode: "first"
               audio_format: "m4a"
               audio_sample_rate: "48000"
@@ -951,7 +942,6 @@ operation_groups:
             description: "Downmix the first audio stream to stereo."
             description_ru: "Свести первый аудиопоток в стерео."
             values:
-              audio_workflow: "extract"
               audio_stream_mode: "first"
               audio_format: "wav"
               audio_sample_rate: "48000"
@@ -970,7 +960,6 @@ operation_groups:
             description: "Stereo-compatible DPLII matrix downmix."
             description_ru: "Стерео-совместимый DPLII matrix downmix."
             values:
-              audio_workflow: "extract"
               audio_stream_mode: "first"
               audio_format: "wav"
               audio_sample_rate: "48000"
@@ -990,7 +979,6 @@ operation_groups:
             description: "Extract every audio stream without re-encoding."
             description_ru: "Извлечь каждый аудиопоток без перекодирования."
             values:
-              audio_workflow: "extract"
               audio_stream_mode: "all"
               audio_format: "copy"
               audio_sample_rate: "source"
@@ -1012,7 +1000,6 @@ operation_groups:
             description: "Analyze loudness and write report without encoding."
             description_ru: "Проанализировать громкость и записать отчёт без кодирования."
             values:
-              audio_workflow: "extract"
               audio_stream_mode: "first"
               audio_format: "m4a"
               audio_sample_rate: "source"
@@ -1266,6 +1253,9 @@ operation_groups:
         type: "radio"
         choice_style: "buttons"
         layout: "four_columns"
+        # Full width of the half section: four captions such as "Two passes"
+        # do not fit into half of a half.
+        span: "full"
         group: "mastering"
         visible_if:
           all:
@@ -1283,6 +1273,9 @@ operation_groups:
         type: "radio"
         choice_style: "buttons"
         layout: "four_columns"
+        # Full width of the half section: four captions such as "Two passes"
+        # do not fit into half of a half.
+        span: "full"
         group: "mastering"
         refresh_on_change: true
         hidden_if: {audio_format: "copy"}
@@ -1291,9 +1284,9 @@ operation_groups:
         default: "off"
         options:
           - {value: "off", label: "Off", label_ru: "Выкл."}
-          - {value: "report", label: "Report only", label_ru: "Только отчёт"}
-          - {value: "one_pass", label: "One-pass", label_ru: "Один проход"}
-          - {value: "two_pass", label: "Two-pass", label_ru: "Два прохода"}
+          - {value: "report", label: "Report only", label_ru: "Отчёт"}
+          - {value: "one_pass", label: "One pass", label_ru: "One pass"}
+          - {value: "two_pass", label: "Two pass", label_ru: "Two pass"}
       - id: audio_channel_mode
         type: "radio"
         choice_style: "buttons"
@@ -1805,8 +1798,8 @@ operation_groups:
   - id: trim
     title: "Trim"
     title_ru: "Обрезка"
-    description: "Cut the head or the tail off camera footage without re-encoding."
-    description_ru: "Отрезать начало или конец у материала с камеры без перекодирования."
+    description: "Cut camera footage without re-encoding, and sound files on the exact sample."
+    description_ru: "Резать материал с камеры без перекодирования, а звуковые файлы — ровно по сэмплу."
     fields:
       - id: trim_file
         # A badge with an arrow on each side: a folder of takes is walked, not
@@ -1818,8 +1811,8 @@ operation_groups:
         span: "full"
         label: "File to trim"
         label_ru: "Какой файл резать"
-        tooltip: "The video files staged in Source, alphabetically. One file is trimmed at a time: takes rarely share a keyframe, let alone a cut point."
-        tooltip_ru: "Видеофайлы из Source по алфавиту. Режется один файл за раз: у дублей редко совпадают ключевые кадры, не говоря о точках реза."
+        tooltip: "The video and sound files staged in Source, alphabetically. One file is trimmed at a time: takes rarely share a keyframe, let alone a cut point."
+        tooltip_ru: "Видео- и звуковые файлы из Source по алфавиту. Режется один файл за раз: у дублей редко совпадают ключевые кадры, не говоря о точках реза."
         default: ""
       - id: trim_action
         type: "radio"
@@ -1833,16 +1826,16 @@ operation_groups:
         refresh_on_change: true
         options:
           - {value: "keep", label: "Keep it", label_ru: "Оставить", tone: "copy", tooltip: "Keeps what lies between the points and drops the rest. Which end goes is already in the fields: IN alone drops the head, OUT alone drops the tail, both drop both ends.", tooltip_ru: "Оставляет то, что между точками, остальное уходит. Какой край уйдёт, уже сказано полями: один IN — уходит начало, один OUT — конец, обе точки — оба края."}
-          - {value: "cut", label: "Cut it out", label_ru: "Вырезать", tone: "copy", tooltip: "The opposite: the piece between IN and OUT goes and the two ends are joined into one file. The tail starts at the first keyframe past OUT - starting earlier would leave part of the removed piece in - and the log says how much more than asked for went.", tooltip_ru: "Наоборот: кусок между IN и OUT уходит, а начало и конец склеиваются в один файл. Хвост начинается с первого ключевого кадра после OUT — раньше нельзя, иначе часть вырезаемого останется, — и журнал говорит, насколько больше запрошенного ушло."}
-          - {value: "split", label: "Split in two", label_ru: "Разделить надвое", tone: "copy", tooltip: "Nothing is discarded: the file is cut at IN into two files, _part1 and _part2.", tooltip_ru: "Ничего не выбрасывается: файл режется в точке IN на два — _part1 и _part2."}
+          - {value: "cut", label: "Cut it out", label_ru: "Вырезать", tone: "copy", tooltip: "The opposite: the piece between IN and OUT goes and the two ends are joined into one file. The tail starts at the first keyframe past OUT - starting earlier would leave part of the removed piece in - and the log says how much more than asked for went. A sound file loses exactly the piece between the points.", tooltip_ru: "Наоборот: кусок между IN и OUT уходит, а начало и конец склеиваются в один файл. Хвост начинается с первого ключевого кадра после OUT — раньше нельзя, иначе часть вырезаемого останется, — и журнал говорит, насколько больше запрошенного ушло. У звукового файла уходит ровно кусок между точками."}
+          - {value: "split", label: "Split", label_ru: "Разделить", tone: "copy", tooltip: "Nothing is discarded. IN alone cuts the file into two parts, IN and OUT into three: _part1, _part2, _part3. Each point moves to its nearest keyframe and the parts meet there, so they add back up to the original frame for frame. A sound file splits on the exact sample.", tooltip_ru: "Ничего не выбрасывается. Одна точка IN режет файл на две части, IN и OUT — на три: _part1, _part2, _part3. Каждая точка сдвигается к ближайшему ключевому кадру, и части стыкуются в нём — вместе они дают исходник кадр в кадр. Звуковой файл делится ровно по сэмплу.", hint: "Choose one point or two to cut into two or three parts.", hint_ru: "Выберите одну или две точки для резки на две или три части."}
       - id: trim_start
         type: "text"
         group: "trim"
         label: "IN - start of the kept piece"
         label_ru: "IN — начало куска"
         placeholder: "00:00:05,000"
-        tooltip: "Wall-clock position, written as 00:01:28,4 or as plain seconds. The head of a copied stream lands on the nearest keyframe before this point, and the log says where it actually went."
-        tooltip_ru: "Позиция по реальному времени: 00:01:28,4 или просто секунды. Начало копируемого потока ложится на ближайший ключевой кадр перед этой точкой, и журнал говорит, куда оно попало."
+        tooltip: "Wall-clock position, written as 00:01:28,4 or as plain seconds. The head of a copied stream lands on the nearest keyframe before this point, and the log says where it actually went. A sound file is cut on the exact sample."
+        tooltip_ru: "Позиция по реальному времени: 00:01:28,4 или просто секунды. Начало копируемого потока ложится на ближайший ключевой кадр перед этой точкой, и журнал говорит, куда оно попало. Звуковой файл режется ровно по сэмплу."
         default: ""
       - id: trim_end
         type: "text"
@@ -1850,8 +1843,8 @@ operation_groups:
         label: "OUT - end of the kept piece"
         label_ru: "OUT — конец куска"
         placeholder: "00:00:30,000"
-        tooltip: "The tail is counted in frames from the exact rate, so it lands on the frame asked for."
-        tooltip_ru: "Конец считается кадрами по точной дроби частоты, поэтому попадает ровно в запрошенный кадр."
+        tooltip: "The tail is counted in frames from the exact rate, so it lands on the frame asked for. A sound file: on the exact sample."
+        tooltip_ru: "Конец считается кадрами по точной дроби частоты, поэтому попадает ровно в запрошенный кадр. У звукового файла — ровно по сэмплу."
         default: ""
       - id: trim_player
         type: "mpv_transport"
@@ -1888,6 +1881,8 @@ operation_groups:
             tooltip: "Closes the window. It also closes by itself when the program stops."
             tooltip_ru: "Закрывает окно. Оно и само закроется, когда программа остановится."
       - id: trim_container
+        # A sound file is written by format instead: see trim_audio_format.
+        hidden_if: {trim_media_kind: "audio"}
         type: "radio"
         choice_style: "buttons"
         layout: "five_columns"
@@ -1903,6 +1898,7 @@ operation_groups:
           - {value: "mkv", label: "MKV", label_ru: "MKV", tooltip: "Takes anything, but keeps a timecode only as a text tag. Editors may not read it.", tooltip_ru: "Примет что угодно, но таймкод хранит текстовым тегом — монтажка может его не прочитать."}
           - {value: "mxf", label: "MXF", label_ru: "MXF", tooltip: "Premiere's own working format. PCM audio is rewritten sample-accurately, so the picture and the sound stay exactly where they were. Compressed audio — AAC, AC-3, MP3, FLAC, ALAC — MXF refuses outright; those files are skipped with the reason, and MOV takes them unchanged.", tooltip_ru: "Рабочий формат Premiere. Звук PCM переписывается сэмпл-в-сэмпл, картинка и звук остаются ровно там, где были. Сжатый звук — AAC, AC-3, MP3, FLAC, ALAC — MXF не принимает вовсе: такой файл будет пропущен с объяснением, а MOV возьмёт его как есть."}
       - id: trim_audio
+        hidden_if: {trim_media_kind: "audio"}
         type: "radio"
         choice_style: "buttons"
         layout: "two_columns"
@@ -1916,6 +1912,7 @@ operation_groups:
           - {value: "copy", label: "Copy", label_ru: "Копировать", tone: "copy", tooltip: "The track is copied as it is, without a generation loss.", tooltip_ru: "Дорожка копируется как есть, без потери поколения."}
           - {value: "none", label: "Drop", label_ru: "Убрать", tooltip: "A silent file for the edit or for a GIF.", tooltip_ru: "Немой файл для монтажа или для гифки."}
       - id: trim_audio_channel
+        hidden_if: {trim_media_kind: "audio"}
         type: "radio"
         choice_style: "buttons"
         layout: "four_columns"
@@ -1930,7 +1927,76 @@ operation_groups:
           - {value: "first", label: "First", label_ru: "Первый", tooltip: "Usually the shotgun. Rebuilds the track: free on PCM, a generation on AAC.", tooltip_ru: "Обычно пушка. Дорожка пересобирается: на PCM бесплатно, на AAC — потеря поколения."}
           - {value: "second", label: "Second", label_ru: "Второй", tooltip: "Usually the lav. Rebuilds the track: free on PCM, a generation on AAC.", tooltip_ru: "Обычно петличка. Дорожка пересобирается: на PCM бесплатно, на AAC — потеря поколения."}
           - {value: "mono", label: "Fold to mono", label_ru: "Свести в моно", tooltip: "Mix both channels into one.", tooltip_ru: "Смешать оба канала в один."}
+      - id: trim_exact
+        # A sound file only. On: decoded, cut on the sample, written in the format
+        # below. Off: compressed packets copied untouched, each point moved to a
+        # packet boundary - what that costs at a joint was measured per codec.
+        type: "checkbox"
+        group: "package"
+        label: "Exact cut"
+        label_ru: "Точная резка"
+        default: true
+        refresh_on_change: true
+        visible_if: {trim_media_kind: "audio"}
+        tooltip: "On: the sound is decoded, cut on the exact sample and written in the format below - the piece is, bit for bit, the stretch the source plays. Off, for the purist: nothing is decoded, compressed packets are copied untouched, each point moves to the nearest packet boundary, and the log says what that codec loses at a joint. WAV, FLAC, ALAC and AIFF are cut on the sample either way."
+        tooltip_ru: "Включено: звук декодируется, режется ровно по сэмплу и пишется в формат ниже — кусок бит в бит тот отрезок, что играет исходник. Выключено — для пуристов: ничего не декодируется, сжатые пакеты копируются нетронутыми, точка уходит к ближайшей границе пакета, а журнал говорит, что этот кодек теряет на стыке. WAV, FLAC, ALAC и AIFF режутся по сэмплу в любом случае."
+      - id: trim_audio_format
+        type: "radio"
+        choice_style: "buttons"
+        layout: "four_columns"
+        group: "package"
+        span: "full"
+        label: "Format of the piece"
+        label_ru: "Формат куска"
+        default: "source"
+        refresh_on_change: true
+        visible_if: {all: [{trim_media_kind: "audio"}, {trim_exact: true}]}
+        options:
+          - {value: "source", label: "As is", label_ru: "Как есть", tooltip: "WAV, FLAC, ALAC, WavPack and AIFF go back as they were, sample for sample. MP3, AAC, Opus and Vorbis are encoded once more at the source's bitrate - one generation; WAV or FLAC avoid it.", tooltip_ru: "WAV, FLAC, ALAC, WavPack и AIFF записываются как были, сэмпл в сэмпл. MP3, AAC, Opus и Vorbis кодируются ещё раз с битрейтом исходника — одно поколение; WAV или FLAC его не тратят."}
+          - {value: "wav", label: "WAV", label_ru: "WAV", tooltip: "The decoded sound at the source's own bit depth; a compressed source is kept as float, exactly as it decodes.", tooltip_ru: "Декодированный звук с разрядностью исходника; сжатый исходник хранится во float — ровно так, как декодируется."}
+          - {value: "flac", label: "FLAC", label_ru: "FLAC", tooltip: "Lossless and smaller. Holds up to 24 bits: a float or 32-bit source is stored at 24, and the log says so.", tooltip_ru: "Без потерь и компактнее. Держит до 24 бит: float или 32-битный исходник хранится в 24, и журнал об этом скажет."}
+          - {value: "alac", label: "ALAC", label_ru: "ALAC", tooltip: "Lossless in M4A, for Apple software. Up to 24 bits, like FLAC.", tooltip_ru: "Без потерь в M4A — для программ Apple. До 24 бит, как FLAC."}
+          - {value: "m4a", label: "M4A / AAC", label_ru: "M4A / AAC", tooltip: "AAC at the bitrate below.", tooltip_ru: "AAC с битрейтом ниже."}
+          - {value: "mp3", label: "MP3", label_ru: "MP3", tooltip: "LAME with the preset below. Up to 48 kHz: a higher rate goes to 48 kHz through soxr.", tooltip_ru: "LAME с пресетом ниже. До 48 кГц: частота выше приводится к 48 кГц через soxr."}
+          - {value: "opus", label: "Opus", label_ru: "Opus", tooltip: "Opus at the bitrate below, at most 256 kbps. Opus works at 48 kHz: other rates go there through soxr.", tooltip_ru: "Opus с битрейтом ниже, не больше 256 kbps. Opus работает на 48 кГц: другие частоты приводятся к ней через soxr."}
+      - id: trim_mp3_preset
+        type: "radio"
+        choice_style: "buttons"
+        layout: "three_columns"
+        group: "package"
+        span: "full"
+        label: "MP3 / LAME"
+        label_ru: "MP3 / LAME"
+        default: "v0"
+        refresh_on_change: true
+        visible_if: {all: [{trim_media_kind: "audio"}, {trim_exact: true}, {trim_audio_format: "mp3"}]}
+        options:
+          - {value: "v0", label: "VBR V0", label_ru: "VBR V0", tooltip: "Best VBR V0 / Extreme, about 245 kbps.", tooltip_ru: "Best VBR V0 / Extreme, примерно 245 kbps."}
+          - {value: "insane", label: "Insane 320", label_ru: "Insane 320", tooltip: "Insane CBR 320 kbps.", tooltip_ru: "Insane CBR 320 kbps."}
+          - {value: "bitrate", label: "By bitrate", label_ru: "По битрейту", tooltip: "The bitrate below, up to the 320 kbps LAME ceiling.", tooltip_ru: "Битрейт ниже, максимум 320 kbps."}
+      - id: trim_audio_bitrate
+        type: "radio"
+        choice_style: "buttons"
+        layout: "four_columns"
+        group: "package"
+        span: "full"
+        label: "Bitrate"
+        label_ru: "Битрейт"
+        default: "320k"
+        visible_if:
+          all:
+            - {trim_media_kind: "audio"}
+            - {trim_exact: true}
+            - any:
+                - {trim_audio_format: ["m4a", "opus"]}
+                - {all: [{trim_audio_format: "mp3"}, {trim_mp3_preset: "bitrate"}]}
+        options:
+          - {value: "192k", label: "192 kbps", label_ru: "192 kbps"}
+          - {value: "256k", label: "256 kbps", label_ru: "256 kbps"}
+          - {value: "320k", label: "320 kbps", label_ru: "320 kbps", tooltip: "Opus stops at 256 kbps: above that it adds size, not sound.", tooltip_ru: "Opus останавливается на 256 kbps: выше растёт размер, а не звук."}
+          - {value: "384k", label: "384 kbps", label_ru: "384 kbps", disabled_if: {trim_audio_format: ["mp3", "opus"]}}
       - id: trim_data
+        hidden_if: {trim_media_kind: "audio"}
         type: "checkbox"
         group: "metadata"
         label: "Telemetry"
@@ -1939,6 +2005,7 @@ operation_groups:
         tooltip: "Carries the file's data stream into the result - a GoPro writes its telemetry there, and it would otherwise vanish without a word. MOV and MP4 can hold one; MKV and MXF cannot, and the log says so before the run. A timecode track is left behind on purpose: it travels as a value instead."
         tooltip_ru: "Переносит поток данных в результат — GoPro пишет туда телеметрию, и она иначе исчезает молча. MOV и MP4 такой поток держат, MKV и MXF нет — журнал скажет об этом до запуска. Дорожка таймкода намеренно остаётся: она переезжает значением."
       - id: trim_subtitles
+        hidden_if: {trim_media_kind: "audio"}
         type: "checkbox"
         group: "metadata"
         label: "Subtitles"
@@ -1947,6 +2014,7 @@ operation_groups:
         tooltip: "Carries subtitle streams over. Camera files rarely have them, but a DJI writes its flight data as subtitles, and dropping them loses the flight log."
         tooltip_ru: "Переносит субтитры. У камерных файлов они редки, но DJI пишет субтитрами данные полёта — выбросить их значит потерять журнал полёта."
       - id: trim_timecode
+        hidden_if: {trim_media_kind: "audio"}
         type: "radio"
         choice_style: "buttons"
         layout: "two_columns"
@@ -1959,6 +2027,7 @@ operation_groups:
           - {value: "shift", label: "Shift", label_ru: "Сдвинуть", tone: "copy", tooltip: "The new start is the old timecode plus the piece that was cut away. This is what the edit syncs cameras by.", tooltip_ru: "Начало нового файла — старый TC плюс отрезанное. Именно по нему на монтаже синхронизируют камеры."}
           - {value: "zero", label: "Zero", label_ru: "Обнулить", tooltip: "Start at 00:00:00:00, for a file that leaves as a standalone piece.", tooltip_ru: "Начать с 00:00:00:00 — для файла, который уходит наружу сам по себе."}
       - id: trim_faststart
+        hidden_if: {trim_media_kind: "audio"}
         type: "checkbox"
         group: "metadata"
         label: "faststart"
@@ -1976,8 +2045,8 @@ operation_groups:
       - id: trim_run
         title: "Trim the file"
         title_ru: "Обрезать файл"
-        description: "Cut on the nearest keyframe, copy the streams, shift the timecode."
-        description_ru: "Резать по ближайшему ключевому кадру, копировать потоки, сдвинуть таймкод."
+        description: "Cut on the nearest keyframe, copy the streams, shift the timecode; sound on the sample."
+        description_ru: "Резать по ближайшему ключевому кадру, копировать потоки, сдвинуть таймкод; звук — по сэмплу."
         service: "system_core.services.media_service:trim_media"
         kind: "safe"
 
