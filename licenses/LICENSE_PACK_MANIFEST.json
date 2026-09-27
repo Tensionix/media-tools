@@ -1,7 +1,7 @@
 {
   "schema": "audion.build_licenses.pack_manifest.v1",
-  "generated_utc": "2026-09-27T19:43:16Z",
-  "run_id": "20260927T194259Z_audion-media-tools_7426aa6f",
+  "generated_utc": "2026-09-27T20:07:47Z",
+  "run_id": "20260927T200738Z_audion-media-tools_1f526f78",
   "project_id": "audion-media-tools",
   "project_name": "Audion Media Tools",
   "scan_root": ".",
@@ -19,7 +19,7 @@
     },
     {
       "name": "COMPONENTS.json",
-      "sha256": "b153aa60253afbde69ee5a8b9ffa229d65097f38d8d4ed4937e62089d950648c",
+      "sha256": "9bc17267ad9ce115ce773487051b9f40d1ec0305bc74a434ad9fdc3bf2d58f87",
       "size": 128431
     },
     {
@@ -29,8 +29,8 @@
     },
     {
       "name": "LICENSE_SCAN_REPORT.md",
-      "sha256": "9f93c85a8dd41c54a39c197c7071546b1203555609f16c9dad635a650126ec8d",
-      "size": 5321
+      "sha256": "445cb66f238e34b8cdad09858d68c35830650945fe9b49525a30e2138c6a8414",
+      "size": 6296
     }
   ]
 }

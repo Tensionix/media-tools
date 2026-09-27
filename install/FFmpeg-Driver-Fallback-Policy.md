@@ -3,7 +3,7 @@
 Default policy:
 
 - NVIDIA driver 610.0 or newer: install the latest available BtbN or Gyan Stable release.
-- NVIDIA driver 570.0-609.xx: install the latest FFmpeg 8.x Stable release (currently 8.1.x, NVENC SDK 13.0).
+- NVIDIA driver 570.0-609.xx: install FFmpeg 8.0.1 Stable (NVENC SDK 13.0).
 - NVIDIA driver 471.41-569.xx: install FFmpeg 7.1 Stable (NVENC SDK 11.1).
 - NVIDIA GPU present but driver version unavailable: stop; compatibility cannot be verified safely.
 - NVIDIA driver below 471.41: stop; no supported automatic NVENC branch is defined.
