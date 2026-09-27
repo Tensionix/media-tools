@@ -1,6 +1,8 @@
 # Audion Media Tools
 
-[Русский](README_RU.md) · [User Guide](USER_GUIDE_EN.md) · [Measurements](MEASUREMENTS_RU.md) · [Decisions](DECISIONS_EN.md)
+[English README](README_EN.md) · [User Guide](USER_GUIDE_EN.md) | [Русский README](README_RU.md) · [Руководство](USER_GUIDE_RU.md)
+
+[Measurements](MEASUREMENTS_RU.md) · [Decisions](DECISIONS_EN.md)
 
 **Contents**
 
@@ -213,7 +215,7 @@ folder and fight over a name: the subfolder structure is reproduced in the outpu
 |---|---|
 | Download | a link or a list, format profiles, resolution, subtitles, threads |
 | Audio streams | extraction, resampling, normalisation, packaging; audio into video without re-encoding the picture |
-| Trimming | frame-accurate or on keyframes, with marks remembered per file; sound files on the sample |
+| Trimming | frame-accurate or on keyframes, with marks remembered per file; several variants from one take, a split at up to 30 points; sound files on the sample |
 | Remux, frame rate, colour tables | changing the container, working with frame rate, applying lookup tables |
 | Archive | long-term masters: FFV1, lossless x264 |
 | Editing codecs | ProRes and DNxHR in MOV or MXF |

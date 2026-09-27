@@ -2125,6 +2125,104 @@
   margin-bottom: 3px;
 }
 
+/* --- Rows of IN and OUT, and the points of a split --------------------- */
+
+.audion-trim-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 100%;
+}
+
+/* Two fields as wide as the section grid made them, the length of the piece,
+   and the + (or the room it takes) at the end of every row. */
+.audion-trim-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 8.5rem 38px;
+  gap: 12px;
+  align-items: center;
+}
+
+.audion-trim-rows-numbered .audion-trim-row {
+  grid-template-columns: 1.4rem minmax(0, 1fr) minmax(0, 1fr) 8.5rem 38px;
+}
+
+.audion-trim-row-input,
+.audion-trim-point-input {
+  min-width: 0;
+}
+
+.audion-trim-row-input .q-field__control,
+.audion-trim-point-input .q-field__control {
+  min-height: 38px !important;
+}
+
+.audion-trim-row-number {
+  color: var(--audion-muted-text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.audion-trim-row-length {
+  padding: 0 4px;
+  color: var(--audion-muted-text);
+  font-family: "Cascadia Mono", "Cascadia Code", var(--font-mono), ui-monospace, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.audion-trim-points {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px 12px;
+  width: 100%;
+}
+
+.audion-trim-point-input {
+  flex: 0 0 11.5rem;
+}
+
+.audion-trim-add-wrap {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+}
+
+.audion-trim-add-spacer {
+  width: 38px;
+}
+
+.audion-trim-add {
+  width: 38px;
+  min-width: 0;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  border: 1px solid var(--audion-input-border);
+  border-radius: 8px;
+  background: var(--audion-block-background);
+  color: var(--color-accent-primary);
+}
+
+.audion-trim-add .q-focus-helper {
+  display: none;
+}
+
+.audion-trim-add:not(.disabled):hover {
+  border-color: var(--audion-input-border-hover);
+  background: var(--audion-button-hover-background);
+}
+
+/* Grey and still, until the last row holds its points. */
+.audion-trim-add.disabled {
+  color: var(--audion-muted-text);
+  opacity: 0.45 !important;
+}
+
 .audion-trim-probe-title {
   margin-bottom: 6px;
   font-size: 0.9rem;
@@ -2194,4 +2292,30 @@
 .audion-field-section-run .audion-field-id-limit-first-file {
   min-width: 0;
   max-width: none;
+}
+
+/* --- Scrollbars ---------------------------------------------------------- */
+
+/* Darker than the browser's own, which stood out as a light grey stripe on
+   every dark theme. Mixed from the theme's colours, so a light theme stays in
+   key, and one rule for every scrolling box - the page, the log, the lists. */
+:root {
+  --audion-scrollbar-thumb: color-mix(in srgb, var(--color-text-tertiary) 26%, var(--color-background-tertiary) 74%);
+  --audion-scrollbar-thumb-hover: color-mix(in srgb, var(--color-text-tertiary) 42%, var(--color-background-tertiary) 58%);
+}
+
+/* No hover shade here: :hover holds for every box under the mouse, so the page's
+   own bar would be lit whenever the mouse is anywhere on it. */
+* {
+  scrollbar-color: var(--audion-scrollbar-thumb) transparent;
+}
+
+/* Quasar's own scroll areas draw a thumb of their own, black or white at 20 %. */
+.q-scrollarea__thumb {
+  background: var(--audion-scrollbar-thumb);
+  opacity: 1;
+}
+
+.q-scrollarea__thumb:hover {
+  background: var(--audion-scrollbar-thumb-hover);
 }

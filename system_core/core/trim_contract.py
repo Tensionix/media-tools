@@ -50,6 +50,11 @@ from system_core.core.audio_contract import (
 
 TRIM_PATTERNS = ("start", "end", "both", "split", "middle")
 
+# How far a split and the variants of a keep or a cut may go. Not a limit of the
+# cutting: a limit of the panel, where each point is a field on screen.
+SPLIT_MAX_POINTS = 30
+TRIM_MAX_VARIANTS = 20
+
 # A timecode rate is the integer the fractional rate rounds up to: 23.976 counts
 # on a 24-frame clock, 29.97 on a 30-frame one.
 _TIMECODE_BASES = (24, 25, 30, 48, 50, 60, 96, 100, 120)
@@ -556,7 +561,7 @@ def plan_split(
     keyframes: Iterable[float],
     frame_exact: bool = True,
 ) -> TrimSplit:
-    """Plan a split at one point or two, so the parts add back up to the file.
+    """Plan a split at any number of points, so the parts add back up to the file.
 
     Each point snaps to its nearest keyframe, and that keyframe is the joint for
     both neighbours: the part before ends on the frame just ahead of it, the part
@@ -566,9 +571,9 @@ def plan_split(
         raise ValueError("Source duration could not be read.")
     requested = sorted(parse_seconds(item) for item in points if str(item if item is not None else "").strip())
     if not requested:
-        raise ValueError("A split needs a point: set IN, or IN and OUT for three parts.")
-    if len(requested) > 2:
-        raise ValueError("A split takes one point or two.")
+        raise ValueError("A split needs a point to cut at.")
+    if len(requested) > SPLIT_MAX_POINTS:
+        raise ValueError(f"A split takes at most {SPLIT_MAX_POINTS} points, and {len(requested)} were given.")
     for point in requested:
         if point <= 0 or point >= duration:
             raise ValueError(f"The point {format_seconds(point)} lies outside the file.")
@@ -585,11 +590,14 @@ def plan_split(
                 "so there is nothing to split off there."
             )
         boundaries.append(keyframe)
-    if len(boundaries) == 2 and boundaries[0] == boundaries[1]:
-        raise ValueError(
-            f"Both points land on the keyframe at {format_seconds(boundaries[0])}, "
-            "so the middle part would be empty. Move them further apart."
-        )
+    # Snapping keeps the order, so two points on one keyframe are neighbours.
+    for index in range(1, len(boundaries)):
+        if boundaries[index] == boundaries[index - 1]:
+            raise ValueError(
+                f"The points {format_seconds(requested[index - 1])} and {format_seconds(requested[index])} "
+                f"both land on the keyframe at {format_seconds(boundaries[index])}, "
+                "so the part between them would be empty. Move them further apart."
+            )
 
     starts = [0.0, *boundaries]
     ends: list[float | None] = [*boundaries, None]
@@ -622,6 +630,166 @@ DATA_STREAM_CONTAINERS = {"mov", "mp4", "m4v", "mxf"}
 
 # And subtitles, which all of these carry in some form.
 SUBTITLE_STREAM_CONTAINERS = {"mov", "mp4", "m4v", "mkv"}
+
+# Subtitles are not copied through a cut, they are rebuilt for it. Copying the
+# packets was tried and measured wrong at every boundary: with a frame count
+# FFmpeg drops a line that runs across OUT, a seek keeps a line that began
+# before IN at its full length, and the concat join of "Cut it out" turned a
+# line of 0.5-1.5 s into one of a microsecond and moved the next one a second
+# early (found by the 2.6.0 re-audit). So the text of every line is read out
+# as SRT, each line is cut to the pieces kept and moved onto the new timeline,
+# and the result is muxed as a second input of the same FFmpeg call that cuts
+# the picture - which is copied as before.
+#
+# The form each container writes, measured on FFmpeg 8.0.1: MP4 and MOV hold
+# mov_text and refuse SubRip; Matroska holds SubRip and refuses mov_text.
+TEXT_SUBTITLE_CODECS = {"mov_text", "subrip", "ass", "ssa", "webvtt", "text"}
+SUBTITLE_TEXT_ENCODERS = {"mov": "mov_text", "mp4": "mov_text", "m4v": "mov_text", "mkv": "srt"}
+_NATIVE_TEXT = {"mov_text": "mov_text", "srt": "subrip"}
+
+
+def subtitle_stream_plan(streams: Iterable[dict[str, Any]], container: str) -> tuple[list[tuple[int, str]], list[str]]:
+    """Which subtitle streams are rebuilt into this container, and with what encoder.
+
+    Returns `(position, encoder)` for each text stream - its place among the
+    file's subtitle streams - and what to say about the ones that change form or
+    stay behind. A picture of text cannot be cut to a piece without redrawing
+    it, so it stays behind in every container, and the log says so.
+    """
+    target = str(container or "").strip().lower()
+    encoder = SUBTITLE_TEXT_ENCODERS.get(target)
+    subtitles = [item for item in streams if isinstance(item, dict) and str(item.get("codec_type") or "").lower() == "subtitle"]
+    plan: list[tuple[int, str]] = []
+    rewritten: list[str] = []
+    refused: list[str] = []
+    for position, stream in enumerate(subtitles):
+        codec = str(stream.get("codec_name") or "").strip().lower()
+        if codec in TEXT_SUBTITLE_CODECS and encoder:
+            plan.append((position, encoder))
+            if codec != _NATIVE_TEXT.get(encoder):
+                rewritten.append(codec)
+        else:
+            refused.append(codec or "subtitle")
+    notes: list[str] = []
+    if rewritten:
+        names = ", ".join(sorted(set(rewritten)))
+        written = "SRT" if encoder == "srt" else encoder
+        notes.append(
+            f"Subtitles ({names}) are rewritten as {written}, the text form {target.upper()} holds. "
+            "The words and their timing travel; styling does not."
+        )
+    if refused:
+        names = ", ".join(sorted(set(refused)))
+        notes.append(f"Picture subtitles ({names}) stay behind: a picture of text cannot be cut to a piece without redrawing it.")
+    return plan, notes
+
+
+@dataclass(frozen=True)
+class SubtitleCue:
+    """One line on screen, in seconds on the operator's timeline."""
+
+    start: float
+    end: float
+    text: str
+
+
+_SRT_TIME = re.compile(r"(\d+):(\d{1,2}):(\d{1,2})[,.](\d{1,3})")
+
+
+def _srt_seconds(value: str) -> float | None:
+    match = _SRT_TIME.search(value)
+    if not match:
+        return None
+    hours, minutes, seconds, fraction = match.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(fraction.ljust(3, "0")) / 1000
+
+
+def parse_srt(text: str) -> list[SubtitleCue]:
+    """Every line of an SRT document; blocks without a timing or a text are passed over."""
+    cues: list[SubtitleCue] = []
+    for block in re.split(r"\r?\n[ \t]*\r?\n", str(text or "").strip()):
+        lines = block.splitlines()
+        for index, line in enumerate(lines):
+            if "-->" not in line:
+                continue
+            left, right = line.split("-->", 1)
+            start, end = _srt_seconds(left), _srt_seconds(right)
+            body = "\n".join(lines[index + 1 :]).strip()
+            if start is not None and end is not None and end > start and body:
+                cues.append(SubtitleCue(start, end, body))
+            break
+    return cues
+
+
+def format_srt(cues: Iterable[SubtitleCue]) -> str:
+    def stamp(seconds: float) -> str:
+        total = max(0, int(round(seconds * 1000)))
+        return f"{total // 3600000:02d}:{total // 60000 % 60:02d}:{total // 1000 % 60:02d},{total % 1000:03d}"
+
+    blocks = []
+    for number, cue in enumerate(cues, start=1):
+        # Rounded to the millisecond, a line still ends after it starts.
+        end = max(cue.end, cue.start + 0.001)
+        blocks.append(f"{number}\n{stamp(cue.start)} --> {stamp(end)}\n{cue.text}\n")
+    return "\n".join(blocks)
+
+
+# A fragment shorter than this is an artefact of a boundary, not a line anyone reads.
+_SHORTEST_CUE = 0.001
+
+
+def cues_for_spans(cues: Iterable[SubtitleCue], spans: Iterable[tuple[float, float, float]]) -> list[SubtitleCue]:
+    """Cut every line to the spans kept and move it onto the new timeline.
+
+    A span is `(source start, source end, where it starts in the result)`: one
+    span for a kept piece or a part, two for a piece cut out of the middle. A
+    line crossing a boundary keeps the part that lies inside; a line broken only
+    by the removed piece comes back whole where its two parts meet again.
+    """
+    ranges = [(float(start), float(end), float(at)) for start, end, at in spans if float(end) > float(start)]
+    fragments: list[tuple[float, float, str, int]] = []
+    for number, cue in enumerate(cues):
+        for start, end, at in ranges:
+            first, last = max(cue.start, start), min(cue.end, end)
+            if last - first >= _SHORTEST_CUE:
+                fragments.append((first - start + at, last - start + at, cue.text, number))
+    fragments.sort(key=lambda item: (item[0], item[3]))
+    result: list[tuple[float, float, str, int]] = []
+    for fragment in fragments:
+        if result and result[-1][3] == fragment[3] and fragment[0] - result[-1][1] < _SHORTEST_CUE:
+            previous = result[-1]
+            result[-1] = (previous[0], max(previous[1], fragment[1]), previous[2], previous[3])
+        else:
+            result.append(fragment)
+    return [SubtitleCue(start, end, text) for start, end, text, _number in result]
+
+
+def subtitle_input_maps(inputs: Sequence[tuple[str, str, str]], *, first_input: int) -> list[str]:
+    """`-map` for rebuilt subtitle files that follow the picture's input(s)."""
+    maps: list[str] = []
+    for offset, _item in enumerate(inputs):
+        maps.extend(["-map", f"{first_input + offset}:0"])
+    return maps
+
+
+def subtitle_input_codecs(inputs: Sequence[tuple[str, str, str]]) -> list[str]:
+    """The encoder of each rebuilt stream, and its language carried over."""
+    args: list[str] = []
+    for number, (_path, encoder, language) in enumerate(inputs):
+        args.extend([f"-c:s:{number}", str(encoder)])
+        if language:
+            args.extend([f"-metadata:s:s:{number}", f"language={language}"])
+    return args
+
+
+def subtitle_extract_command(ffmpeg: str, source: str, position: int) -> list[str]:
+    """Read one subtitle stream out as SRT, on the file's own clock.
+
+    `-copyts` keeps the stream's timestamps: without it FFmpeg counts from the
+    earliest stream, often the sound, and the lines land 21 ms off the picture.
+    The caller subtracts the picture's own start, as every cut here does.
+    """
+    return [ffmpeg, "-v", "error", "-nostdin", "-copyts", "-i", source, "-map", f"0:s:{int(position)}", "-c:s", "srt", "-f", "srt", "-"]
 
 
 def stream_display_name(stream: dict[str, Any]) -> str:
@@ -708,7 +876,9 @@ def extra_stream_plan(
         elif target not in SUBTITLE_STREAM_CONTAINERS:
             warnings.append(f"{target.upper()} cannot hold subtitles ({names}), so they stay behind.")
         else:
-            keep_subtitles = True
+            travelling, notes = subtitle_stream_plan(subtitle_streams, target)
+            warnings.extend(notes)
+            keep_subtitles = bool(travelling)
 
     return keep_data, keep_subtitles, warnings
 
@@ -800,7 +970,12 @@ def build_trim_command(
     faststart: bool = True,
     keep_metadata: bool = True,
     keep_data: bool = False,
+    # Copies the source's subtitle packets as they are - kept for callers that
+    # ask for it; boundaries come out wrong, which is why the front-ends use
+    # `subtitle_inputs` instead.
     keep_subtitles: bool = False,
+    # Rebuilt lines, one SRT per stream: (path, encoder, language).
+    subtitle_inputs: Sequence[tuple[str, str, str]] | None = None,
 ) -> list[str]:
     """The FFmpeg call both front-ends use for a single-piece trim.
 
@@ -813,6 +988,11 @@ def build_trim_command(
     if start_seconds > 0:
         command.extend(["-ss", f"{float(start_seconds):.6f}"])
     command.extend(["-i", source])
+    # Right after the source: an option placed before an `-i` belongs to that
+    # input, and `-frames:v` would land on the subtitles.
+    inputs = list(subtitle_inputs or [])
+    for path, _encoder, _language in inputs:
+        command.extend(["-i", str(path)])
     if frame_count is not None and int(frame_count) > 0:
         command.extend(["-frames:v", str(int(frame_count))])
         if sound_to_seconds is not None and sound_to_seconds > 0:
@@ -836,7 +1016,9 @@ def build_trim_command(
     # a data stream, a DJI's flight log in subtitles. Dropped by default because
     # most containers refuse them, kept when the operator asks and the caller
     # has checked that this container will take them.
-    if keep_subtitles:
+    if inputs:
+        command.extend(subtitle_input_maps(inputs, first_input=1))
+    elif keep_subtitles:
         command.extend(["-map", "0:s?"])
     else:
         command.append("-sn")
@@ -857,6 +1039,12 @@ def build_trim_command(
             command.extend(audio_args)
         else:
             command.extend(["-c:a", "copy"])
+    if inputs:
+        command.extend(subtitle_input_codecs(inputs))
+    elif keep_subtitles:
+        # Named outright: left to itself FFmpeg picks an encoder instead of
+        # copying, and MP4 stops on "Error selecting an encoder".
+        command.extend(["-c:s", "copy"])
     if keep_metadata:
         command.extend(["-map_metadata", "0"])
     if timecode:
@@ -939,13 +1127,15 @@ def plan_audio_trim(
     duration: float,
     sample_rate: int,
     total_samples: int | None = None,
+    points: Iterable[Any] | None = None,
 ) -> AudioTrim:
     """Turn a trim pattern into sample numbers for a file of sound alone.
 
     The patterns and the refusals are the ones the picture uses, so both paths
     answer the same question the same way. Only nothing snaps: there is no
     keyframe to wait for, and the joint between two pieces is one sample
-    boundary.
+    boundary. A split takes its points from `points` when given, and from IN
+    and OUT otherwise.
     """
     mode = str(pattern or "").strip().lower()
     if mode not in TRIM_PATTERNS:
@@ -964,19 +1154,24 @@ def plan_audio_trim(
         return min(max(seconds_to_sample(parse_seconds(value), rate), 0), total)
 
     if mode == "split":
-        asked = sorted(parse_seconds(item) for item in (start, end) if _point_given(item))
+        given = [item for item in (points or ()) if _point_given(item)] or [start, end]
+        asked = sorted(parse_seconds(item) for item in given if _point_given(item))
         if not asked:
-            raise ValueError("A split needs a point: set IN, or IN and OUT for three parts.")
+            raise ValueError("A split needs a point to cut at.")
+        if len(asked) > SPLIT_MAX_POINTS:
+            raise ValueError(f"A split takes at most {SPLIT_MAX_POINTS} points, and {len(asked)} were given.")
         cuts: list[int] = []
         for point in asked:
             at = seconds_to_sample(point, rate)
             if at <= 0 or at >= total:
                 raise ValueError(f"The point {format_seconds(point)} lies outside the file.")
             cuts.append(at)
-        if len(cuts) == 2 and cuts[0] == cuts[1]:
-            raise ValueError(
-                f"Both points fall on sample {cuts[0]}, so the middle part would be empty. Move them further apart."
-            )
+        for index in range(1, len(cuts)):
+            if cuts[index] == cuts[index - 1]:
+                raise ValueError(
+                    f"The points {format_seconds(asked[index - 1])} and {format_seconds(asked[index])} both fall on "
+                    f"sample {cuts[index]}, so the part between them would be empty. Move them further apart."
+                )
         starts = [0, *cuts]
         ends: list[int | None] = [*cuts, None]
         pieces = tuple(AudioPiece(first, last) for first, last in zip(starts, ends))

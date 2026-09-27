@@ -99,6 +99,15 @@ from system_core.core.trim_contract import (
     seconds_to_frames,
     shift_timecode,
     timecode_is_drop_frame,
+    TRIM_MAX_VARIANTS,
+    SubtitleCue,
+    cues_for_spans,
+    format_srt,
+    parse_srt,
+    subtitle_extract_command,
+    subtitle_input_codecs,
+    subtitle_input_maps,
+    subtitle_stream_plan,
     zero_timecode,
 )
 from system_core.core.video_contract import scale_filter
@@ -4022,6 +4031,55 @@ def trim_source_path(name: str, root: Path | str | None = None) -> Path | None:
     return candidate if candidate.is_file() else None
 
 
+_TRIM_LENGTHS: dict[tuple[str, int, int], float] = {}
+
+
+def trim_file_seconds(name: str, root: Path | str | None = None) -> float | None:
+    """How long a staged take plays - for the piece lengths the panel shows.
+
+    Only needed when a row has one point: IN alone runs to the end of the file.
+    Asked of ffprobe once per version of the file, since the panel redraws on
+    every click.
+    """
+    source = trim_source_path(name, root)
+    if source is None:
+        return None
+    try:
+        stat = source.stat()
+    except OSError:
+        return None
+    key = (str(source), stat.st_size, stat.st_mtime_ns)
+    if key not in _TRIM_LENGTHS:
+        project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
+        try:
+            data = _probe_media_json(project_root, source)
+            fmt = data.get("format") if isinstance(data.get("format"), dict) else {}
+            _TRIM_LENGTHS[key] = float(fmt.get("duration") or 0.0)
+        except (OSError, RuntimeError, ValueError):
+            _TRIM_LENGTHS[key] = 0.0
+    return _TRIM_LENGTHS[key] or None
+
+
+def trim_file_frame_seconds(name: str, root: Path | str | None = None) -> float | None:
+    """One frame of a staged take: the step of the smallest section of a point.
+
+    A millisecond changes nothing in a cut on 25p, a frame does. The rate is the
+    one the cut itself uses - nominal on a variable-rate source. None for a
+    sound file, which has no frame and steps by the millisecond instead.
+    """
+    source = trim_source_path(name, root)
+    if source is None or trim_media_kind(source.name) == "audio":
+        return None
+    project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
+    try:
+        facts = _trim_stream_facts(project_root, source)
+        variable_rate = is_variable_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate"))
+        rate = parse_rate((facts.get("r_frame_rate") if variable_rate else facts.get("avg_frame_rate")) or "")
+    except (OSError, RuntimeError, ValueError, KeyError):
+        return None
+    return float(1 / rate) if rate > 0 else None
+
+
 def trim_source_file_names(root: Path | str | None = None) -> list[str]:
     """Video and sound files staged in Source, in alphabetical order, as plain names."""
     project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
@@ -4130,6 +4188,56 @@ def _trim_pattern(params: dict[str, Any]) -> str:
         return value
     derived = _trim_action_pattern(params)
     return derived or "start"
+
+
+def _trim_split_points(params: dict[str, Any]) -> list[Any]:
+    """The points a split cuts at: the panel's list, or IN and OUT from a wrapper."""
+    points = params.get("trim_points")
+    if isinstance(points, (list, tuple)):
+        given = [item for item in points if str(item if item is not None else "").strip()]
+        if given:
+            return given
+    return [params.get("trim_start"), params.get("trim_end")]
+
+
+def _trim_part_suffix(index: int, total: int) -> str:
+    """`part1` up to nine parts, `part01` from ten on, so Explorer keeps them in order."""
+    width = 2 if total >= 10 else 1
+    return f"part{index:0{width}d}"
+
+
+def _trim_variants(params: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    """Every filled row of the panel as a run of its own, with the suffix it is named by.
+
+    The rows are not pieces of one timeline. Each is a separate answer to the
+    same question - which piece to keep, or which to cut out - so each writes
+    its own file, and two rows may overlap as freely as two separate runs could.
+    Row 1 is IN and OUT; the rows after it arrive in `trim_rows`. One filled row
+    is today's run exactly, with no suffix.
+    """
+    rows: list[tuple[int, Any, Any]] = [(1, params.get("trim_start"), params.get("trim_end"))]
+    extra = params.get("trim_rows")
+    if isinstance(extra, (list, tuple)):
+        for number, row in enumerate(extra, start=2):
+            if isinstance(row, dict):
+                rows.append((number, row.get("start"), row.get("end")))
+
+    def given(value: Any) -> bool:
+        return str(value if value is not None else "").strip() != ""
+
+    filled = [row for row in rows if given(row[1]) or given(row[2])]
+    if len(filled) <= 1:
+        if not filled:
+            return [("", params)]
+        _number, start, end = filled[0]
+        return [("", {**params, "trim_start": start or "", "trim_end": end or ""})]
+    if len(filled) > TRIM_MAX_VARIANTS:
+        raise RuntimeError(f"{len(filled)} rows are filled, and one run takes at most {TRIM_MAX_VARIANTS}.")
+    word = "cut" if _trim_pattern(params) == "middle" else "keep"
+    return [
+        (f"{word}{number:02d}", {**params, "trim_start": start or "", "trim_end": end or ""})
+        for number, start, end in filled
+    ]
 
 
 def _trim_container(params: dict[str, Any], source: Path) -> str:
@@ -4490,7 +4598,7 @@ def _trim_split_plans(
     source_dir: Path,
     output_dir: Path,
 ) -> list[dict[str, Any]]:
-    """A split at IN alone gives two parts; at IN and OUT, three.
+    """A split at N points gives N + 1 parts.
 
     The joints come from `plan_split`, which snaps each point to its nearest
     keyframe and makes that keyframe the end of one part and the start of the
@@ -4505,7 +4613,7 @@ def _trim_split_plans(
     rate = parse_rate((facts.get("r_frame_rate") if variable_rate else facts.get("avg_frame_rate")) or "")
     origin = float(facts.get("origin") or 0.0)
 
-    points = [params.get("trim_start"), params.get("trim_end")]
+    points = _trim_split_points(params)
     asked: list[float] = []
     for point in points:
         if str(point if point is not None else "").strip():
@@ -4556,7 +4664,7 @@ def _trim_split_plans(
                 part_params,
                 source_dir=source_dir,
                 output_dir=output_dir,
-                name_suffix=f"part{part.index}",
+                name_suffix=_trim_part_suffix(part.index, len(split.parts)),
                 forced_cut=cut,
             )
         )
@@ -4729,6 +4837,20 @@ def _trim_plan(
     )
     if name_suffix:
         target = target.with_name(f"{target.stem}_{name_suffix}{target.suffix}")
+    subtitle_inputs: list[tuple[str, str, str]] = []
+    if keep_subtitles and not params.get("_subtitles_at_join"):
+        # The lines of the piece as it really runs: from the keyframe the
+        # picture starts on, for exactly as long as it is kept.
+        subtitle_inputs = _trim_subtitle_inputs(
+            context,
+            source,
+            data.get("streams") or [],
+            container,
+            [(cut.start, cut.start + cut.kept, 0.0)],
+            name=target.stem,
+            origin=origin,
+            warnings=warnings,
+        )
     command = build_trim_command(
         ffmpeg=_ffmpeg(root),
         source=str(source),
@@ -4748,7 +4870,7 @@ def _trim_plan(
         timecode=timecode,
         faststart=_as_bool(params.get("trim_faststart"), True),
         keep_data=keep_data,
-        keep_subtitles=keep_subtitles,
+        subtitle_inputs=subtitle_inputs,
     )
     return {
         "label": f"{label} [{name_suffix}]" if name_suffix else label,
@@ -4773,9 +4895,83 @@ def _trim_plan(
         "source_timecode": source_timecode,
         "timecode": timecode,
         "keep_data": keep_data,
-        "keep_subtitles": keep_subtitles,
+        "keep_subtitles": bool(subtitle_inputs),
+        # Whether the operator's subtitles could travel at all - a piece headed
+        # for a join leaves them to the join, which rebuilds them for the result.
+        "subtitles_wanted": keep_subtitles,
+        "temp_files": [Path(path) for path, _encoder, _language in subtitle_inputs],
         "warnings": warnings,
     }
+
+
+_TRIM_CUES: dict[tuple[str, int, int, int], list[SubtitleCue]] = {}
+
+
+def _trim_source_cues(root: Path, source: Path, position: int, origin: float) -> list[SubtitleCue]:
+    """Every line of one subtitle stream, on the operator's timeline.
+
+    Read once per version of the file: the lines of every variant, part and
+    join of the same take come from the same reading.
+    """
+    stat = source.stat()
+    key = (str(source), stat.st_size, stat.st_mtime_ns, int(position))
+    if key not in _TRIM_CUES:
+        completed = subprocess.run(
+            subtitle_extract_command(_ffmpeg(root), str(source), position),
+            cwd=str(root),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=utf8_subprocess_env(_tool_env(root)),
+            **hidden_subprocess_kwargs(),
+        )
+        if completed.returncode != 0:
+            detail = completed.stderr.decode("utf-8", errors="replace").strip().splitlines()
+            raise RuntimeError(detail[-1] if detail else f"ffmpeg exited {completed.returncode}")
+        cues = parse_srt(completed.stdout.decode("utf-8", errors="replace"))
+        if len(_TRIM_CUES) >= 64:
+            _TRIM_CUES.clear()
+        _TRIM_CUES[key] = [SubtitleCue(cue.start - origin, cue.end - origin, cue.text) for cue in cues]
+    return list(_TRIM_CUES[key])
+
+
+def _trim_subtitle_inputs(
+    context: JobContext,
+    source: Path,
+    streams: list[dict[str, Any]],
+    container: str,
+    spans: list[tuple[float, float, float]],
+    *,
+    name: str,
+    origin: float,
+    warnings: list[str],
+) -> list[tuple[str, str, str]]:
+    """The rebuilt lines of every text subtitle stream, one SRT each, for this result.
+
+    A stream with no line inside the kept spans adds no track; one that cannot
+    be read stays behind with the reason in the log rather than stopping the cut.
+    """
+    root = context.paths.root
+    plan, _notes = subtitle_stream_plan(streams, container)
+    subtitles = [item for item in streams if isinstance(item, dict) and str(item.get("codec_type") or "").lower() == "subtitle"]
+    stage = context.paths.workspace / "trim_subtitles"
+    inputs: list[tuple[str, str, str]] = []
+    for position, encoder in plan:
+        try:
+            cues = _trim_source_cues(root, source, position, origin)
+        except (OSError, RuntimeError) as exc:
+            warnings.append(f"Subtitle stream {position + 1} could not be read, so it stays behind: {exc}")
+            continue
+        kept = cues_for_spans(cues, spans)
+        if not kept:
+            continue
+        stage.mkdir(parents=True, exist_ok=True)
+        path = stage / f"{name}_s{position}.srt"
+        path.write_text(format_srt(kept), encoding="utf-8")
+        tags = subtitles[position].get("tags") if position < len(subtitles) else None
+        language = str((tags or {}).get("language") or "").strip()
+        inputs.append((str(path), encoder, "" if language == "und" else language))
+    return inputs
 
 
 def _trim_gap_plan(
@@ -4785,6 +4981,7 @@ def _trim_gap_plan(
     *,
     source_dir: Path,
     output_dir: Path,
+    name_suffix: str = "",
 ) -> dict[str, Any]:
     """One file with a piece taken out of its middle: two cuts and a join."""
     root = context.paths.root
@@ -4819,12 +5016,15 @@ def _trim_gap_plan(
 
     # Both pieces are cut sample-exactly where the format allows it: a surplus
     # of sound at the end of the head, or at the start of the tail, lands
-    # straight on the join.
-    shared = {**params, "trim_sample_exact": True}
+    # straight on the join. Their subtitles are left to the join, which lays
+    # the lines of both spans onto the result's timeline in one go.
+    shared = {**params, "trim_sample_exact": True, "_subtitles_at_join": True}
     head_params = {**shared, "trim_pattern": "end", "trim_end": format_seconds(gap.requested_start), "trim_start": ""}
     tail_params = {**shared, "trim_pattern": "start", "trim_start": format_seconds(gap.tail_start), "trim_end": ""}
-    head = _trim_plan(context, source, head_params, source_dir=source_dir, output_dir=stage, name_suffix="gap_head")
-    tail = _trim_plan(context, source, tail_params, source_dir=source_dir, output_dir=stage, name_suffix="gap_tail")
+    # A variant's pieces carry its suffix too, so no two variants share a piece on disk.
+    piece = f"{name_suffix}_gap" if name_suffix else "gap"
+    head = _trim_plan(context, source, head_params, source_dir=source_dir, output_dir=stage, name_suffix=f"{piece}_head")
+    tail = _trim_plan(context, source, tail_params, source_dir=source_dir, output_dir=stage, name_suffix=f"{piece}_tail")
 
     target = _output_path(
         source,
@@ -4834,6 +5034,9 @@ def _trim_gap_plan(
         source_root=source_dir,
         operation=_operation_output_folder(context, "Trim"),
     )
+    if name_suffix:
+        target = target.with_name(f"{target.stem}_{name_suffix}{target.suffix}")
+        label = f"{label} [{name_suffix}]"
     list_file = stage / f"{target.stem}_parts.txt"
 
     warnings = list(head["warnings"])
@@ -4845,6 +5048,26 @@ def _trim_gap_plan(
             "The tail starts at the first keyframe past the removed piece, so "
             f"{format_offset(gap.keyframe_offset).lstrip('+')} more than asked for was removed. "
             "Starting earlier would leave part of the removed piece in the result."
+        )
+    if head.get("keep_data"):
+        # Subtitles go through the join; a data stream has not been measured
+        # there, so it is said out loud rather than dropped without a word.
+        warnings.append(
+            "Cutting a piece out joins picture, sound and subtitles; the data stream (telemetry) does not pass the "
+            "join and stays behind. Keep it or Split carries it over."
+        )
+    subtitle_inputs: list[tuple[str, str, str]] = []
+    if head.get("subtitles_wanted"):
+        # The head as it runs, then the tail from its keyframe, laid on where the head ends.
+        subtitle_inputs = _trim_subtitle_inputs(
+            context,
+            source,
+            _probe_media_json(root, source).get("streams") or [],
+            container,
+            [(0.0, gap.head_seconds, 0.0), (gap.tail_start, float(duration), gap.head_seconds)],
+            name=f"{target.stem}_join",
+            origin=origin,
+            warnings=warnings,
         )
     return {
         "kind": "gap",
@@ -4867,7 +5090,11 @@ def _trim_gap_plan(
         "timecode": head["timecode"],
         "source_timecode": head["source_timecode"],
         "warnings": warnings,
-        "command": _concat_command(root, list_file, target, container, params, head["timecode"]),
+        "keep_subtitles": bool(subtitle_inputs),
+        "temp_files": [Path(path) for path, _encoder, _language in subtitle_inputs],
+        "command": _concat_command(
+            root, list_file, target, container, params, head["timecode"], subtitle_inputs=subtitle_inputs
+        ),
     }
 
 
@@ -4878,8 +5105,17 @@ def _concat_command(
     container: str,
     params: dict[str, Any],
     timecode: str = "",
+    *,
+    subtitle_inputs: list[tuple[str, str, str]] | None = None,
 ) -> list[str]:
-    """Glue the two pieces by copying packets - no decoding, no re-encoding."""
+    """Glue the two pieces by copying packets - no decoding, no re-encoding.
+
+    The subtitles come in beside the pieces, already laid onto the result's
+    timeline. Carrying the pieces' own subtitle packets through the concat was
+    measured wrong: a line of 0.5-1.5 s came out a microsecond long and the next
+    one a second early.
+    """
+    inputs = list(subtitle_inputs or [])
     command = [
         _ffmpeg(root),
         "-hide_banner",
@@ -4894,6 +5130,7 @@ def _concat_command(
         "0",
         "-i",
         str(list_file),
+        *[part for path, _encoder, _language in inputs for part in ("-i", str(path))],
         # Picture and sound by name, the way every other cut here maps them.
         # `-map 0` would also pick up the timecode track, which MOV refuses to
         # take from a concat input - the run fails with "unsupported type" and
@@ -4902,10 +5139,11 @@ def _concat_command(
         "0:v:0",
         "-map",
         "0:a?",
-        "-sn",
+        *(subtitle_input_maps(inputs, first_input=1) if inputs else ["-sn"]),
         "-dn",
         "-c",
         "copy",
+        *subtitle_input_codecs(inputs),
         "-map_metadata",
         "0",
     ]
@@ -4935,6 +5173,8 @@ def _log_gap_plan(context: JobContext, plan: dict[str, Any], index: int, total: 
     head_text = f"{gap.head_frames} frames" if gap.head_frames else format_seconds(gap.head_seconds)
     context.log(f"    head    {head_text} ({format_seconds(gap.head_seconds)})")
     context.log(f"    removed {format_seconds(gap.removed)}, keeping {format_seconds(gap.kept)}")
+    if plan.get("keep_subtitles"):
+        context.log("    carried over: subtitles, laid onto the join")
     for warning in plan["warnings"]:
         context.log(f"    [WARNING] {warning}")
 
@@ -5283,6 +5523,7 @@ def _trim_audio_plans(
     *,
     source_dir: Path,
     output_dir: Path,
+    name_suffix: str = "",
 ) -> list[dict[str, Any]]:
     """A file of sound alone, cut on the sample - or, with Exact cut off, on packets."""
     root = context.paths.root
@@ -5313,6 +5554,7 @@ def _trim_audio_plans(
         "end": params.get("trim_end"),
         "duration": duration,
         "sample_rate": rate,
+        "points": _trim_split_points(params),
     }
     try:
         trim = plan_audio_trim(**arguments, total_samples=total)
@@ -5332,8 +5574,10 @@ def _trim_audio_plans(
             "The recorder's iXML chunk - track names, scene and take - stays behind: FFmpeg can neither read nor "
             "write it. The bext chunk and its time reference do travel."
         )
+    label = _source_display_name(source, source_dir)
     facts = {
-        "label": _source_display_name(source, source_dir),
+        "label": f"{label} [{name_suffix}]" if name_suffix else label,
+        "suffix": name_suffix,
         "stream": stream,
         "format": fmt,
         "tags": tags,
@@ -5396,6 +5640,8 @@ def _trim_sound_exact_plans(
         source_root=source_dir,
         operation=_operation_output_folder(context, "Trim"),
     )
+    if facts["suffix"]:
+        base = base.with_name(f"{base.stem}_{facts['suffix']}{base.suffix}")
     groups = [trim.pieces] if trim.joined else [(piece,) for piece in trim.pieces]
     if trim.action == "split":
         context.log(f"Split {facts['label']} into {len(groups)} parts on the sample:")
@@ -5418,7 +5664,7 @@ def _trim_sound_exact_plans(
     }
     plans: list[dict[str, Any]] = []
     for index, group in enumerate(groups, start=1):
-        suffix = f"part{index}" if trim.action == "split" else ""
+        suffix = _trim_part_suffix(index, len(groups)) if trim.action == "split" else ""
         target = base.with_name(f"{base.stem}_{suffix}{base.suffix}") if suffix else base
         metadata, muxer, moved = audio_trim_metadata(
             facts["tags"],
@@ -5498,6 +5744,8 @@ def _trim_sound_packet_plans(
         source_root=source_dir,
         operation=_operation_output_folder(context, "Trim"),
     )
+    if facts["suffix"]:
+        base = base.with_name(f"{base.stem}_{facts['suffix']}{base.suffix}")
     common = {
         "kind": "audio",
         "source": source,
@@ -5557,7 +5805,7 @@ def _trim_sound_packet_plans(
         ]
     plans: list[dict[str, Any]] = []
     for index, piece in enumerate(copy.pieces, start=1):
-        suffix = f"part{index}" if trim.action == "split" else ""
+        suffix = _trim_part_suffix(index, len(copy.pieces)) if trim.action == "split" else ""
         target = base.with_name(f"{base.stem}_{suffix}{base.suffix}") if suffix else base
         metadata, _muxer, moved = audio_trim_metadata(
             facts["tags"], start_sample=piece.start_sample, extension=extension, broadcast_wav=False
@@ -5711,6 +5959,15 @@ def _verify_audio_trim_output(context: JobContext, plan: dict[str, Any]) -> dict
 
 def trim_media(context: JobContext) -> dict[str, object]:
     """Cut the head, the tail, or both off camera footage without re-encoding; sound files on the sample."""
+    try:
+        return _trim_media_run(context)
+    finally:
+        # The rebuilt subtitle lines live only as long as the run: however it
+        # ended, whatever was planned, refused or stopped.
+        shutil.rmtree(context.paths.workspace / "trim_subtitles", ignore_errors=True)
+
+
+def _trim_media_run(context: JobContext) -> dict[str, object]:
     params = dict(context.operation.parameters)
     root = context.paths.root
     source_dir = cached_source_path(root)
@@ -5731,7 +5988,7 @@ def trim_media(context: JobContext) -> dict[str, object]:
             files = [candidate] if candidate.is_file() else []
             if not files:
                 context.log(f"[ERROR] Selected file is not in Source: {selected}")
-                return {"files": 0, "failed": 1}
+                return {"ok": False, "files": 0, "failed": 1}
         else:
             # One file at a time: two takes rarely share a keyframe, let alone a
             # cut point. The CLI wrappers still walk the whole folder on purpose.
@@ -5741,7 +5998,7 @@ def trim_media(context: JobContext) -> dict[str, object]:
                 context.log(f"Trimming the first of {len(staged)} files: {_source_display_name(files[0], source_dir)}")
     if not files:
         context.log(f"No video files in {source_dir}")
-        return {"files": 0}
+        return {"ok": False, "files": 0}
     if _as_bool(params.get("limit_first_file"), False):
         files = files[:1]
 
@@ -5755,6 +6012,9 @@ def trim_media(context: JobContext) -> dict[str, object]:
     # joined. Two cuts and a concat, planned as one job.
     gap_mode = _trim_pattern(params) == "middle"
     skipped = 0
+    # A file or a row the planner refused is an error the operator has to see,
+    # unlike a result kept because Overwrite is off. The run's `ok` counts it.
+    refused = 0
     for source in files:
         file_params = dict(params)
         marks = per_file_points.get(source)
@@ -5762,31 +6022,68 @@ def trim_media(context: JobContext) -> dict[str, object]:
             file_params["trim_pattern"] = str(marks.get("pattern") or params.get("trim_pattern") or "both")
             file_params["trim_start"] = marks.get("start", "")
             file_params["trim_end"] = marks.get("end", "")
+            # A mark is one pair of points; the panel's rows and split points belong to another file.
+            file_params.pop("trim_rows", None)
+            file_params.pop("trim_points", None)
+        label = _source_display_name(source, source_dir)
         try:
-            if source.suffix.lower().lstrip(".") in PURE_AUDIO_EXTENSIONS:
-                # Sound alone has no keyframe to wait for: every action lands on the sample.
-                plans.extend(_trim_audio_plans(context, source, file_params, source_dir=source_dir, output_dir=output_dir))
-            elif gap_mode:
-                plans.append(_trim_gap_plan(context, source, file_params, source_dir=source_dir, output_dir=output_dir))
-            elif split_mode:
-                plans.extend(_trim_split_plans(context, source, file_params, source_dir=source_dir, output_dir=output_dir))
-            else:
-                plans.append(_trim_plan(context, source, file_params, source_dir=source_dir, output_dir=output_dir))
-        except Exception as exc:
+            # A split is one timeline of points; a keep or a cut may come as several rows.
+            variants = [("", file_params)] if split_mode else _trim_variants(file_params)
+        except RuntimeError as exc:
             skipped += 1
-            context.log(f"[SKIP] {_source_display_name(source, source_dir)}: {exc}")
+            refused += 1
+            context.log(f"[SKIP] {label}: {exc}")
+            continue
+        if len(variants) > 1:
+            context.log(f"{label}: {len(variants)} variants, each written to a file of its own.")
+        for suffix, variant_params in variants:
+            try:
+                if source.suffix.lower().lstrip(".") in PURE_AUDIO_EXTENSIONS:
+                    # Sound alone has no keyframe to wait for: every action lands on the sample.
+                    plans.extend(
+                        _trim_audio_plans(
+                            context, source, variant_params, source_dir=source_dir, output_dir=output_dir, name_suffix=suffix
+                        )
+                    )
+                elif gap_mode:
+                    plans.append(
+                        _trim_gap_plan(
+                            context, source, variant_params, source_dir=source_dir, output_dir=output_dir, name_suffix=suffix
+                        )
+                    )
+                elif split_mode:
+                    plans.extend(_trim_split_plans(context, source, variant_params, source_dir=source_dir, output_dir=output_dir))
+                else:
+                    plans.append(
+                        _trim_plan(context, source, variant_params, source_dir=source_dir, output_dir=output_dir, name_suffix=suffix)
+                    )
+            except Exception as exc:
+                skipped += 1
+                refused += 1
+                context.log(f"[SKIP] {label}{f' [{suffix}]' if suffix else ''}: {exc}")
     if not plans:
         context.log("Nothing to trim.")
-        return {"files": 0, "scanned": len(files), "skipped": skipped}
+        return {"ok": False, "files": 0, "scanned": len(files), "skipped": skipped, "refused": refused}
 
     processed = 0
     failed = 0
     total = len(plans)
     for index, plan in enumerate(plans, start=1):
         if context.cancelled():
+            # Nothing of this plan has been written yet, so nothing is cleaned:
+            # a file already under its name belongs to an earlier run, and
+            # Overwrite may well be off. A piece stopped mid-write is cleaned
+            # where it failed, below.
             context.log("Trim cancelled by user.")
-            _discard_unusable_trim(context, plan["target"], sound=plan.get("kind") == "audio")
-            return {"cancelled": True, "processed": processed, "files": total}
+            return {
+                "ok": False,
+                "cancelled": True,
+                "processed": processed,
+                "failed": failed,
+                "files": total,
+                "skipped": skipped,
+                "refused": refused,
+            }
         if plan.get("kind") == "gap":
             _log_gap_plan(context, plan, index, total)
         elif plan.get("kind") == "audio":
@@ -5838,12 +6135,20 @@ def trim_media(context: JobContext) -> dict[str, object]:
         processed += 1
         context.progress(index / total)
 
+    if context.cancelled():
+        # Stopped during the last piece: it failed above, and the run is a cancel, not a finish.
+        context.log("Trim cancelled by user.")
     return {
+        # The executor reads only this: without it a failed or refused run was
+        # reported as done, with a green status and exit code 0.
+        "ok": failed == 0 and refused == 0 and not context.cancelled(),
+        "cancelled": context.cancelled(),
         "processed": processed,
         "failed": failed,
         "files": total,
         "scanned": len(files),
         "skipped": skipped,
+        "refused": refused,
         "dry_run": dry_run,
     }
 

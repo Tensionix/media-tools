@@ -64,6 +64,18 @@ Cut points are found in the mpv player — opened by a button in the section —
 carried into the fields by `Take A and B`. The keys work **in the player window**,
 not in the program panel.
 
+The player writes into the last row. `+` after it adds the next row once the last
+one holds its points, and clears A and B in the player so the next piece is
+looked for from scratch. For `Keep it` and `Cut it out` each row is a variant of
+its own, written to its own file — `_keep01`, `_cut02` — and rows may overlap;
+beside OUT stands the length of the piece. For `Split` each point has one field,
+the buttons become `Take A` and `Mark here`, and a point is taken only past the
+ones before it. Points can always be typed as well: `00:01:28,400` or plain
+seconds. `▲▼` in a field step the section the caret stands in — hours, minutes,
+seconds, or a frame (a millisecond for sound); without a caret, the seconds; held,
+the step speeds up. Points are taken only while the player shows the file chosen
+in the section; after the arrows, press `Open in the player`.
+
 The dozen keys that do the whole job:
 
 | key | what it does |

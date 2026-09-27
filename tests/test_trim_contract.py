@@ -54,6 +54,13 @@ from system_core.core.trim_contract import (
     plan_packet_copy,
     seconds_to_frames,
     shift_timecode,
+    SPLIT_MAX_POINTS,
+    SubtitleCue,
+    cues_for_spans,
+    format_srt,
+    parse_srt,
+    subtitle_extract_command,
+    subtitle_stream_plan,
     timecode_base,
 )
 
@@ -495,12 +502,127 @@ def test_a_timecode_track_is_left_behind_on_purpose() -> None:
 
 def test_subtitles_travel_unless_the_container_refuses() -> None:
     """A DJI writes flight data as subtitles; losing them loses the flight log."""
-    _keep_data, keep_subs, warnings = extra_stream_plan([subtitle_stream()], "mkv")
+    _keep_data, keep_subs, warnings = extra_stream_plan([subtitle_stream()], "mp4")
     assert keep_subs is True and warnings == []
+
+    # Measured: Matroska refuses mov_text as it is, so it is rewritten - and said so.
+    _keep_data, keep_subs, warnings = extra_stream_plan([subtitle_stream()], "mkv")
+    assert keep_subs is True
+    assert warnings and "rewritten as SRT" in warnings[0]
 
     _keep_data, keep_subs, warnings = extra_stream_plan([subtitle_stream()], "mxf")
     assert keep_subs is False
     assert warnings and "MXF cannot hold subtitles" in warnings[0]
+
+
+def test_each_text_subtitle_is_rebuilt_in_the_form_its_container_holds() -> None:
+    """Measured on FFmpeg 8.0.1: MP4 and MOV hold mov_text and refuse SubRip;
+    Matroska holds SubRip and refuses mov_text. A picture of text cannot be cut
+    to a piece without redrawing it, so it stays behind everywhere."""
+    streams = [subtitle_stream("mov_text"), subtitle_stream("subrip"), subtitle_stream("hdmv_pgs_subtitle")]
+    assert subtitle_stream_plan(streams, "mp4")[0] == [(0, "mov_text"), (1, "mov_text")]
+    assert subtitle_stream_plan(streams, "mkv")[0] == [(0, "srt"), (1, "srt")]
+    _plan, notes = subtitle_stream_plan(streams, "mov")
+    assert any("subrip" in note and "rewritten as mov_text" in note for note in notes)
+    assert any("hdmv_pgs_subtitle" in note and "stay behind" in note for note in notes)
+    # Its own form says nothing: mov_text into MP4 changes nothing anyone sees.
+    assert subtitle_stream_plan([subtitle_stream("mov_text")], "mp4") == ([(0, "mov_text")], [])
+
+    # Nothing that can travel means nothing is mapped at all.
+    keep_data, keep_subs, warnings = extra_stream_plan([subtitle_stream("dvd_subtitle")], "mp4")
+    assert keep_subs is False and "stay behind" in warnings[0]
+
+
+def test_rebuilt_subtitles_come_in_as_a_second_input() -> None:
+    """Right after the source: `-frames:v` placed before an `-i` would belong to it."""
+    command = build_trim_command(
+        ffmpeg="ffmpeg",
+        source="in.mkv",
+        target="out.mp4",
+        overwrite=True,
+        start_seconds=5.0,
+        frame_count=100,
+        extension="mp4",
+        subtitle_inputs=[("a.srt", "mov_text", "eng"), ("b.srt", "mov_text", "")],
+    )
+    assert command[command.index("in.mkv") + 1 : command.index("in.mkv") + 5] == ["-i", "a.srt", "-i", "b.srt"]
+    assert command.index("b.srt") < command.index("-frames:v")
+    assert command.index("-ss") < command.index("in.mkv") < command.index("a.srt"), "only the source is sought"
+    assert "1:0" in command and "2:0" in command and "-sn" not in command
+    assert command[command.index("-c:s:0") + 1] == "mov_text"
+    assert command[command.index("-metadata:s:s:0") + 1] == "language=eng"
+    assert "-metadata:s:s:1" not in command
+
+    # A caller copying packets on purpose still names the codec.
+    copied = build_trim_command(
+        ffmpeg="ffmpeg",
+        source="in.mp4",
+        target="out.mp4",
+        overwrite=True,
+        start_seconds=0.0,
+        frame_count=100,
+        extension="mp4",
+        keep_subtitles=True,
+    )
+    assert copied[copied.index("-c:s") + 1] == "copy"
+
+
+def cue(start: float, end: float, text: str) -> SubtitleCue:
+    return SubtitleCue(start, end, text)
+
+
+def spans_of(cues: list[SubtitleCue]) -> list[tuple[float, float, str]]:
+    return [(round(item.start, 3), round(item.end, 3), item.text) for item in cues]
+
+
+def test_srt_reads_and_writes_back_the_same_lines() -> None:
+    document = "1\n00:00:00,500 --> 00:00:01,500\nBEFORE\n\n2\n00:00:05,000 --> 00:00:07,500\nAFTER\nsecond row\n"
+    cues = parse_srt(document)
+    assert spans_of(cues) == [(0.5, 1.5, "BEFORE"), (5.0, 7.5, "AFTER\nsecond row")]
+    assert parse_srt(format_srt(cues)) == cues
+    # A block without a timing or without text is no line.
+    assert parse_srt("1\nno timing\n\n2\n00:00:01,000 --> 00:00:02,000\n\n") == []
+
+
+def test_a_kept_piece_keeps_the_part_of_a_line_inside_it() -> None:
+    """The re-audit's scenario B: AFTER at 5.0-7.5 s, kept 0-7 s - it used to vanish."""
+    lines = [cue(0.5, 1.5, "BEFORE"), cue(5.0, 7.5, "AFTER")]
+    assert spans_of(cues_for_spans(lines, [(0.0, 7.0, 0.0)])) == [(0.5, 1.5, "BEFORE"), (5.0, 7.0, "AFTER")]
+    # IN snapped to the keyframe at 1.0: the piece starts there, and so do the lines.
+    assert spans_of(cues_for_spans(lines, [(1.0, 7.0, 0.0)])) == [(0.0, 0.5, "BEFORE"), (4.0, 6.0, "AFTER")]
+
+
+def test_a_piece_cut_out_moves_the_lines_after_it_onto_the_join() -> None:
+    """The re-audit's scenario A: 2-4 s removed; BEFORE came out a microsecond long,
+    AFTER a second early and three and a half seconds long."""
+    lines = [cue(0.5, 1.5, "BEFORE"), cue(2.5, 3.5, "INSIDE"), cue(5.0, 6.0, "AFTER")]
+    joined = cues_for_spans(lines, [(0.0, 2.0, 0.0), (4.0, 8.0, 2.0)])
+    assert spans_of(joined) == [(0.5, 1.5, "BEFORE"), (3.0, 4.0, "AFTER")]
+
+
+def test_a_line_broken_only_by_the_removed_piece_comes_back_whole() -> None:
+    joined = cues_for_spans([cue(1.5, 5.0, "ACROSS")], [(0.0, 2.0, 0.0), (4.0, 8.0, 2.0)])
+    assert spans_of(joined) == [(1.5, 3.0, "ACROSS")]
+    # Two different lines that happen to touch stay two lines.
+    touching = cues_for_spans([cue(1.0, 2.0, "SAME"), cue(2.0, 3.0, "SAME")], [(0.0, 8.0, 0.0)])
+    assert len(touching) == 2
+
+
+def test_split_parts_share_a_line_that_crosses_the_joint() -> None:
+    lines = [cue(2.5, 3.5, "ACROSS")]
+    assert spans_of(cues_for_spans(lines, [(0.0, 3.0, 0.0)])) == [(2.5, 3.0, "ACROSS")]
+    assert spans_of(cues_for_spans(lines, [(3.0, 8.0, 0.0)])) == [(0.0, 0.5, "ACROSS")]
+
+
+def test_a_boundary_splinter_is_not_a_line() -> None:
+    """A microsecond of a line at the edge is what the old join produced; it is dropped."""
+    assert cues_for_spans([cue(1.0, 2.0000004, "EDGE")], [(2.0, 8.0, 0.0)]) == []
+
+
+def test_lines_are_read_on_the_file_s_own_clock() -> None:
+    command = subtitle_extract_command("ffmpeg", "in.mkv", 1)
+    assert "-copyts" in command and command.index("-copyts") < command.index("in.mkv")
+    assert command[command.index("-map") + 1] == "0:s:1"
 
 
 def test_turning_a_checkbox_off_is_still_said_out_loud() -> None:
@@ -630,7 +752,7 @@ def test_points_arrive_in_any_order() -> None:
 def test_a_split_that_would_leave_nothing_says_so() -> None:
     with pytest.raises(ValueError, match="needs a point"):
         plan_split(points=["", None], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
-    with pytest.raises(ValueError, match="middle part would be empty"):
+    with pytest.raises(ValueError, match="part between them would be empty"):
         plan_split(points=[10.2, 10.4], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
     with pytest.raises(ValueError, match="edge of the file"):
         plan_split(points=[0.3], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
@@ -642,6 +764,29 @@ def test_a_variable_rate_split_travels_by_time() -> None:
     split = plan_split(points=[10.0], duration=30.0, rate=Fraction(30), keyframes=KEYS_EVERY_SECOND, frame_exact=False)
     assert split.parts[0].frames is None
     assert split.parts[0].seconds == pytest.approx(10.0)
+
+
+def test_many_points_split_into_many_parts_that_add_up() -> None:
+    """A phonogram cut at five places: six parts, frame for frame the whole file."""
+    split = plan_split(points=[3.0, 7.0, 12.0, 20.0, 26.0], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
+    assert split.boundaries == (3.0, 7.0, 12.0, 20.0, 26.0)
+    assert [part.index for part in split.parts] == [1, 2, 3, 4, 5, 6]
+    assert [part.frames for part in split.parts] == [75, 100, 125, 200, 150, None]
+    assert sum(part.frames or round(part.seconds * 25) for part in split.parts) == 750
+
+
+def test_a_split_stops_at_its_limit_of_points() -> None:
+    points = [float(second) for second in range(1, SPLIT_MAX_POINTS + 1)]
+    split = plan_split(points=points, duration=60.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
+    assert len(split.parts) == SPLIT_MAX_POINTS + 1
+    with pytest.raises(ValueError, match=f"at most {SPLIT_MAX_POINTS} points"):
+        plan_split(points=[*points, 45.0], duration=60.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
+
+
+def test_two_points_on_one_keyframe_are_named_wherever_they_stand() -> None:
+    """Not only the pair of an old three-part split: any neighbours in the list."""
+    with pytest.raises(ValueError, match=r"00:00:15\.200 and 00:00:15\.400 both land on the keyframe at 00:00:15\.000"):
+        plan_split(points=[5.0, 15.4, 10.0, 15.2], duration=30.0, rate=Fraction(25), keyframes=KEYS_EVERY_SECOND)
 
 
 # Sound files. The numbers come from the measured take: 30 s of stereo noise at
@@ -692,6 +837,22 @@ def test_sound_split_gives_two_or_three_parts_that_add_up() -> None:
     assert three.kept == 1440000
 
 
+def test_sound_split_takes_a_list_of_points_before_in_and_out() -> None:
+    trim = plan_audio_trim(
+        pattern="split", start=1.0, end=2.0, duration=30.0, sample_rate=48000, points=["00:00:05,000", "", 15.0, 25.0]
+    )
+    assert trim.pieces == (
+        AudioPiece(0, 240000),
+        AudioPiece(240000, 720000),
+        AudioPiece(720000, 1200000),
+        AudioPiece(1200000, None),
+    )
+    assert trim.kept == 1440000
+    # An empty list is no list: IN and OUT from a wrapper still split.
+    legacy = plan_audio_trim(pattern="split", start=10.0, end="", duration=30.0, sample_rate=48000, points=["", None])
+    assert legacy.pieces == (AudioPiece(0, 480000), AudioPiece(480000, None))
+
+
 def test_sound_refuses_what_the_picture_refuses() -> None:
     with pytest.raises(ValueError, match="no cut point"):
         plan_audio_trim(pattern="both", start="", end="", duration=30.0, sample_rate=48000)
@@ -707,7 +868,7 @@ def test_sound_refuses_what_the_picture_refuses() -> None:
         plan_audio_trim(pattern="split", start="", end=None, duration=30.0, sample_rate=48000)
     with pytest.raises(ValueError, match="outside the file"):
         plan_audio_trim(pattern="split", start=30.0, end="", duration=30.0, sample_rate=48000)
-    with pytest.raises(ValueError, match="middle part would be empty"):
+    with pytest.raises(ValueError, match="part between them would be empty"):
         plan_audio_trim(pattern="split", start=10.000001, end=10.000002, duration=30.0, sample_rate=48000)
     with pytest.raises(ValueError, match="sample rate"):
         plan_audio_trim(pattern="both", start=1.0, end=2.0, duration=30.0, sample_rate=0)

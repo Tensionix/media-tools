@@ -1825,10 +1825,12 @@ operation_groups:
         default: "keep"
         refresh_on_change: true
         options:
-          - {value: "keep", label: "Keep it", label_ru: "Оставить", tone: "copy", tooltip: "Keeps what lies between the points and drops the rest. Which end goes is already in the fields: IN alone drops the head, OUT alone drops the tail, both drop both ends.", tooltip_ru: "Оставляет то, что между точками, остальное уходит. Какой край уйдёт, уже сказано полями: один IN — уходит начало, один OUT — конец, обе точки — оба края."}
-          - {value: "cut", label: "Cut it out", label_ru: "Вырезать", tone: "copy", tooltip: "The opposite: the piece between IN and OUT goes and the two ends are joined into one file. The tail starts at the first keyframe past OUT - starting earlier would leave part of the removed piece in - and the log says how much more than asked for went. A sound file loses exactly the piece between the points.", tooltip_ru: "Наоборот: кусок между IN и OUT уходит, а начало и конец склеиваются в один файл. Хвост начинается с первого ключевого кадра после OUT — раньше нельзя, иначе часть вырезаемого останется, — и журнал говорит, насколько больше запрошенного ушло. У звукового файла уходит ровно кусок между точками."}
-          - {value: "split", label: "Split", label_ru: "Разделить", tone: "copy", tooltip: "Nothing is discarded. IN alone cuts the file into two parts, IN and OUT into three: _part1, _part2, _part3. Each point moves to its nearest keyframe and the parts meet there, so they add back up to the original frame for frame. A sound file splits on the exact sample.", tooltip_ru: "Ничего не выбрасывается. Одна точка IN режет файл на две части, IN и OUT — на три: _part1, _part2, _part3. Каждая точка сдвигается к ближайшему ключевому кадру, и части стыкуются в нём — вместе они дают исходник кадр в кадр. Звуковой файл делится ровно по сэмплу.", hint: "Choose one point or two to cut into two or three parts.", hint_ru: "Выберите одну или две точки для резки на две или три части."}
+          - {value: "keep", label: "Keep it", label_ru: "Оставить", tone: "copy", tooltip: "Keeps what lies between the points and drops the rest. Which end goes is already in the fields: IN alone drops the head, OUT alone drops the tail, both drop both ends. Each row added with + is a variant of its own, written to its own file: _keep01, _keep02.", tooltip_ru: "Оставляет то, что между точками, остальное уходит. Какой край уйдёт, уже сказано полями: один IN — уходит начало, один OUT — конец, обе точки — оба края. Каждая строка, добавленная плюсом, — отдельный вариант в своём файле: _keep01, _keep02."}
+          - {value: "cut", label: "Cut it out", label_ru: "Вырезать", tone: "copy", tooltip: "The opposite: the piece between IN and OUT goes and the two ends are joined into one file. The tail starts at the first keyframe past OUT - starting earlier would leave part of the removed piece in - and the log says how much more than asked for went. A sound file loses exactly the piece between the points. Each row added with + is a variant of its own: one piece cut out of the whole take, in its own file - _cut01, _cut02.", tooltip_ru: "Наоборот: кусок между IN и OUT уходит, а начало и конец склеиваются в один файл. Хвост начинается с первого ключевого кадра после OUT — раньше нельзя, иначе часть вырезаемого останется, — и журнал говорит, насколько больше запрошенного ушло. У звукового файла уходит ровно кусок между точками. Каждая строка, добавленная плюсом, — отдельный вариант: из целого дубля вырезан один кусок, в своём файле — _cut01, _cut02."}
+          - {value: "split", label: "Split", label_ru: "Разделить", tone: "copy", tooltip: "Nothing is discarded. N points cut the file into N + 1 parts: _part1, _part2 and on, _part01 from ten parts. Each point moves to its nearest keyframe and the parts meet there, so they add back up to the original frame for frame. A sound file splits on the exact sample.", tooltip_ru: "Ничего не выбрасывается. N точек режут файл на N + 1 частей: _part1, _part2 и дальше, с десяти частей — _part01. Каждая точка сдвигается к ближайшему ключевому кадру, и части стыкуются в нём — вместе они дают исходник кадр в кадр. Звуковой файл делится ровно по сэмплу.", hint: "Take the points one after another, walking forward through the take; + adds the next one.", hint_ru: "Берите точки одну за другой, двигаясь по дублю вперёд; плюс добавляет следующую."}
       - id: trim_start
+        # Row 1 of the rows below: drawn by trim_rows, carried to the engine from here.
+        hidden: true
         type: "text"
         group: "trim"
         label: "IN - start of the kept piece"
@@ -1838,6 +1840,7 @@ operation_groups:
         tooltip_ru: "Позиция по реальному времени: 00:01:28,4 или просто секунды. Начало копируемого потока ложится на ближайший ключевой кадр перед этой точкой, и журнал говорит, куда оно попало. Звуковой файл режется ровно по сэмплу."
         default: ""
       - id: trim_end
+        hidden: true
         type: "text"
         group: "trim"
         label: "OUT - end of the kept piece"
@@ -1846,12 +1849,35 @@ operation_groups:
         tooltip: "The tail is counted in frames from the exact rate, so it lands on the frame asked for. A sound file: on the exact sample."
         tooltip_ru: "Конец считается кадрами по точной дроби частоты, поэтому попадает ровно в запрошенный кадр. У звукового файла — ровно по сэмплу."
         default: ""
+      - id: trim_rows
+        # Draws IN and OUT as row 1 and holds the rows after it: each row of a
+        # keep or a cut is a run of its own. For a split it draws the points.
+        type: "trim_rows"
+        group: "trim"
+        span: "full"
+        label: "Points"
+        label_ru: "Точки"
+        default: []
+        add_tooltip: "Add the next variant: one more piece to keep or to cut out, written to a file of its own. Rows may overlap. Lights up once the last row holds its points; it also clears the A and B points in the player, so the next piece is looked for from scratch."
+        add_tooltip_ru: "Добавить следующий вариант: ещё один кусок, который оставляется или вырезается, в своём файле. Строки могут пересекаться. Загорается, когда в последней строке взяты точки; заодно сбрасывает точки A и B в плеере, чтобы следующий кусок искать с чистого листа."
+        add_point_tooltip: "Add the next point of the split. Lights up once the last point is taken; it also clears the A and B points in the player."
+        add_point_tooltip_ru: "Добавить следующую точку разреза. Загорается, когда последняя точка взята; заодно сбрасывает точки A и B в плеере."
+        point_tooltip: "Where the file is cut, written as 00:01:28,4 or as plain seconds. The point moves to its nearest keyframe; a sound file is cut on the exact sample. The player writes into the last field, and only past the points before it."
+        point_tooltip_ru: "Где резать файл: 00:01:28,4 или просто секунды. Точка сдвигается к ближайшему ключевому кадру, звуковой файл режется ровно по сэмплу. Плеер пишет в последнее поле и только дальше предыдущих точек."
+      - id: trim_points
+        # The points of a split, written by trim_rows; a wrapper's IN and OUT split when this is empty.
+        hidden: true
+        type: "text"
+        group: "trim"
+        label: "Split points"
+        label_ru: "Точки разреза"
+        default: []
       - id: trim_player
         type: "mpv_transport"
         group: "trim"
         span: "full"
-        label: "Player - find the two points"
-        label_ru: "Плеер — найти две точки"
+        label: "Player - find the points"
+        label_ru: "Плеер — найти точки"
         tooltip: "Opens the take in mpv. There, `l` sets the A point and `l` again sets B; the piece between them plays in a loop, so the cut is heard before it is written. `,` and `.` step one frame, `b` plays backwards. Then bring A and B here."
         tooltip_ru: "Открывает дубль в mpv. Там `l` ставит точку A, второе нажатие — B; кусок между ними играет по кругу, и рез слышно до того, как он сделан. `,` и `.` — шаг в кадр, `b` — воспроизведение назад. Дальше перенести A и B сюда."
         options:
@@ -1861,20 +1887,35 @@ operation_groups:
             tooltip: "Shows the file chosen above. The window stays open between takes, so it can live on a second monitor."
             tooltip_ru: "Показывает выбранный выше файл. Окно остаётся между дублями — его можно держать на втором мониторе."
           - value: "both"
+            hidden_if: {trim_action: "split"}
             label: "Take A and B"
             label_ru: "Взять A и B"
-            tooltip: "The loop set in the player becomes IN and OUT here, to the millisecond."
-            tooltip_ru: "Петля, поставленная в плеере, становится здесь IN и OUT, до миллисекунды."
+            tooltip: "The loop set in the player becomes IN and OUT of the last row here, to the millisecond."
+            tooltip_ru: "Петля, поставленная в плеере, становится здесь IN и OUT последней строки, до миллисекунды."
           - value: "mark_in"
+            hidden_if: {trim_action: "split"}
             label: "Mark IN"
             label_ru: "Отметить IN"
-            tooltip: "Takes the position the player stands at, writes it into IN, and moves the player's A point there - so the piece keeps looping and a wrong point is heard at once."
-            tooltip_ru: "Берёт позицию, на которой стоит плеер, пишет её в IN и переносит туда точку A — кусок продолжает играть по кругу, и неверная точка слышна сразу."
+            tooltip: "Takes the position the player stands at, writes it into IN of the last row, and moves the player's A point there - so the piece keeps looping and a wrong point is heard at once."
+            tooltip_ru: "Берёт позицию, на которой стоит плеер, пишет её в IN последней строки и переносит туда точку A — кусок продолжает играть по кругу, и неверная точка слышна сразу."
           - value: "mark_out"
+            hidden_if: {trim_action: "split"}
             label: "Mark OUT"
             label_ru: "Отметить OUT"
-            tooltip: "The same for the end of the piece: the position becomes OUT and the player's B point."
-            tooltip_ru: "То же для конца куска: позиция становится OUT и точкой B в плеере."
+            tooltip: "The same for the end of the piece: the position becomes OUT of the last row and the player's B point."
+            tooltip_ru: "То же для конца куска: позиция становится OUT последней строки и точкой B в плеере."
+          - value: "take_a"
+            visible_if: {trim_action: "split"}
+            label: "Take A"
+            label_ru: "Взять A"
+            tooltip: "The A point set in the player with `l` becomes the last split point here - only if it lies past the points before it."
+            tooltip_ru: "Точка A, поставленная в плеере клавишей `l`, становится здесь последней точкой разреза — только если она дальше предыдущих."
+          - value: "mark_point"
+            visible_if: {trim_action: "split"}
+            label: "Mark here"
+            label_ru: "Отметить здесь"
+            tooltip: "The position the player stands at becomes the last split point - only past the points before it. A slider dragged back by accident changes nothing."
+            tooltip_ru: "Позиция, на которой стоит плеер, становится последней точкой разреза — только дальше предыдущих. Ползунок, случайно отведённый назад, ничего не испортит."
           - value: "close"
             label: "Close the player"
             label_ru: "Закрыть плеер"
@@ -2002,8 +2043,8 @@ operation_groups:
         label: "Telemetry"
         label_ru: "Телеметрия"
         default: true
-        tooltip: "Carries the file's data stream into the result - a GoPro writes its telemetry there, and it would otherwise vanish without a word. MOV and MP4 can hold one; MKV and MXF cannot, and the log says so before the run. A timecode track is left behind on purpose: it travels as a value instead."
-        tooltip_ru: "Переносит поток данных в результат — GoPro пишет туда телеметрию, и она иначе исчезает молча. MOV и MP4 такой поток держат, MKV и MXF нет — журнал скажет об этом до запуска. Дорожка таймкода намеренно остаётся: она переезжает значением."
+        tooltip: "Carries the file's data stream into the result - a GoPro writes its telemetry there, and it would otherwise vanish without a word. MOV and MP4 can hold one; MKV and MXF cannot, and the log says so before the run. A timecode track is left behind on purpose: it travels as a value instead. Cut it out does not carry the data stream through its join, and says so."
+        tooltip_ru: "Переносит поток данных в результат — GoPro пишет туда телеметрию, и она иначе исчезает молча. MOV и MP4 такой поток держат, MKV и MXF нет — журнал скажет об этом до запуска. Дорожка таймкода намеренно остаётся: она переезжает значением. Вырезать не проносит поток данных через склейку и говорит об этом."
       - id: trim_subtitles
         hidden_if: {trim_media_kind: "audio"}
         type: "checkbox"
@@ -2011,8 +2052,8 @@ operation_groups:
         label: "Subtitles"
         label_ru: "Субтитры"
         default: true
-        tooltip: "Carries subtitle streams over. Camera files rarely have them, but a DJI writes its flight data as subtitles, and dropping them loses the flight log."
-        tooltip_ru: "Переносит субтитры. У камерных файлов они редки, но DJI пишет субтитрами данные полёта — выбросить их значит потерять журнал полёта."
+        tooltip: "Carries subtitle streams over. Camera files rarely have them, but a DJI writes its flight data as subtitles, and dropping them loses the flight log. The lines are rebuilt for the cut rather than copied: each is trimmed to the piece kept and moved onto its timeline, so a line across IN or OUT keeps its part inside, and after Cut it out the lines sit where the join puts them. MP4 and MOV write them as mov_text, MKV as SRT; picture subtitles stay behind, and the log says so."
+        tooltip_ru: "Переносит субтитры. У камерных файлов они редки, но DJI пишет субтитрами данные полёта — выбросить их значит потерять журнал полёта. Реплики не копируются, а собираются заново: каждая обрезается по сохраняемому куску и сдвигается на его шкалу времени, так что реплика через IN или OUT сохраняет свою часть внутри, а после «Вырезать» реплики стоят там, куда их ставит склейка. MP4 и MOV пишут их как mov_text, MKV — как SRT; субтитры картинкой остаются, и журнал это скажет."
       - id: trim_timecode
         hidden_if: {trim_media_kind: "audio"}
         type: "radio"

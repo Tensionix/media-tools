@@ -555,6 +555,12 @@ LABELS = {
         "mpv_not_running": "Плеер не открыт",
         "mpv_no_points": "В плеере нет точек A/B: поставьте их клавишей l",
         "mpv_closed": "Плеер закрыт",
+        "mpv_other_file": "В плеере открыт другой файл: {file}. Нажмите «Открыть в плеере», чтобы показать выбранный — точки чужого файла сюда не переносятся.",
+        "trim_point_label": "Точка {number}",
+        "trim_point_behind": "Плеер стоит на {position} — это не дальше точки {point}. Сплит берётся только вперёд: прокрутите дальше.",
+        "trim_piece_keep": "Длительность куска, который останется",
+        "trim_piece_cut": "Длительность куска, который будет вырезан",
+        "trim_spin_hint": "Шаг по секции, где стоит курсор: часы, минуты, секунды или кадр (у звука — миллисекунда). Без курсора — секунды. Удержание ускоряет: каждый повтор на единицу больше.",
         "actions": "Действия",
         "section_audio": "Аудио",
         "section_backend": "Бэкенд кодирования",
@@ -692,6 +698,12 @@ LABELS = {
         "mpv_not_running": "The player is not open",
         "mpv_no_points": "No A/B points in the player - set them with the l key",
         "mpv_closed": "The player is closed",
+        "mpv_other_file": "The player shows another file: {file}. Press Open in the player to show the one chosen here - points of another file are not carried over.",
+        "trim_point_label": "Point {number}",
+        "trim_point_behind": "The player stands at {position}, which is not past the point at {point}. A split is taken walking forward: move on further.",
+        "trim_piece_keep": "Length of the piece that stays",
+        "trim_piece_cut": "Length of the piece that is cut out",
+        "trim_spin_hint": "Steps the section the caret stands in: hours, minutes, seconds, or a frame (a millisecond for sound). Without a caret, the seconds. Held, it speeds up: each repeat one unit more.",
         "actions": "Actions",
         "section_audio": "Audio",
         "section_backend": "Encode backend",
@@ -3679,6 +3691,8 @@ def render_trim_file_field(field: dict[str, Any], key: str, label: str, tooltip:
             # A new take means the old points describe someone else's material.
             values["trim_start"] = ""
             values["trim_end"] = ""
+            values["trim_rows"] = []
+            values["trim_points"] = []
             command_tree.refresh()
 
         with ui.row().classes("audion-trim-filerow items-center no-wrap"):
@@ -3732,19 +3746,289 @@ def mpv_show_selected() -> None:
     ui.notify(f"{tr('mpv_opened')}: {media.name}")
 
 
+# --- Rows of the trim section ---------------------------------------------------
+#
+# A keep or a cut comes as rows of IN and OUT. A row is not a piece of one
+# timeline: each is a run of its own on the same take and writes a file of its
+# own, so rows may overlap freely. Row 1 lives in `trim_start` and `trim_end`,
+# where the wrappers and the per-file marks read it; the rows after it live in
+# `trim_rows`. A split is one timeline of single points, in `trim_points`, taken
+# walking forward. The player always writes into the last row or point.
+
+
+def trim_action_value() -> str:
+    """keep, cut or split - what the section is set to, drawn yet or not."""
+    return str(_condition_actual_value("trim_action") or "keep").strip().lower()
+
+
+def trim_extra_rows() -> list[dict[str, str]]:
+    """Rows 2 and on, copied: the panel never edits the manifest's default list."""
+    raw = state.setdefault("field_values", {}).get("trim_rows")
+    rows: list[dict[str, str]] = []
+    for row in raw if isinstance(raw, list) else []:
+        if isinstance(row, dict):
+            rows.append({"start": str(row.get("start") or ""), "end": str(row.get("end") or "")})
+    return rows
+
+
+def trim_rows_all() -> list[dict[str, str]]:
+    values = state.setdefault("field_values", {})
+    first = {"start": str(values.get("trim_start") or ""), "end": str(values.get("trim_end") or "")}
+    return [first, *trim_extra_rows()]
+
+
+def trim_set_row_point(index: int, which: str, text: str) -> None:
+    """`which` is "start" or "end"; row 0 is IN and OUT themselves."""
+    values = state.setdefault("field_values", {})
+    if index <= 0:
+        values["trim_start" if which == "start" else "trim_end"] = text
+        return
+    rows = trim_extra_rows()
+    while len(rows) < index:
+        rows.append({"start": "", "end": ""})
+    rows[index - 1][which] = text
+    values["trim_rows"] = rows
+
+
+def trim_split_points() -> list[str]:
+    """The points of a split, always with at least the one field to write into."""
+    raw = state.setdefault("field_values", {}).get("trim_points")
+    points = [str(item or "") for item in raw] if isinstance(raw, list) else []
+    return points or [""]
+
+
+def trim_set_split_point(index: int, text: str) -> None:
+    points = trim_split_points()
+    while len(points) <= index:
+        points.append("")
+    points[index] = text
+    state.setdefault("field_values", {})["trim_points"] = points
+
+
+def trim_row_complete(row: dict[str, str], action: str) -> bool:
+    """A keep is a whole variant with one point already; a cut needs both."""
+    has_start = bool(str(row.get("start") or "").strip())
+    has_end = bool(str(row.get("end") or "").strip())
+    return (has_start and has_end) if action == "cut" else (has_start or has_end)
+
+
+def trim_can_add() -> bool:
+    """The + is lit once the last row holds what its action needs, and until the limit."""
+    from system_core.core.trim_contract import SPLIT_MAX_POINTS, TRIM_MAX_VARIANTS
+
+    action = trim_action_value()
+    if action == "split":
+        points = trim_split_points()
+        return bool(points[-1].strip()) and len(points) < SPLIT_MAX_POINTS
+    rows = trim_rows_all()
+    return trim_row_complete(rows[-1], action) and len(rows) < TRIM_MAX_VARIANTS
+
+
+def trim_add_row() -> bool:
+    """One more row, or one more split point; False while the last one is not filled."""
+    if not trim_can_add():
+        return False
+    values = state.setdefault("field_values", {})
+    if trim_action_value() == "split":
+        values["trim_points"] = [*trim_split_points(), ""]
+    else:
+        values["trim_rows"] = [*trim_extra_rows(), {"start": "", "end": ""}]
+    return True
+
+
+def trim_piece_seconds(start: str, end: str, action: str, length: float | None = None) -> float | None:
+    """How long the piece of one row lasts - the part kept, or the part cut out.
+
+    A keep with IN alone runs to the end of the file and one with OUT alone
+    from its start; a cut needs both points, or it is no cut at all.
+    """
+    from system_core.core.trim_contract import parse_seconds
+
+    try:
+        first = parse_seconds(start) if str(start or "").strip() else None
+        last = parse_seconds(end) if str(end or "").strip() else None
+    except ValueError:
+        return None
+    if first is None and last is None:
+        return None
+    if action == "cut" and (first is None or last is None):
+        return None
+    if last is None:
+        if not length:
+            return None
+        last = length
+    first = first or 0.0
+    return last - first if last > first else None
+
+
+def trim_split_limit() -> float | None:
+    """The furthest point before the last field: a new point has to lie past it."""
+    from system_core.core.trim_contract import parse_seconds
+
+    earlier: list[float] = []
+    for text in trim_split_points()[:-1]:
+        try:
+            earlier.append(parse_seconds(text))
+        except ValueError:
+            continue
+    return max(earlier) if earlier else None
+
+
+def trim_split_take(position: float) -> str | None:
+    """Write a split point into the last field, or nothing if it lies behind.
+
+    A split is taken walking forward through the take. A position at or before
+    an earlier point changes nothing, so a slider dragged back by accident
+    cannot scramble the parts.
+    """
+    limit = trim_split_limit()
+    if limit is not None and position <= limit:
+        return None
+    text = format_seconds(position, separator=",")
+    trim_set_split_point(len(trim_split_points()) - 1, text)
+    return text
+
+
+def trim_file_length(name: str) -> float | None:
+    try:
+        module = importlib.import_module("system_core.services.media_service")
+        return module.trim_file_seconds(name, ROOT)
+    except Exception:
+        return None
+
+
+def trim_file_frame(name: str) -> float | None:
+    try:
+        module = importlib.import_module("system_core.services.media_service")
+        return module.trim_file_frame_seconds(name, ROOT)
+    except Exception:
+        return None
+
+
+# The spinners of the point fields. The whole step happens in the page: a round
+# trip to the server per step would stutter under a held button, and the caret
+# the step depends on only exists in the browser. The result goes back the way
+# typing does, through the field's own input event.
+#
+# The field stays one line of text, so a timecode is still copied and pasted
+# whole. ▲▼ step the section the caret stands in - hours, minutes, seconds, or
+# the last one, which steps by a frame of the file (a millisecond for sound) and
+# lands on the frame grid. Without a caret in the field, the seconds step. A
+# held button repeats, each repeat one unit more than the last.
+TRIM_SPINNER_JS = r"""
+(() => {
+  if (window.audionTimecodeSpinner) return;
+  window.audionTimecodeSpinner = true;
+  const TOKEN = /^\d+(?:[.,]\d+)?$/;
+  const CANONICAL = /^\d{2,}:\d{2}:\d{2}[.,]\d{3}$/;
+  const UNITS = [3600, 60, 1, 0.001];
+  const parse = (text) => {
+    const clean = String(text || '').replace(/\s/g, '');
+    if (!clean) return 0;
+    const parts = clean.split(':');
+    if (parts.length > 3 || !parts.every((part) => TOKEN.test(part))) return null;
+    return parts.reduce((total, part) => total * 60 + parseFloat(part.replace(',', '.')), 0);
+  };
+  const pad = (value, width) => String(value).padStart(width, '0');
+  const format = (seconds) => {
+    const ms = Math.round(Math.max(0, seconds) * 1000);
+    return pad(Math.floor(ms / 3600000), 2) + ':' + pad(Math.floor(ms / 60000) % 60, 2) + ':'
+      + pad(Math.floor(ms / 1000) % 60, 2) + ',' + pad(ms % 1000, 3);
+  };
+  // 0 hours, 1 minutes, 2 seconds, 3 the frame. Anything but hh:mm:ss,mmm steps the seconds.
+  const section = (text, caret) => {
+    if (caret === null || !CANONICAL.test(text)) return 2;
+    const first = text.indexOf(':');
+    const second = text.indexOf(':', first + 1);
+    if (caret <= first) return 0;
+    if (caret <= second) return 1;
+    if (caret <= second + 3) return 2;
+    return 3;
+  };
+  const write = (input, frame, count, part, focused) => {
+    const value = parse(input.value);
+    if (value === null) return;
+    const next = part === 3 && frame > 0
+      ? (Math.round(value / frame) + count) * frame
+      : value + count * UNITS[part];
+    const text = format(next);
+    input.value = text;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    if (focused) {
+      // The field redraws itself on the input event and throws the caret to
+      // the end; put back on the next turn, it stays in the section it stepped.
+      const first = text.indexOf(':');
+      const caret = [first, first + 3, first + 6, text.length][part];
+      setTimeout(() => input.setSelectionRange(caret, caret), 0);
+    }
+  };
+  let timer = null;
+  const stop = () => {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  };
+  // The button must not take the focus, or the caret it reads would be gone.
+  document.addEventListener('mousedown', (event) => {
+    if (event.target.closest && event.target.closest('[data-audion-spin]')) event.preventDefault();
+  }, true);
+  document.addEventListener('pointerdown', (event) => {
+    const button = event.target.closest && event.target.closest('[data-audion-spin]');
+    if (!button || event.button !== 0) return;
+    const field = button.closest('.q-field');
+    const input = field && field.querySelector('input');
+    if (!input) return;
+    event.preventDefault();
+    stop();
+    const direction = Number(button.dataset.audionSpin) < 0 ? -1 : 1;
+    const frame = parseFloat(button.dataset.audionFrame) || 0;
+    const focused = document.activeElement === input;
+    const part = section(input.value, focused ? input.selectionStart : null);
+    let units = 2;
+    const tick = () => {
+      write(input, frame, direction * units, part, focused);
+      units += 1;
+      timer = setTimeout(tick, 110);
+    };
+    write(input, frame, direction, part, focused);
+    timer = setTimeout(tick, 420);
+  }, true);
+  for (const name of ['pointerup', 'pointercancel']) window.addEventListener(name, stop, true);
+  window.addEventListener('blur', stop);
+})();
+"""
+
+
+def add_timecode_spinner(control: Any, frame: float | None) -> None:
+    """▲▼ inside a point's field; the page script above does the stepping."""
+    with control.add_slot("append"):
+        with ui.element("div").classes("audion-number-spinner"):
+            for direction, icon in ((1, "keyboard_arrow_up"), (-1, "keyboard_arrow_down")):
+                button = ui.button(icon=icon).props(
+                    f"dense flat round tabindex=-1 data-audion-spin={direction} data-audion-frame={frame or 0}"
+                )
+                button.classes("audion-number-spin-button")
+                add_tooltip(button, tr("trim_spin_hint"))
+
+
 def mpv_points_to_fields(start: float | None, end: float | None) -> list[str]:
-    """Write the points the player found into the two timecode fields.
+    """Write the points the player found into the last row of timecode fields.
 
     Nothing but the arithmetic, so it can be checked without a browser: the
     notification and the redraw belong to whoever pressed the button.
     """
+    row = len(trim_rows_all()) - 1
+    prefix = f"{row + 1}: " if row else ""
     written: list[str] = []
     if start is not None:
-        set_field_value("trim_start", format_seconds(start, separator=","))
-        written.append(f"IN {format_seconds(start, separator=',')}")
+        text = format_seconds(start, separator=",")
+        trim_set_row_point(row, "start", text)
+        written.append(f"{prefix}IN {text}")
     if end is not None:
-        set_field_value("trim_end", format_seconds(end, separator=","))
-        written.append(f"OUT {format_seconds(end, separator=',')}")
+        text = format_seconds(end, separator=",")
+        trim_set_row_point(row, "end", text)
+        written.append(f"{prefix}OUT {text}")
     return written
 
 
@@ -3758,6 +4042,28 @@ def mpv_apply_points(start: float | None, end: float | None) -> None:
     ui.notify("   ".join(written))
 
 
+def mpv_shows_chosen_file(player: Any) -> bool:
+    """True when the player shows the file chosen here; otherwise say which it shows.
+
+    The arrows change the file in the panel, not in the player, and the player's
+    A and B belong to whatever it shows. Asked of mpv itself, since a file can
+    also be dropped into its window.
+    """
+    shown = player.send("get_property", "path")
+    if not shown:
+        ui.notify(tr("mpv_no_points"), type="warning")
+        return False
+    chosen = mpv_chosen_media()
+
+    def same(first: Any, second: Any) -> bool:
+        return os.path.normcase(os.path.abspath(str(first))) == os.path.normcase(os.path.abspath(str(second)))
+
+    if chosen is None or not same(shown, chosen):
+        ui.notify(tr("mpv_other_file", file=Path(str(shown)).name), type="warning")
+        return False
+    return True
+
+
 def mpv_take_loop(which: str = "both") -> None:
     """A and B out of the player's loop - that loop is the cut itself."""
     from system_core.services import mpv_service
@@ -3766,13 +4072,38 @@ def mpv_take_loop(which: str = "both") -> None:
     if not player.is_running():
         ui.notify(tr("mpv_not_running"), type="warning")
         return
+    if not mpv_shows_chosen_file(player):
+        return
     start, end = player.ab_loop()
-    if which == "in":
+    if which == "take_a":
+        mpv_apply_split_point(start)
+    elif which == "in":
         mpv_apply_points(start, None)
     elif which == "out":
         mpv_apply_points(None, end)
     else:
         mpv_apply_points(start, end)
+
+
+def mpv_apply_split_point(position: float | None) -> None:
+    """A split point from the player - refused, with the reason, if it lies behind."""
+    if position is None:
+        ui.notify(tr("mpv_no_points"), type="warning")
+        return
+    written = trim_split_take(position)
+    if written is None:
+        limit = trim_split_limit() or 0.0
+        ui.notify(
+            tr(
+                "trim_point_behind",
+                position=format_seconds(position, separator=","),
+                point=format_seconds(limit, separator=","),
+            ),
+            type="warning",
+        )
+        return
+    command_tree.refresh()
+    ui.notify(f"{tr('trim_point_label', number=len(trim_split_points()))}: {written}")
 
 
 def mpv_mark_here(which: str) -> None:
@@ -3788,9 +4119,15 @@ def mpv_mark_here(which: str) -> None:
     if not player.is_running():
         ui.notify(tr("mpv_not_running"), type="warning")
         return
+    if not mpv_shows_chosen_file(player):
+        return
     position = player.position()
     if position is None:
         ui.notify(tr("mpv_no_points"), type="warning")
+        return
+    if which == "mark_point":
+        # A split point is a cut, not a loop: the player's A and B stay as they are.
+        mpv_apply_split_point(position)
         return
     player.send("set_property", "ab-loop-a" if which == "mark_in" else "ab-loop-b", position)
     if which == "mark_in":
@@ -3812,7 +4149,7 @@ def mpv_action_handler(action: str):
             mpv_show_selected()
         elif action == "close":
             mpv_close_player()
-        elif action in {"mark_in", "mark_out"}:
+        elif action in {"mark_in", "mark_out", "mark_point"}:
             mpv_mark_here(action)
         else:
             mpv_take_loop(action)
@@ -3820,11 +4157,124 @@ def mpv_action_handler(action: str):
     return handler
 
 
+def trim_add_click() -> None:
+    """The +: a new row or point, and a clean player to look for it in."""
+    if not trim_add_row():
+        return
+    # The next piece is looked for from scratch: the loop of the last one is done with.
+    from system_core.services import mpv_service
+
+    player = mpv_service.player(ROOT)
+    if player.is_running():
+        player.clear_ab_loop()
+    command_tree.refresh()
+
+
+def trim_field_by_id(key: str) -> dict[str, Any]:
+    pending = state.get("pending_command")
+    for field in getattr(pending, "fields", None) or ():
+        if field_id(field) == key:
+            return field
+    return {}
+
+
+def render_trim_add_button(field: dict[str, Any], tooltip_key: str) -> Any:
+    """The + after the last row. Grey until that row is filled; the tooltip sits on
+    a wrapper, so it still explains the button while the button is disabled."""
+    with ui.element("div").classes("audion-trim-add-wrap audion-tooltip-align-right") as wrap:
+        button = ui.button(icon="add", on_click=lambda _event=None: trim_add_click(), color=None)
+        button.props("dense unelevated").classes("audion-trim-add")
+        button.set_enabled(trim_can_add())
+    add_tooltip(wrap, localized_manifest_text(field, tooltip_key))
+    return button
+
+
+def render_trim_rows(field: dict[str, Any]) -> None:
+    """IN and OUT as rows of variants, or the points of a split, with a + after the last."""
+    if trim_action_value() == "split":
+        render_trim_split_points(field)
+    else:
+        render_trim_variant_rows(field)
+
+
+def render_trim_variant_rows(field: dict[str, Any]) -> None:
+    action = trim_action_value()
+    rows = trim_rows_all()
+    sources = {"start": trim_field_by_id("trim_start"), "end": trim_field_by_id("trim_end")}
+    name = str(state.get("field_values", {}).get("trim_file") or "")
+    frame = trim_file_frame(name)
+    known: dict[str, float | None] = {}
+    refs: dict[str, Any] = {}
+
+    def length_text(row: dict[str, str]) -> str:
+        # The file is only asked for its length when a keep row has IN alone.
+        needs_length = action != "cut" and bool(row["start"].strip()) and not row["end"].strip()
+        if needs_length and "length" not in known:
+            known["length"] = trim_file_length(name)
+        seconds = trim_piece_seconds(row["start"], row["end"], action, known.get("length") if needs_length else None)
+        return format_seconds(seconds, separator=",") if seconds is not None else "—"
+
+    def changed(index: int, which: str, value: Any) -> None:
+        trim_set_row_point(index, which, str(value or ""))
+        refs[f"length{index}"].set_text(length_text(trim_rows_all()[index]))
+        if refs.get("add") is not None:
+            refs["add"].set_enabled(trim_can_add())
+
+    classes = "audion-trim-rows" + (" audion-trim-rows-numbered" if len(rows) > 1 else "")
+    with ui.element("div").classes(classes):
+        for index, row in enumerate(rows):
+            with ui.element("div").classes("audion-trim-row"):
+                if len(rows) > 1:
+                    ui.label(str(index + 1)).classes("audion-trim-row-number")
+                for which in ("start", "end"):
+                    source = sources[which]
+                    control = ui.input(
+                        label=field_label(source) if index == 0 else ("IN" if which == "start" else "OUT"),
+                        value=row[which],
+                        placeholder=str(source.get("placeholder", "")) if index == 0 else "",
+                        on_change=lambda event, item_index=index, item_which=which: changed(item_index, item_which, event.value),
+                    ).props("dense outlined").classes("audion-trim-row-input")
+                    add_tooltip(control, field_tooltip(source))
+                    add_timecode_spinner(control, frame)
+                length_label = ui.label(length_text(row)).classes("audion-trim-row-length")
+                add_tooltip(length_label, tr("trim_piece_cut" if action == "cut" else "trim_piece_keep"))
+                refs[f"length{index}"] = length_label
+                if index == len(rows) - 1:
+                    refs["add"] = render_trim_add_button(field, "add_tooltip")
+                else:
+                    ui.element("div").classes("audion-trim-add-spacer")
+
+
+def render_trim_split_points(field: dict[str, Any]) -> None:
+    points = trim_split_points()
+    frame = trim_file_frame(str(state.get("field_values", {}).get("trim_file") or ""))
+    refs: dict[str, Any] = {}
+
+    def changed(index: int, value: Any) -> None:
+        trim_set_split_point(index, str(value or ""))
+        refs["add"].set_enabled(trim_can_add())
+
+    with ui.element("div").classes("audion-trim-points"):
+        for index, text in enumerate(points):
+            control = ui.input(
+                label=tr("trim_point_label", number=index + 1),
+                value=text,
+                placeholder="00:01:28,400" if index == 0 else "",
+                on_change=lambda event, item_index=index: changed(item_index, event.value),
+            ).props("dense outlined").classes("audion-trim-point-input")
+            add_tooltip(control, localized_manifest_text(field, "point_tooltip"))
+            add_timecode_spinner(control, frame)
+        refs["add"] = render_trim_add_button(field, "add_point_tooltip")
+
+
 def render_player_transport(field: dict[str, Any], label: str, tooltip: str, hint: str) -> None:
-    """Five buttons: show the take, take the two points, close the player."""
+    """The player's buttons: show the take, take the points, close the player.
+
+    Five for a keep or a cut, four for a split, whose points come one at a time.
+    """
     ui.label(label).classes("audion-field-label")
     items = choice_option_items(field)
-    with ui.element("div").classes(f"{field_choice_row_classes(field)} audion-segmented-choice"):
+    with ui.element("div").classes(f"audion-choice-row audion-choice-cols-{len(items)} audion-segmented-choice"):
         total_items = len(items)
         for index, item in enumerate(items):
             classes = "audion-action audion-segmented-button rounded-md"
@@ -4255,6 +4705,10 @@ def render_field(field: dict[str, Any], *, flat: bool = False) -> None:
 
         if kind in {"mpv_transport", "player_transport"}:
             render_player_transport(field, str(label), str(tooltip), str(hint))
+            return
+
+        if kind == "trim_rows":
+            render_trim_rows(field)
             return
 
         text_input = ui.input(
@@ -5066,6 +5520,7 @@ def add_styles() -> None:
     ui.add_head_html(
         f"<style>{WORKBENCH_LAYOUT_CSS}\n{WORKBENCH_OVERRIDE_CSS}\n{WORKBENCH_FEEDBACK_CSS}</style>"
     )
+    ui.add_head_html(f"<script>{TRIM_SPINNER_JS}</script>")
 
 
 @ui.refreshable

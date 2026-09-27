@@ -47,11 +47,11 @@ url: https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/894da5ca7d
 path: Tools\ffmpeg-8.0.1-source.tar.gz
 
 Component: mpv
-Version/profile: mpv v0.41.0-1023-g69e63f425
+Version/profile: mpv v0.41.0-1084-ga1bf4b655
 Method: bundled_archive
-version: mpv v0.41.0-1023-g69e63f425
-url: https://codeload.github.com/mpv-player/mpv/tar.gz/69e63f425
-path: Tools\mpv-69e63f425-source.tar.gz
+version: mpv v0.41.0-1084-ga1bf4b655
+url: https://codeload.github.com/mpv-player/mpv/tar.gz/a1bf4b655
+path: Tools\mpv-a1bf4b655-source.tar.gz
 
 Component: orjson
 Version/profile: 3.12.0

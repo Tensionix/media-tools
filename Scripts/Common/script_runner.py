@@ -48,6 +48,14 @@ from system_core.core.trim_contract import (
     plan_gap,
     rate_label,
     shift_timecode,
+    SubtitleCue,
+    cues_for_spans,
+    format_srt,
+    parse_srt,
+    subtitle_extract_command,
+    subtitle_input_codecs,
+    subtitle_input_maps,
+    subtitle_stream_plan,
     timecode_is_drop_frame,
     zero_timecode,
 )
@@ -1507,6 +1515,7 @@ class Runner:
         faststart: bool,
         target: Path | None = None,
         sample_exact: bool = False,
+        subtitles_at_join: bool = False,
     ) -> Path:
         """Cut one piece. Returns where it landed, so a caller can join pieces.
 
@@ -1589,8 +1598,9 @@ class Runner:
             timecode = ""
 
         # Telemetry and subtitles ride along by default, exactly as in the panel.
+        all_streams = self.trim_all_streams(source)
         keep_data, keep_subtitles, extra_warnings = extra_stream_plan(
-            self.trim_all_streams(source),
+            all_streams,
             container,
             want_data=truthy(first_env("AUDION_TRIM_DATA"), True),
             want_subtitles=truthy(first_env("AUDION_TRIM_SUBTITLES"), True),
@@ -1599,6 +1609,16 @@ class Runner:
 
         output = Path(target) if target is not None else self.output_path(source, "", container, subdir="Trim")
         output.parent.mkdir(parents=True, exist_ok=True)
+        # The lines of the piece as it really runs; a piece headed for a join
+        # leaves them to the join. The same rebuild as in the panel.
+        subtitle_inputs = (
+            self.trim_subtitle_inputs(
+                source, all_streams, container, [(cut.start, cut.start + cut.kept, 0.0)], output.parent / "_subs", output.stem, origin
+            )
+            if keep_subtitles and not subtitles_at_join
+            else []
+        )
+        keep_subtitles = bool(subtitle_inputs)
         command = build_trim_command(
             ffmpeg=self.ffmpeg,
             source=str(source),
@@ -1616,7 +1636,7 @@ class Runner:
             timecode=timecode,
             faststart=faststart,
             keep_data=keep_data,
-            keep_subtitles=keep_subtitles,
+            subtitle_inputs=subtitle_inputs,
         )
         print(f"[TRIM] {source.name} | {rate_label(rate)} | {format_seconds(duration)} -> {container.upper()}")
         if cut.keyframe_offset:
@@ -1652,9 +1672,50 @@ class Runner:
             print(f"       [WARNING] Picking a channel rebuilds {audio_codec.upper()} audio and costs a generation.")
         if variable_rate:
             print("       [WARNING] Variable frame rate: the cut is made by time, so the tail lands within a packet.")
-        self.run(command)
+        try:
+            self.run(command)
+        finally:
+            self.remove_subtitle_inputs(subtitle_inputs)
         self.trim_top_up(command, cut.frames, output)
         return output
+
+    def trim_subtitle_inputs(
+        self,
+        source: Path,
+        all_streams: list[dict[str, Any]],
+        container: str,
+        spans: list[tuple[float, float, float]],
+        stage: Path,
+        name: str,
+        origin: float,
+    ) -> list[tuple[str, str, str]]:
+        """The rebuilt lines of every text subtitle stream, one SRT each - see trim_contract."""
+        plan, _notes = subtitle_stream_plan(all_streams, container)
+        subtitles = [item for item in all_streams if str(item.get("codec_type") or "").lower() == "subtitle"]
+        inputs: list[tuple[str, str, str]] = []
+        for position, encoder in plan:
+            text = self.probe_lines(subtitle_extract_command(self.ffmpeg, str(source), position))
+            cues = [SubtitleCue(cue.start - origin, cue.end - origin, cue.text) for cue in parse_srt(text)]
+            kept = cues_for_spans(cues, spans)
+            if not kept:
+                continue
+            stage.mkdir(parents=True, exist_ok=True)
+            path = stage / f"{name}_s{position}.srt"
+            path.write_text(format_srt(kept), encoding="utf-8")
+            tags = subtitles[position].get("tags") if position < len(subtitles) else None
+            language = str((tags or {}).get("language") or "").strip()
+            inputs.append((str(path), encoder, "" if language == "und" else language))
+        return inputs
+
+    @staticmethod
+    def remove_subtitle_inputs(inputs: list[tuple[str, str, str]]) -> None:
+        for path, _encoder, _language in inputs:
+            Path(path).unlink(missing_ok=True)
+        for folder in {Path(path).parent for path, _encoder, _language in inputs}:
+            try:
+                folder.rmdir()
+            except OSError:
+                pass
 
     def trim_middle(
         self,
@@ -1705,6 +1766,7 @@ class Runner:
         print(f"       removed {format_seconds(gap.removed)}, keeping {format_seconds(gap.kept)}")
 
         pieces: list[Path] = []
+        subtitle_inputs: list[tuple[str, str, str]] = []
         list_file = stage / f"{final.stem}_parts.txt"
         try:
             for name, piece_pattern, piece_head, piece_tail in (
@@ -1727,10 +1789,30 @@ class Runner:
                         faststart=False,
                         target=stage / f"{final.stem}_{name}.{container}",
                         sample_exact=True,
+                        subtitles_at_join=True,
                     )
                 )
             lines = ["file '" + str(item).replace("'", "'\\''") + "'" for item in pieces]
             list_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            # The lines of both spans, laid onto the result's timeline, come in
+            # beside the pieces - the same rebuild as in the panel.
+            all_streams = self.trim_all_streams(source)
+            want_subtitles = extra_stream_plan(
+                all_streams, container, want_subtitles=truthy(first_env("AUDION_TRIM_SUBTITLES"), True)
+            )[1]
+            subtitle_inputs = (
+                self.trim_subtitle_inputs(
+                    source,
+                    all_streams,
+                    container,
+                    [(0.0, gap.head_seconds, 0.0), (gap.tail_start, duration, gap.head_seconds)],
+                    stage,
+                    f"{final.stem}_join",
+                    origin,
+                )
+                if want_subtitles
+                else []
+            )
 
             join = [
                 self.ffmpeg,
@@ -1744,16 +1826,18 @@ class Runner:
                 "0",
                 "-i",
                 str(list_file),
+                *[part for item, _encoder, _language in subtitle_inputs for part in ("-i", item)],
                 # By name, not `-map 0`: the timecode track cannot travel through
                 # a concat into MOV, and the run would fail outright.
                 "-map",
                 "0:v:0",
                 "-map",
                 "0:a?",
-                "-sn",
+                *(subtitle_input_maps(subtitle_inputs, first_input=1) if subtitle_inputs else ["-sn"]),
                 "-dn",
                 "-c",
                 "copy",
+                *subtitle_input_codecs(subtitle_inputs),
                 "-map_metadata",
                 "0",
             ]
@@ -1773,6 +1857,8 @@ class Runner:
         finally:
             for item in pieces:
                 item.unlink(missing_ok=True)
+            for item, _encoder, _language in subtitle_inputs:
+                Path(item).unlink(missing_ok=True)
             list_file.unlink(missing_ok=True)
             # The staging folder goes too, unless something else is using it.
             try:
@@ -1788,7 +1874,8 @@ class Runner:
                 "-v",
                 "error",
                 "-show_entries",
-                "stream=index,codec_type,codec_name,codec_tag_string",
+                # The language travels with a rebuilt subtitle stream, as in the panel.
+                "stream=index,codec_type,codec_name,codec_tag_string:stream_tags=language",
                 "-of",
                 "json",
                 str(source),

@@ -8,15 +8,14 @@
   <a href="https://github.com/Tensionix/media-tools/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Tensionix/media-tools?style=flat-square&color=5fd08a&logo=apache&logoColor=white&cacheSeconds=3600"></a>
 </p>
 
-**Version 2.6.0** · 2026-09-28 · 12.4 MB
+**Version 2.6.0** · 2026-09-28 · 578.1 MB
 
-- [Direct download](https://dl.audion.dev/media-tools/2.6.0/Audion_Media_Tools_v2.6.0.zip) — unmetered, no rate limits
+- [Direct download](https://audion.dev/get/media-tools/2.6.0/Audion_Media_Tools_v2.6.0_Full.zip) — unmetered, no rate limits
 - [Project page](https://audion.dev/downloads/media-tools) — every version and how to install
-- [GitHub release](https://github.com/Tensionix/media-tools/releases/tag/v2.6.0)
 
 <p align="center"><img src="Docs/screenshot.png" alt="The program window" width="560"></p>
 
-`SHA-256: 1be4852554fd440bf69ed9a54b8a031e7996d051df67ed2fadeb169334bc619a`
+`SHA-256: e9e4fd3dc9f92aaee3b78eada7cf611113984c1c600fb7784efccf17b0d129ba`
 
 ---
 
@@ -24,7 +23,9 @@ An **Audion** tool, published by [Tensionix](https://github.com/Tensionix).
 <!-- /audion:release -->
 
 
-[Русский](Docs/README_RU.md) · [User Guide](Docs/USER_GUIDE_EN.md) · [Measurements](Docs/MEASUREMENTS_RU.md) · [Decisions](Docs/DECISIONS_EN.md)
+[English README](Docs/README_EN.md) · [User Guide](Docs/USER_GUIDE_EN.md) | [Русский README](Docs/README_RU.md) · [Руководство](Docs/USER_GUIDE_RU.md)
+
+[Measurements](Docs/MEASUREMENTS_RU.md) · [Decisions](Docs/DECISIONS_EN.md)
 
 **Contents**
 
@@ -237,7 +238,7 @@ folder and fight over a name: the subfolder structure is reproduced in the outpu
 |---|---|
 | Download | a link or a list, format profiles, resolution, subtitles, threads |
 | Audio streams | extraction, resampling, normalisation, packaging; audio into video without re-encoding the picture |
-| Trimming | frame-accurate or on keyframes, with marks remembered per file; sound files on the sample |
+| Trimming | frame-accurate or on keyframes, with marks remembered per file; several variants from one take, a split at up to 30 points; sound files on the sample |
 | Remux, frame rate, colour tables | changing the container, working with frame rate, applying lookup tables |
 | Archive | long-term masters: FFV1, lossless x264 |
 | Editing codecs | ProRes and DNxHR in MOV or MXF |

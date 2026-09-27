@@ -203,6 +203,9 @@ class MpvPlayer:
         if self.media is not None and Path(self.media) == media:
             return
         self.send("loadfile", str(media), "replace")
+        # A and B are player options, not properties of a file: they survive a
+        # loadfile, and the new take would open looping the old take's cut.
+        self.clear_ab_loop()
         self.media = media
 
     def wait_until_loaded(self, timeout: float = 10.0) -> bool:

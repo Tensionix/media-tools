@@ -2,6 +2,8 @@
 
 **Contents**
 
+- [2026-09-28: What The 2.6.0 Audit Found In Trimming](#2026-09-28-what-the-260-audit-found-in-trimming)
+- [2026-09-28: Rows Are Variants, Not One Timeline](#2026-09-28-rows-are-variants-not-one-timeline)
 - [2026-09-14: A Split Decides Each Joint Once](#2026-09-14-a-split-decides-each-joint-once)
 - [2026-09-14: Sound Files Are Cut On The Sample, And The Purist May Copy Packets](#2026-09-14-sound-files-are-cut-on-the-sample-and-the-purist-may-copy-packets)
 - [2026-08-26: A Real Camera File Found What Synthetic Ones Could Not](#2026-08-26-a-real-camera-file-found-what-synthetic-ones-could-not)
@@ -41,6 +43,65 @@
 - [2026-05-06: Completion State Is Persistent](#2026-05-06-completion-state-is-persistent)
 - [2026-05-06: Hide Windows CLI Helpers At Process Creation](#2026-05-06-hide-windows-cli-helpers-at-process-creation)
 - [2026-05-06: CMD Encoding Is A Build Gate](#2026-05-06-cmd-encoding-is-a-build-gate)
+
+## 2026-09-28: What The 2.6.0 Audit Found In Trimming
+
+Five defects over an audit and a re-audit, each reproduced on real FFmpeg
+before it was fixed, each now held by a test that fails on the old code:
+
+- **Subtitles are rebuilt for a cut, not copied through it.** First an MP4 take
+  with subtitles did not trim at all ("Error selecting an encoder": the stream
+  was mapped without a codec). Naming the codec and copying fixed that, and the
+  re-audit then measured the copy wrong at every boundary (TRIM-5): a frame
+  count dropped the line across OUT, a seek kept a line from before IN at full
+  length, and the `Cut it out` join made a 0.5-1.5 s line a microsecond long and
+  moved the next a second early - while a test that looked only for a subtitle
+  track passed. Now each line is read out as SRT on the file's own clock
+  (`-copyts`, minus the picture's start), cut to the spans kept, moved onto the
+  result's timeline, and muxed as a second input of the call that copies the
+  picture. MP4 and MOV hold mov_text, Matroska SRT (measured: neither takes the
+  other's form); picture subtitles cannot be cut without redrawing and stay
+  behind, named. The tests now read the lines back - text, start and end - and
+  fail on the copying version.
+- **The run says what happened.** The service returned counts and no `ok`, and
+  the executor reads only `ok` - so a failed write, refused points and a cancel
+  all showed a green status and exit code 0. A result kept because Overwrite is
+  off is a skip the operator asked for, not an error.
+- **A cancel cleans only what it stopped.** It used to inspect the target of the
+  next, unstarted piece and remove it when it would not open - an older file,
+  with Overwrite off.
+- **The player hands over only its own file's points.** The arrows change the
+  file in the panel, not in mpv, and `Take A and B` wrote the old take's loop into
+  the new one. The file is asked of mpv itself. A and B are cleared when another
+  file is opened: they are player options, and measured, a loop of 1-3 s survived
+  a plain `loadfile`.
+
+## 2026-09-28: Rows Are Variants, Not One Timeline
+
+The trim section grew a `+` that adds another row of IN and OUT. The rows are
+deliberately not pieces of one timeline, the way an editor's segment list is:
+each row of `Keep it` or `Cut it out` is a separate run on the same take and a
+file of its own, `_keep01` or `_cut01`, numbered as the row on screen. Nothing
+between rows has to be reconciled, so rows may overlap freely - one moment can
+go into two clips, and each file of a cut has its own piece taken out of the whole
+take. One filled row is exactly the old run, with no suffix, which is what keeps
+the wrappers and the old behaviour intact.
+
+`Split` stays one timeline: N points give N + 1 parts, up to 30 points. Points
+from the player are taken only walking forward - a position at or behind an
+earlier point writes nothing - because a slider dragged back by accident would
+otherwise scramble the parts. The `+` clears A and B in the player, not the take
+of the points: while a row is open its loop keeps playing, and a wrong point is
+heard, which is the reason the loop exists. Two points on one keyframe stop the
+run and are named; merging them silently was considered and not done, since
+pieces under a second are not what a split is used for.
+
+The `▲▼` spinners do not break a timecode into one field per section: it could no
+longer be copied and pasted whole. The field stays one line, and an arrow steps
+the section the caret stands in. The smallest section steps by a frame of the
+file, not a millisecond, which changes nothing in a cut on 25p. The step is
+worked out in the page, not on the server: the caret exists only in the browser,
+and a round trip per step would make a held button stutter.
 
 ## 2026-09-14: A Split Decides Each Joint Once
 
@@ -431,6 +492,8 @@ Default layout:
 - terminal log around 2/3 of window height or more.
 
 Rationale: many Audion tools were born as CMD/FZF utilities. Their output is not secondary; it is part of the UX.
+
+Scrollbars (2026-09-28) are darker than the browser's own, whose light grey stripe stood out on every dark theme. The colour is mixed from the theme's, so a light theme stays in key.
 
 ## 2026-05-04: Compact Ghost Buttons
 
