@@ -3,19 +3,20 @@
 <!-- audion:release -->
 <p align="center">
   <a href="https://audion.dev/downloads/media-tools"><img alt="Windows" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0b6db8?style=flat-square&logo=windows&logoColor=white"></a>
-  <a href="https://github.com/Tensionix/media-tools/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Tensionix/media-tools?style=flat-square&label=release&color=e08a63"></a>
+  <a href="https://github.com/Tensionix/media-tools/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Tensionix/media-tools?style=flat-square&label=release&color=2a7488"></a>
   <a href="https://github.com/Tensionix/media-tools/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Tensionix/media-tools/total?style=flat-square&label=downloads&color=5fd08a"></a>
   <a href="https://github.com/Tensionix/media-tools/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Tensionix/media-tools?style=flat-square&color=5fd08a&logo=apache&logoColor=white&cacheSeconds=3600"></a>
 </p>
 
-**Version 2.5.2** · 2026-09-20 · 577.7 MB
+**Version 2.6.0** · 2026-09-28 · 578.1 MB
 
-- [Direct download](https://audion.dev/get/media-tools/2.5.2/Audion_Media_Tools_v2.5.2_Full.zip) — unmetered, no rate limits
+- [Direct download](https://dl.audion.dev/media-tools/2.6.0/Audion_Media_Tools_v2.6.0_Full.zip) — unmetered, no rate limits
 - [Project page](https://audion.dev/downloads/media-tools) — every version and how to install
+- [GitHub release](https://github.com/Tensionix/media-tools/releases/tag/v2.6.0)
 
-<p align="center"><img src="docs/screenshot.png" alt="The program window" width="560"></p>
+<p align="center"><img src="Docs/screenshot.png" alt="The program window" width="560"></p>
 
-`SHA-256: cfa2a2c74bdc22d88f8d32412abe2ed249fb482df9cd3eac2e280499d07c8e71`
+`SHA-256: e9e4fd3dc9f92aaee3b78eada7cf611113984c1c600fb7784efccf17b0d129ba`
 
 ---
 
