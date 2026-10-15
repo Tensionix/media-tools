@@ -2,7 +2,7 @@
 chcp 65001 >nul
 setlocal EnableExtensions EnableDelayedExpansion
 
-title Audion Python Portable Template - Build Portable Env
+title Audion Media Tools - Build Portable Env
 
 set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
@@ -14,12 +14,16 @@ set "RUNTIME_DIR=%ROOT%\runtime"
 set "WHEELHOUSE_DIR=%ROOT%\wheelhouse"
 set "REQ_FILE=%INSTALL_DIR%\requirements_full.in"
 set "DOCTOR=%ROOT%\system_core\doctor.py"
-set "GUI_APP=%ROOT%\system_core\ui_nicegui\app.py"
 set "GET_PIP=%DOWNLOAD_DIR%\get-pip.py"
 set "CMD_ENCODING=%INSTALL_DIR%\Check-CmdEncoding.cmd"
 
 set "PYTHON_MINOR=12"
-for /f "usebackq delims=" %%V in (`powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; $latest=$null; for($i=0; $i -le 40; $i++){ $v='3.%PYTHON_MINOR%.'+$i; $u='https://www.python.org/ftp/python/'+$v+'/python-'+$v+'-embed-amd64.zip'; try{ Invoke-WebRequest -Uri $u -Method Head -TimeoutSec 10 | Out-Null; $latest=$v } catch { if($latest){ break } } }; if(-not $latest){ exit 1 }; $latest"`) do set "PYTHON_VERSION=%%V"
+rem The PowerShell the program carries comes first; the one of the machine - where App\ is not built yet.
+rem Started by call inside for /f: without it cmd strips the quotes and a path with spaces breaks.
+set "PS_EXE=%ROOT%\App\AudionPs.exe"
+if not exist "%PS_EXE%" set "PS_EXE=powershell.exe"
+
+for /f "usebackq delims=" %%V in (`call "%PS_EXE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; $latest=$null; for($i=0; $i -le 40; $i++){ $v='3.%PYTHON_MINOR%.'+$i; $u='https://www.python.org/ftp/python/'+$v+'/python-'+$v+'-embed-amd64.zip'; try{ Invoke-WebRequest -Uri $u -Method Head -TimeoutSec 10 | Out-Null; $latest=$v } catch { if($latest){ break } } }; if(-not $latest){ exit 1 }; $latest"`) do set "PYTHON_VERSION=%%V"
 if not defined PYTHON_VERSION goto USE_POWERSHELL
 set "PYTHON_ZIP=python-%PYTHON_VERSION%-embed-amd64.zip"
 set "PYTHON_URL=https://www.python.org/ftp/python/%PYTHON_VERSION%/%PYTHON_ZIP%"
@@ -32,7 +36,7 @@ call "%CMD_ENCODING%" -Fix
 if errorlevel 1 goto ERR_CMD_ENCODING
 
 echo ======================================================================
-echo   AUDION PYTHON PORTABLE TEMPLATE - BUILD PORTABLE ENV
+echo   AUDION MEDIA TOOLS - BUILD PORTABLE ENV
 echo ======================================================================
 echo Root:       %ROOT%
 echo Install:    %INSTALL_DIR%
@@ -97,10 +101,6 @@ if errorlevel 1 goto ERR_INSTALL
 echo [7/7] Verifying environment...
 "%RUNTIME_DIR%\python.exe" "%DOCTOR%" --project-root "%ROOT%"
 if errorlevel 1 goto ERR_VERIFY
-if exist "%GUI_APP%" (
-  "%RUNTIME_DIR%\python.exe" "%GUI_APP%" --smoke
-  if errorlevel 1 goto ERR_VERIFY
-)
 
 echo.
 echo [SUCCESS] Portable environment is ready.

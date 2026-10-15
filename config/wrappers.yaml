@@ -1,0 +1,231 @@
+# What every wrapper of Scripts\ runs.
+#
+# A wrapper is a file of one line - `call "%~dp0Common\run-profile.cmd" "%~n0" %*` - and a door to the console
+# command: `media_cli.cmd wrapper <its name> [arguments]`. This file says what is behind each door: the operation
+# (or the operations, one after another), the values it sets, and what it is for. The work is the engine's, the
+# same as a button of the window does.
+#
+#   op / set:   the operation and its values; `runs:` instead, when a wrapper runs several in turn
+#   fixed:      values that stand over the environment; `set` gives way to it (AUDION_CRF=17 over crf: 14)
+#   only:       the kinds of file the wrapper takes; the operation may take more (MKV -> MP4 takes MKV alone)
+#   takes:      what the arguments of the command line are: `urls` (yt-dlp links), `sections` (a section, then links)
+#   about:      what it does, in English and Russian - for the map of the program and its documents
+#
+# The environment the wrappers have always read - AUDION_SOURCE, AUDION_OUTPUT, AUDION_DRY_RUN, AUDION_CRF and the
+# rest - is read by the console command (system_core\cli.py, WRAPPER_ENVIRONMENT) and goes into the fields of the
+# operation that has them. tests\test_wrappers.py holds every wrapper to what it ran before 3.0.0
+# (tests\former_wrapper_commands.json) and names every difference.
+
+wrappers:
+  # --- sound: from the videos, then the sound files -----------------------------------------------------------
+  audio-downmix-51-to-20:
+    about: "5.1 down to stereo, WAV 24-bit"
+    about_ru: "5.1 в стерео, WAV 24 бит"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: source, audio_channel_mode: stereo, downmix_formula: surround_6db}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: source, audio_channel_mode: stereo, downmix_formula: surround_6db}}
+  audio-extract-audio-copy:
+    about: "The first sound stream as it is, in a container of its codec"
+    about_ru: "Первый звуковой поток как есть, в контейнере своего кодека"
+    op: audio_run
+    set: {audio_workflow: extract, audio_format: copy, audio_copy_container: auto}
+  audio-extract-audio-wav:
+    about: "The sound to WAV 24-bit at its own rate"
+    about_ru: "Звук в WAV 24 бит с родной частотой"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: source}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: source}}
+  audio-extract-audio-wav-32:
+    about: "The sound to WAV 32-bit float at its own rate"
+    about_ru: "Звук в WAV 32 бит float с родной частотой"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: 32f, audio_sample_rate: source}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: 32f, audio_sample_rate: source}}
+  audio-lufs-14:
+    about: "Loudness -14 LUFS (streaming), WAV 24-bit"
+    about_ru: "Громкость -14 LUFS (стриминг), WAV 24 бит"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: source, audio_lufs: "-14", audio_lufs_mode: one_pass}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: source, audio_lufs: "-14", audio_lufs_mode: one_pass}}
+  audio-lufs-23:
+    about: "Loudness -23 LUFS (EBU R128), WAV 24-bit"
+    about_ru: "Громкость -23 LUFS (EBU R128), WAV 24 бит"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: source, audio_lufs: "-23", audio_lufs_mode: one_pass}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: source, audio_lufs: "-23", audio_lufs_mode: one_pass}}
+  audio-resample-to-44100:
+    about: "The sound to 44.1 kHz, WAV 24-bit"
+    about_ru: "Звук в 44,1 кГц, WAV 24 бит"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: "44100"}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: "44100"}}
+  audio-resample-to-44100_sync:
+    about: "The sound to 44.1 kHz, WAV 24-bit, timestamps evened"
+    about_ru: "Звук в 44,1 кГц, WAV 24 бит, с выравниванием меток времени"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: "44100", audio_resync: true}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: "44100", audio_resync: true}}
+  audio-resample-to-44100-32f:
+    about: "The sound to 44.1 kHz, WAV 32-bit float"
+    about_ru: "Звук в 44,1 кГц, WAV 32 бит float"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: 32f, audio_sample_rate: "44100"}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: 32f, audio_sample_rate: "44100"}}
+  audio-resample-to-44100-32f_sync:
+    about: "The sound to 44.1 kHz, WAV 32-bit float, timestamps evened"
+    about_ru: "Звук в 44,1 кГц, WAV 32 бит float, с выравниванием меток времени"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: 32f, audio_sample_rate: "44100", audio_resync: true}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: 32f, audio_sample_rate: "44100", audio_resync: true}}
+  audio-resample-to-48000:
+    about: "The sound to 48 kHz, WAV 24-bit"
+    about_ru: "Звук в 48 кГц, WAV 24 бит"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: "48000"}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: "48000"}}
+  audio-resample-to-48000_sync:
+    about: "The sound to 48 kHz, WAV 24-bit, timestamps evened"
+    about_ru: "Звук в 48 кГц, WAV 24 бит, с выравниванием меток времени"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: "48000", audio_resync: true}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: "24", audio_sample_rate: "48000", audio_resync: true}}
+  audio-resample-to-48000-32f:
+    about: "The sound to 48 kHz, WAV 32-bit float"
+    about_ru: "Звук в 48 кГц, WAV 32 бит float"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: 32f, audio_sample_rate: "48000"}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: 32f, audio_sample_rate: "48000"}}
+  audio-resample-to-48000-32f_sync:
+    about: "The sound to 48 kHz, WAV 32-bit float, timestamps evened"
+    about_ru: "Звук в 48 кГц, WAV 32 бит float, с выравниванием меток времени"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: wav, audio_bit_depth: 32f, audio_sample_rate: "48000", audio_resync: true}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: wav, audio_bit_depth: 32f, audio_sample_rate: "48000", audio_resync: true}}
+  audio-to-flac:
+    about: "The sound to FLAC at its own rate"
+    about_ru: "Звук в FLAC с родной частотой"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: flac, audio_bit_depth: source, audio_sample_rate: source}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: flac, audio_bit_depth: source, audio_sample_rate: source}}
+  audio-to-flac-48k:
+    about: "The sound to FLAC 48 kHz"
+    about_ru: "Звук в FLAC 48 кГц"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: flac, audio_bit_depth: source, audio_sample_rate: "48000"}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: flac, audio_bit_depth: source, audio_sample_rate: "48000"}}
+  audio-to-flac-96k:
+    about: "The sound to FLAC 96 kHz"
+    about_ru: "Звук в FLAC 96 кГц"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_format: flac, audio_bit_depth: source, audio_sample_rate: "96000"}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_format: flac, audio_bit_depth: source, audio_sample_rate: "96000"}}
+  audio-to-m4a-256:
+    about: "The sound to AAC 256 kbps in M4A"
+    about_ru: "Звук в AAC 256 кбит/с в M4A"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_profile: m4a256}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_profile: m4a256}}
+  audio-to-m4a-384:
+    about: "The sound to AAC 384 kbps in M4A"
+    about_ru: "Звук в AAC 384 кбит/с в M4A"
+    runs:
+      - {op: audio_run, set: {audio_workflow: extract, audio_profile: m4a384}}
+      - {op: audio_run, set: {audio_workflow: audio_files, audio_profile: m4a384}}
+  ff-extract-audio:
+    about: "The first sound stream as it is, in a container of its codec"
+    about_ru: "Первый звуковой поток как есть, в контейнере своего кодека"
+    op: audio_run
+    set: {audio_workflow: extract, audio_format: copy, audio_copy_container: auto}
+
+  # --- frame rate: the rate of each file is read from the file, not from the wrapper's name ------------------
+  ff-100to23976-varispeed: {op: fps_run, set: {fps_mode: varispeed, fps_target: "24000/1001"}, about: "100 fps to 23.976, varispeed", about_ru: "100 к/с в 23,976, varispeed"}
+  ff-100to23976-conform: {op: fps_run, set: {fps_mode: conform, fps_target: "24000/1001"}, about: "100 fps to 23.976, conform", about_ru: "100 к/с в 23,976, conform"}
+  ff-11988to23976-varispeed: {op: fps_run, set: {fps_mode: varispeed, fps_target: "24000/1001"}, about: "119.88 fps to 23.976, varispeed", about_ru: "119,88 к/с в 23,976, varispeed"}
+  ff-11988to23976-conform: {op: fps_run, set: {fps_mode: conform, fps_target: "24000/1001"}, about: "119.88 fps to 23.976, conform", about_ru: "119,88 к/с в 23,976, conform"}
+  ff-17982to23976-varispeed: {op: fps_run, set: {fps_mode: varispeed, fps_target: "24000/1001"}, about: "179.82 fps to 23.976, varispeed", about_ru: "179,82 к/с в 23,976, varispeed"}
+  ff-17982to23976-conform: {op: fps_run, set: {fps_mode: conform, fps_target: "24000/1001"}, about: "179.82 fps to 23.976, conform", about_ru: "179,82 к/с в 23,976, conform"}
+  ff-24to23976-varispeed: {op: fps_run, set: {fps_mode: varispeed, fps_target: "24000/1001"}, about: "24 fps to 23.976, varispeed", about_ru: "24 к/с в 23,976, varispeed"}
+  ff-25to23976-conform: {op: fps_run, set: {fps_mode: conform, fps_target: "24000/1001"}, about: "25 fps to 23.976, conform", about_ru: "25 к/с в 23,976, conform"}
+  ff-25to23976-varispeed: {op: fps_run, set: {fps_mode: varispeed, fps_target: "24000/1001"}, about: "25 fps to 23.976, varispeed", about_ru: "25 к/с в 23,976, varispeed"}
+  ff-2997to23976-conform: {op: fps_run, set: {fps_mode: conform, fps_target: "24000/1001"}, about: "29.97 fps to 23.976, conform", about_ru: "29,97 к/с в 23,976, conform"}
+  ff-2997to23976-varispeed: {op: fps_run, set: {fps_mode: varispeed, fps_target: "24000/1001"}, about: "29.97 fps to 23.976, varispeed", about_ru: "29,97 к/с в 23,976, varispeed"}
+  ff-50to23976-varispeed: {op: fps_run, set: {fps_mode: varispeed, fps_target: "24000/1001"}, about: "50 fps to 23.976, varispeed", about_ru: "50 к/с в 23,976, varispeed"}
+  ff-50to23976-conform: {op: fps_run, set: {fps_mode: conform, fps_target: "24000/1001"}, about: "50 fps to 23.976, conform", about_ru: "50 к/с в 23,976, conform"}
+  ff-5994to23976-conform: {op: fps_run, set: {fps_mode: conform, fps_target: "24000/1001"}, about: "59.94 fps to 23.976, conform", about_ru: "59,94 к/с в 23,976, conform"}
+  ff-5994to23976-varispeed: {op: fps_run, set: {fps_mode: varispeed, fps_target: "24000/1001"}, about: "59.94 fps to 23.976, varispeed", about_ru: "59,94 к/с в 23,976, varispeed"}
+
+  # --- editing codecs ------------------------------------------------------------------------------------------
+  ff-dnxhr-hq-mov: {op: editing_run, set: {editing_profile: dnxhr_hq_mov}, about: "DNxHR HQ in MOV, PCM 24-bit", about_ru: "DNxHR HQ в MOV, PCM 24 бит"}
+  ff-dnxhr-hq-mxf: {op: editing_run, set: {editing_profile: dnxhr_hq_mxf}, about: "DNxHR HQ in MXF, PCM 24-bit", about_ru: "DNxHR HQ в MXF, PCM 24 бит"}
+  ff-dnxhr-hqx-mov: {op: editing_run, set: {editing_profile: dnxhr_hqx_mov}, about: "DNxHR HQX 10-bit in MOV, PCM 24-bit", about_ru: "DNxHR HQX 10 бит в MOV, PCM 24 бит"}
+  ff-dnxhr-hqx-mxf: {op: editing_run, set: {editing_profile: dnxhr_hqx_mxf}, about: "DNxHR HQX 10-bit in MXF, PCM 24-bit", about_ru: "DNxHR HQX 10 бит в MXF, PCM 24 бит"}
+  ff-prores-422-mov: {op: editing_run, set: {editing_profile: prores_422_mov}, about: "ProRes 422 in MOV, PCM 24-bit", about_ru: "ProRes 422 в MOV, PCM 24 бит"}
+  ff-prores-422-mxf: {op: editing_run, set: {editing_profile: prores_422_mxf}, about: "ProRes 422 in MXF, PCM 24-bit", about_ru: "ProRes 422 в MXF, PCM 24 бит"}
+  ff-prores-lt-mov: {op: editing_run, set: {editing_profile: prores_lt_mov}, about: "ProRes LT in MOV, PCM 24-bit", about_ru: "ProRes LT в MOV, PCM 24 бит"}
+  ff-prores-lt-mxf: {op: editing_run, set: {editing_profile: prores_lt_mxf}, about: "ProRes LT in MXF, PCM 24-bit", about_ru: "ProRes LT в MXF, PCM 24 бит"}
+  ff-prores-proxy-mov: {op: editing_run, set: {editing_profile: prores_proxy_mov, audio_mode: pcm_s24}, about: "ProRes Proxy in MOV, PCM 24-bit", about_ru: "ProRes Proxy в MOV, PCM 24 бит"}
+  ff-prores-proxy-mxf: {op: editing_run, set: {editing_profile: prores_proxy_mxf, audio_mode: pcm_s24}, about: "ProRes Proxy in MXF, PCM 24-bit", about_ru: "ProRes Proxy в MXF, PCM 24 бит"}
+
+  # --- colour: a LUT, a gamma before it, HDR to SDR ------------------------------------------------------------
+  ff-grade-lut-only-hevc10: {op: grading_run, set: {grading_profile: lut_hevc10, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "The LUT, HEVC Main10", about_ru: "LUT, HEVC Main10"}
+  ff-grade-lut-only-prores422: {op: grading_run, set: {grading_profile: lut_prores422, audio_mode: aac_320}, about: "The LUT, ProRes 422", about_ru: "LUT, ProRes 422"}
+  ff-grade-lut-only-proresLT: {op: grading_run, set: {grading_profile: lut_prores422, audio_mode: aac_320, target_codecs: [prores_lt]}, about: "The LUT, ProRes LT", about_ru: "LUT, ProRes LT"}
+  ff-grade-lut-only-x264: {op: grading_run, set: {grading_profile: lut_x264, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "The LUT, H.264", about_ru: "LUT, H.264"}
+  ff-grade-preexpose-lut-x264: {op: grading_run, set: {grading_profile: preexpose_x264, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "A gamma of 1.15 before the LUT, H.264", about_ru: "Гамма 1,15 до LUT, H.264"}
+  ff-grade-pregamma-lut-hevc10: {op: grading_run, set: {grading_profile: pregamma_hevc10, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "A gamma of 0.85 before the LUT, HEVC Main10", about_ru: "Гамма 0,85 до LUT, HEVC Main10"}
+  ff-grade-pregamma-lut-prores422: {op: grading_run, set: {script_preset: ff-grade-pregamma-lut-prores422.cmd, output_container: mov, pix_fmt: yuv422p10le, audio_mode: aac_320}, about: "A gamma of 0.85 before the LUT, ProRes 422", about_ru: "Гамма 0,85 до LUT, ProRes 422"}
+  ff-grade-pregamma-lut-x264: {op: grading_run, set: {script_preset: ff-grade-pregamma-lut-x264.cmd, output_container: mp4, pix_fmt: yuv420p, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "A gamma of 0.85 before the LUT, H.264", about_ru: "Гамма 0,85 до LUT, H.264"}
+  ff-hdr2sdr-hable-hevc10: {op: grading_run, set: {grading_profile: hdr_hable_x264, target_codecs: [hevc_x265], pix_fmt: yuv420p10le, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "HDR to SDR (Hable), HEVC Main10", about_ru: "HDR в SDR (Hable), HEVC Main10"}
+  ff-hdr2sdr-hable-x264: {op: grading_run, set: {grading_profile: hdr_hable_x264, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "HDR to SDR (Hable), H.264", about_ru: "HDR в SDR (Hable), H.264"}
+
+  # --- encoding for storage and delivery -----------------------------------------------------------------------
+  ff-hevc10-crf14: {op: storage_run, set: {storage_profile: hevc10_crf14, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "HEVC Main10, CRF 14", about_ru: "HEVC Main10, CRF 14"}
+  ff-av1-crf14: {op: storage_run, set: {storage_profile: svt_av1_crf14, audio_mode: aac_320}, about: "AV1 (SVT), CRF 14, MKV", about_ru: "AV1 (SVT), CRF 14, MKV"}
+  ff-av1-fast-crf14: {op: storage_run, set: {storage_profile: svt_av1_crf14, av1_preset: "8", output_container: mp4, audio_mode: aac_320}, about: "AV1 (SVT), fast preset, CRF 14, MP4", about_ru: "AV1 (SVT), быстрый пресет, CRF 14, MP4"}
+  ff-x264-crf14: {op: storage_run, set: {storage_profile: x264_crf14, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "H.264, CRF 14", about_ru: "H.264, CRF 14"}
+  ff-x264-crf17: {op: storage_run, set: {storage_profile: x264_crf14, crf: 17, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "H.264, CRF 17", about_ru: "H.264, CRF 17"}
+  ff-x264-crf21: {op: storage_run, set: {storage_profile: x264_crf14, crf: 21, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "H.264, CRF 21", about_ru: "H.264, CRF 21"}
+  ff-x264-4k-to-1080-crf14: {op: storage_run, set: {storage_profile: x264_1080_crf14, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "H.264 1080p from 4K, CRF 14", about_ru: "H.264 1080p из 4K, CRF 14"}
+  ff-x264-4k-to-1080-crf17: {op: storage_run, set: {storage_profile: x264_1080_crf14, crf: 17, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "H.264 1080p from 4K, CRF 17", about_ru: "H.264 1080p из 4K, CRF 17"}
+  ff-x264-4k-to-1080-crf21: {op: storage_run, set: {storage_profile: x264_1080_crf14, crf: 21, audio_mode: aac_320, cpu_encoder_preset: medium}, about: "H.264 1080p from 4K, CRF 21", about_ru: "H.264 1080p из 4K, CRF 21"}
+
+  # --- trim: one file, the points from AUDION_TRIM_START / AUDION_TRIM_END, the file from AUDION_TRIM_FILE ----
+  ff-trim-start: {op: trim_run, set: {trim_action: keep}, fixed: {trim_end: ""}, about: "Cut the head off: keep from IN", about_ru: "Отрезать начало: оставить с IN"}
+  ff-trim-end: {op: trim_run, set: {trim_action: keep}, fixed: {trim_start: ""}, about: "Cut the tail off: keep up to OUT", about_ru: "Отрезать конец: оставить до OUT"}
+  ff-trim-both: {op: trim_run, set: {trim_action: keep}, about: "Keep what lies between IN and OUT", about_ru: "Оставить то, что между IN и OUT"}
+  ff-trim-middle: {op: trim_run, set: {trim_action: cut}, about: "Cut out what lies between IN and OUT", about_ru: "Вырезать то, что между IN и OUT"}
+
+  # --- another container, no re-encoding -----------------------------------------------------------------------
+  ff-remux-mkv-to-mp4: {op: remux_run, set: {remux_stream_mode: video_audio, remux_target_format: mp4}, only: [mkv], about: "MKV to MP4 without re-encoding", about_ru: "MKV в MP4 без перекодирования"}
+  ff-remux-mkv-to-mp4-faststart: {op: remux_run, set: {remux_stream_mode: video_audio, remux_target_format: mp4}, only: [mkv], about: "MKV to MP4 without re-encoding, for the web", about_ru: "MKV в MP4 без перекодирования, для веба"}
+  ff-remux-mp4-to-mkv: {op: remux_run, set: {remux_stream_mode: video_audio, remux_target_format: mkv}, only: [mp4], about: "MP4 to MKV without re-encoding", about_ru: "MP4 в MKV без перекодирования"}
+  ff-remux-mp4-to-mkv-copy: {op: remux_run, set: {remux_stream_mode: video_audio, remux_target_format: mkv}, only: [mp4], about: "MP4 to MKV without re-encoding", about_ru: "MP4 в MKV без перекодирования"}
+  ff-remux-mov-to-mxf-copy: {op: remux_run, set: {remux_stream_mode: video_audio, remux_target_format: mxf}, only: [mov], about: "MOV to MXF without re-encoding", about_ru: "MOV в MXF без перекодирования"}
+  ff-remux-mxf-to-mov-copy: {op: remux_run, set: {remux_stream_mode: video_audio, remux_target_format: mov}, only: [mxf], about: "MXF to MOV without re-encoding", about_ru: "MXF в MOV без перекодирования"}
+
+  # --- a check of the tools ------------------------------------------------------------------------------------
+  ff-selftest: {op: selftest, about: "Versions of FFmpeg, ffprobe, yt-dlp and deno", about_ru: "Версии FFmpeg, ffprobe, yt-dlp и deno"}
+  yt-selftest: {op: selftest, about: "Versions of FFmpeg, ffprobe, yt-dlp and deno", about_ru: "Версии FFmpeg, ffprobe, yt-dlp и deno"}
+  yt-update: {op: install_ytdlp, about: "Update yt-dlp", about_ru: "Обновить yt-dlp"}
+
+  # --- downloads: the arguments are links; none - the links of input\urls.txt ---------------------------------
+  yt-1080p-avc-mp4: {op: youtube_run, takes: urls, set: {youtube_profile: upload_ready, youtube_resolution: "1080", youtube_video_codec: avc, youtube_container: mp4, youtube_options: []}, about: "1080p H.264 with AAC in MP4", about_ru: "1080p H.264 с AAC в MP4"}
+  yt-480p-aac: {op: youtube_run, takes: urls, set: {youtube_profile: video_custom, youtube_resolution: "480", youtube_container: mp4, youtube_options: []}, about: "480p with AAC in MP4", about_ru: "480p с AAC в MP4"}
+  yt-best-av1: {op: youtube_run, takes: urls, set: {youtube_profile: video_custom, youtube_video_codec: av1, youtube_container: mp4, youtube_options: []}, about: "The best AV1 in MP4", about_ru: "Лучшее AV1 в MP4"}
+  yt-best-m4a: {op: youtube_run, takes: urls, set: {youtube_profile: audio_custom, youtube_audio_format: m4a, youtube_options: [embed_metadata]}, about: "The sound alone, M4A, with cover and tags", about_ru: "Только звук, M4A, с обложкой и тегами"}
+  yt-best-mp4: {op: youtube_run, takes: urls, set: {youtube_profile: best_mp4, youtube_options: []}, about: "The best picture in MP4", about_ru: "Лучшая картинка в MP4"}
+  yt-best-mp4-safari: {op: youtube_run, takes: urls, set: {youtube_profile: best_mp4, youtube_client: safari, youtube_options: []}, about: "The best MP4 as Safari asks for it", about_ru: "Лучшее MP4 так, как просит Safari"}
+  yt-best-mp4-safe: {op: youtube_run, takes: urls, set: {youtube_profile: safe_mp4}, about: "The best MP4, slowly and with retries", about_ru: "Лучшее MP4, медленно и с повторами"}
+  yt-batch-480p-aac: {op: youtube_run, set: {youtube_source_mode: batch, youtube_profile: video_custom, youtube_resolution: "480", youtube_container: mp4, youtube_options: []}, about: "480p from the links of input\\urls.txt", about_ru: "480p по ссылкам из input\\urls.txt"}
+  yt-batch-best-mp4: {op: youtube_run, set: {youtube_source_mode: batch, youtube_profile: best_mp4, youtube_options: []}, about: "The best MP4 from the links of input\\urls.txt", about_ru: "Лучшее MP4 по ссылкам из input\\urls.txt"}
+  yt-clip-sections: {op: youtube_run, takes: sections, set: {youtube_profile: best_mp4, youtube_options: []}, about: "A section of a video: the first argument is *00:01:00-00:02:00", about_ru: "Фрагмент видео: первый аргумент - *00:01:00-00:02:00"}
+  yt-embed-subs: {op: youtube_run, takes: urls, set: {youtube_profile: best_mp4, youtube_options: [], subtitle_options: [write_subs, embed_subs], subtitle_languages: "ru,en.*"}, about: "The best MP4 with subtitles inside", about_ru: "Лучшее MP4 с субтитрами внутри"}
+  yt-mp3: {op: youtube_run, takes: urls, set: {youtube_profile: audio_custom, youtube_audio_format: mp3, youtube_options: [embed_metadata]}, about: "The sound alone, MP3, with cover and tags", about_ru: "Только звук, MP3, с обложкой и тегами"}
+  yt-opus: {op: youtube_run, takes: urls, set: {youtube_profile: audio_custom, youtube_audio_format: opus, youtube_options: [embed_metadata]}, about: "The sound alone, Opus, with cover and tags", about_ru: "Только звук, Opus, с обложкой и тегами"}
+  yt-playlist-1080p-avc: {op: youtube_run, takes: urls, set: {youtube_source_mode: playlist, youtube_profile: upload_ready, youtube_resolution: "1080", youtube_video_codec: avc, youtube_container: mp4, youtube_options: []}, about: "A whole playlist, 1080p H.264, numbered", about_ru: "Плейлист целиком, 1080p H.264, с номерами"}
+  yt-playlist-best: {op: youtube_run, takes: urls, set: {youtube_source_mode: playlist, youtube_profile: best_mp4, youtube_options: []}, about: "A whole playlist, the best MP4, numbered", about_ru: "Плейлист целиком, лучшее MP4, с номерами"}
+  yt-subs-only: {op: youtube_run, takes: urls, set: {youtube_profile: subs_only, youtube_options: [], subtitle_options: [write_subs], subtitle_languages: "ru,en.*"}, about: "The subtitles alone", about_ru: "Только субтитры"}
+  yt-webm-vp9: {op: youtube_run, takes: urls, set: {youtube_profile: video_custom, youtube_video_codec: vp9, youtube_container: webm, youtube_options: []}, about: "VP9 in WebM", about_ru: "VP9 в WebM"}
+
+  # --- subtitles -----------------------------------------------------------------------------------------------
+  ff-extract-subs: {op: subtitles_extract, about: "The subtitle streams as they are, to MKS", about_ru: "Потоки субтитров как есть, в MKS"}

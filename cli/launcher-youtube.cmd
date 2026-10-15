@@ -11,10 +11,9 @@ set "FZF_EXE=%BASE%system_core\fzf.exe"
 set "RUNTIME_DIR=%BASE%._runtime"
 set "MENU_FILE=%RUNTIME_DIR%\launcher_youtube_menu.tmp"
 set "RESULT_FILE=%RUNTIME_DIR%\launcher_youtube_selection.tmp"
-REM Prefer Download\ (singular); if only Downloads\ exists, use it; else create Download\
-set "DL=%BASE%Download"
-if exist "%BASE%Downloads" set "DL=%BASE%Downloads"
-if not exist "%DL%" mkdir "%DL%" >nul 2>&1
+REM Where the engine puts a download and takes its links (3.0.0): Download of the Target, urls.txt of the Source.
+set "DL=%BASE%output\Download"
+set "URLS=%BASE%input\urls.txt"
 if not exist "%RUNTIME_DIR%" mkdir "%RUNTIME_DIR%" >nul 2>&1
 REM Fixed-width description column (we measure ASCII "plain" label)
 set "COLW=44"
@@ -89,10 +88,14 @@ if not "!PICK:~0,1!"=="0" goto HANDLE_PICK
 set /a PICK=1!PICK!-100
 :HANDLE_PICK
 if /I "%PICK%"=="Q" exit /b 0
-if /I "%PICK%"=="O" ( start "" "%DL%" & exit /b 0 )
+if /I "%PICK%"=="O" (
+  if not exist "%DL%" mkdir "%DL%" >nul 2>&1
+  start "" "%DL%"
+  exit /b 0
+)
 if /I "%PICK%"=="T" (
-  if not exist "%DL%\urls.txt" type nul > "%DL%\urls.txt"
-  start notepad "%DL%\urls.txt"
+  if not exist "%URLS%" type nul > "%URLS%"
+  start notepad "%URLS%"
   exit /b 0
 )
 if /I "%PICK%"=="U" (

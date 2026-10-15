@@ -18,7 +18,8 @@ set "NO_PAUSE=0"
 if /I "%~1"=="/NOPAUSE" set "NO_PAUSE=1"
 if /I "%~1"=="--no-pause" set "NO_PAUSE=1"
 
-if exist "%ROOT%\system_core\powershell\pwsh.exe" set "PS_EXE=%ROOT%\system_core\powershell\pwsh.exe"
+rem The PowerShell the program carries comes first; the one of the machine - where App\ is not built yet.
+if exist "%ROOT%\App\AudionPs.exe" set "PS_EXE=%ROOT%\App\AudionPs.exe"
 if not defined PS_EXE where pwsh.exe >nul 2>nul && set "PS_EXE=pwsh.exe"
 if not defined PS_EXE where powershell.exe >nul 2>nul && set "PS_EXE=powershell.exe"
 
@@ -35,6 +36,12 @@ echo PS:      %PS_EXE%
 echo.
 
 if not defined PS_EXE goto ERR_POWERSHELL
+
+rem AUDION_INSTALL_PLAN=1: say what would be downloaded (install\Plan-Download.ps1) and stop.
+if "%AUDION_INSTALL_PLAN%"=="1" (
+  "%PS_EXE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%\Plan-Download.ps1" -Url "%URL%" -What deno
+  goto PLAN_DONE
+)
 
 echo [1/4] Downloading latest Deno Windows executable...
 if exist "%ZIP%" del /f /q "%ZIP%" >nul 2>nul
@@ -119,3 +126,7 @@ exit /b 0
 :PAUSE_IF_NEEDED
 if not "%NO_PAUSE%"=="1" pause
 goto :eof
+
+:PLAN_DONE
+rem A plan was said: nothing was downloaded, nothing waits for a key.
+exit /b 0

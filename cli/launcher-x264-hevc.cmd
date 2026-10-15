@@ -4,8 +4,8 @@ chcp 65001 >nul
 REM Auto-discovery launchers (v1.1.2), NVENC entries excluded.
 for %%A in ("%~dp0..") do set "BASE=%%~fA\"
 set "SCRIPTS=%BASE%Scripts"
-set "SRC=%BASE%Source"
-set "OUT=%BASE%Transcoded"
+set "SRC=%BASE%input"
+set "OUT=%BASE%output"
 set "TOOLS=%BASE%Tools"
 set "FFBIN=%TOOLS%\ffmpeg\bin"
 set "YTDLP=%TOOLS%\yt-dlp\bin\yt-dlp.exe"

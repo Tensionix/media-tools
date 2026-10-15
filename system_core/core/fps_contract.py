@@ -59,9 +59,23 @@ def _atempo_chain(speed: float) -> str:
     return ",".join(f"atempo={item:.8g}" for item in parts)
 
 
+# Within this change of speed the sound keeps its samples and lets its pitch go, whatever the mode: the owner's
+# rule of 15.10.2026 - "Я всегда за сохранение сэмплов, а не тона при 1%". 24 -> 23.976 is 0.1 %: a pitch moved by
+# that is not heard, while a time-stretch rewrites every sample. Past it, conform keeps the pitch as it says.
+KEEP_SAMPLES_WITHIN = 0.01
+
+
+def fps_audio_mode(mode: str, speed: float) -> str:
+    """How the sound follows the picture: "conform" (time-stretch, the pitch kept) or "varispeed" (the samples kept)."""
+    mode = str(mode).strip().lower()
+    if mode == "conform" and abs(float(speed) - 1.0) <= KEEP_SAMPLES_WITHIN:
+        return "varispeed"
+    return "conform" if mode == "conform" else "varispeed"
+
+
 def fps_audio_filter(mode: str, k: float, speed: float, work_rate: int, output_rate: int | None = None) -> str:
     work_resample = _soxr_resample_filter(work_rate)
-    if str(mode).strip().lower() == "conform":
+    if fps_audio_mode(mode, speed) == "conform":
         parts = [work_resample, _atempo_chain(speed), work_resample]
     else:
         parts = [work_resample, f"asetrate={work_rate}/{k:.12g}", work_resample]

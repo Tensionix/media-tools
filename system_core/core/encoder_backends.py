@@ -17,7 +17,6 @@ QSV_ENCODER_PRESETS = {"veryfast", "faster", "fast", "medium", "slow", "slower",
 AMF_QUALITY_PRESETS = {"speed", "balanced", "quality"}
 
 HARDWARE_ENCODE_BACKENDS = ("cuda", "qsv", "amd")
-HARDWARE_DECODE_BACKENDS = ("cuda", "qsv", "amd", "dav1d")
 
 ENCODE_BACKEND_ALIASES = {
     "": "cpu",

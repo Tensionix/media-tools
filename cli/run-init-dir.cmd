@@ -30,7 +30,6 @@ echo   Tools\7zip\bin\
 echo.
 echo Internal builder tools use:
 echo   system_core\fzf.exe
-echo   system_core\powershell\
 echo.
 if not defined AUDION_NO_PAUSE pause
 exit /b 0

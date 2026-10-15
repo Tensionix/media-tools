@@ -21,7 +21,8 @@ if /I "%~1"=="/NOPAUSE" set "NO_PAUSE=1"
 if /I "%~1"=="--no-pause" set "NO_PAUSE=1"
 if /I "%AUDION_NO_PAUSE%"=="1" set "NO_PAUSE=1"
 
-if exist "%ROOT%\system_core\powershell\pwsh.exe" set "PS_EXE=%ROOT%\system_core\powershell\pwsh.exe"
+rem The PowerShell the program carries comes first; the one of the machine - where App\ is not built yet.
+if exist "%ROOT%\App\AudionPs.exe" set "PS_EXE=%ROOT%\App\AudionPs.exe"
 if not defined PS_EXE where pwsh.exe >nul 2>nul && set "PS_EXE=pwsh.exe"
 if not defined PS_EXE where powershell.exe >nul 2>nul && set "PS_EXE=powershell.exe"
 
@@ -46,14 +47,16 @@ echo [1/4] Resolving latest 7-Zip release and downloading assets...
   "$headers=@{'User-Agent'='Audion-Media-Tools'}; if($env:GITHUB_TOKEN){$headers['Authorization']='Bearer '+$env:GITHUB_TOKEN};" ^
   "$repo='https://github.com/ip7z/7zip'; $api='https://api.github.com/repos/ip7z/7zip/releases/latest'; $tag=$null; $zrUrl=$null; $extraUrl=$null; $downloaded=$false;" ^
   "try { $resp=$null; try { $resp=Invoke-WebRequest -Uri ($repo + '/releases/latest') -Headers $headers -MaximumRedirection 0 -ErrorAction Stop } catch { $resp=$_.Exception.Response }; $loc=$null; if($resp){ if($resp.Headers.Location){ $loc=[string]$resp.Headers.Location } elseif($resp.Headers['Location']){ $loc=[string]$resp.Headers['Location'] } }; if(-not $loc -or $loc -notmatch '/tag/(?<tag>[^/]+)$'){ throw 'Could not resolve latest 7-Zip release tag without API.' }; $tag=$Matches.tag; $assetStem=$tag.Replace('.',''); $zrUrl=($repo + '/releases/download/' + $tag + '/7zr.exe'); $extraUrl=($repo + '/releases/download/' + $tag + '/7z' + $assetStem + '-extra.7z'); Write-Host ('[INFO] Resolved through releases/latest redirect: ' + $tag) } catch { Write-Host ('[WARN] releases/latest resolver unavailable, using GitHub API: ' + $_.Exception.Message) };" ^
-  "if($zrUrl -and $extraUrl){ try { Write-Host ('[URL] ' + $zrUrl); Invoke-WebRequest -Headers $headers -Uri $zrUrl -OutFile '%SEVENZR%'; Write-Host ('[URL] ' + $extraUrl); Invoke-WebRequest -Headers $headers -Uri $extraUrl -OutFile '%EXTRA%'; $downloaded=$true; Write-Host '[INFO] Direct release downloads succeeded.' } catch { Write-Host ('[WARN] Direct asset URL failed, using GitHub API: ' + $_.Exception.Message); $zrUrl=$null; $extraUrl=$null; Remove-Item -LiteralPath '%SEVENZR%','%EXTRA%' -Force -ErrorAction SilentlyContinue } };" ^
+  "if($zrUrl -and $extraUrl -and $env:AUDION_INSTALL_PLAN -ne '1'){ try { Write-Host ('[URL] ' + $zrUrl); Invoke-WebRequest -Headers $headers -Uri $zrUrl -OutFile '%SEVENZR%'; Write-Host ('[URL] ' + $extraUrl); Invoke-WebRequest -Headers $headers -Uri $extraUrl -OutFile '%EXTRA%'; $downloaded=$true; Write-Host '[INFO] Direct release downloads succeeded.' } catch { Write-Host ('[WARN] Direct asset URL failed, using GitHub API: ' + $_.Exception.Message); $zrUrl=$null; $extraUrl=$null; Remove-Item -LiteralPath '%SEVENZR%','%EXTRA%' -Force -ErrorAction SilentlyContinue } };" ^
   "if(-not $zrUrl -or -not $extraUrl){ try { $r=Invoke-RestMethod -Headers $headers $api; $tag=$r.tag_name; $zrUrl=$null; $extraUrl=$null; foreach($item in $r.assets){ if($item.name -eq '7zr.exe'){ $zrUrl=$item.browser_download_url }; if($item.name -like '7z*-extra.7z'){ $extraUrl=$item.browser_download_url } }; if(-not $zrUrl -or -not $extraUrl){ throw 'Required 7-Zip assets were not found.' }; Write-Host '[INFO] Resolved through GitHub API fallback.' } catch { throw ('Unable to resolve latest 7-Zip release: ' + $_.Exception.Message) } };" ^
+  "if($env:AUDION_INSTALL_PLAN -eq '1'){ & '%SCRIPT_DIR%\Plan-Download.ps1' -Url $zrUrl -What '7-Zip'; & '%SCRIPT_DIR%\Plan-Download.ps1' -Url $extraUrl -What '7-Zip'; exit 0 };" ^
   "Write-Host ('[VER] ' + $tag);" ^
   "Write-Host ('[URL] ' + $zrUrl);" ^
   "if(-not $downloaded){ Invoke-WebRequest -Headers $headers -Uri $zrUrl -OutFile '%SEVENZR%' };" ^
   "Write-Host ('[URL] ' + $extraUrl);" ^
   "if(-not $downloaded){ Invoke-WebRequest -Headers $headers -Uri $extraUrl -OutFile '%EXTRA%' }"
 if errorlevel 1 goto ERR_DOWNLOAD
+if "%AUDION_INSTALL_PLAN%"=="1" goto PLAN_DONE
 
 if not exist "%SEVENZR%" goto ERR_DOWNLOAD
 if not exist "%EXTRA%" goto ERR_DOWNLOAD
@@ -136,3 +139,7 @@ exit /b 0
 :PAUSE_IF_NEEDED
 if not "%NO_PAUSE%"=="1" pause
 goto :eof
+
+:PLAN_DONE
+rem A plan was said: nothing was downloaded, nothing waits for a key.
+exit /b 0

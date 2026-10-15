@@ -317,6 +317,12 @@ if ($Source -eq 'Gyan') {
     }
 }
 
+if ($env:AUDION_INSTALL_PLAN -eq '1') {
+    # Say what would be downloaded (install\Plan-Download.ps1) and stop.
+    & (Join-Path $PSScriptRoot 'Plan-Download.ps1') -Url $primaryCandidate.Url -Name $primaryCandidate.Name -What 'FFmpeg' -Size ([string]$primaryCandidate.Size)
+    exit 0
+}
+
 $ArchivePath = $null
 $Selected = $primaryCandidate
 $Tmp = Join-Path $Root 'system_core\_ffmpeg_btbn_tmp'

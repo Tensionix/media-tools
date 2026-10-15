@@ -2,7 +2,7 @@
 setlocal EnableExtensions EnableDelayedExpansion
 REM =============================================================
 REM  Interactive front-end for the shared FPS profiles.
-REM  The actual FFmpeg command is built only by Scripts\Common\script_runner.py.
+REM  The FFmpeg command is built by the engine: the wrapper is a door of media_cli.cmd wrapper.
 REM  Modes: CONFORM (keep pitch via atempo) / VARISPEED (lower pitch)
 REM  Outputs mirror the GUI FPS profiles, including MOV/MXF audio contracts.
 REM =============================================================

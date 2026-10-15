@@ -197,7 +197,6 @@
 node_modules/
 ._runtime/
 _pwsh_tmp/
-system_core/powershell/
 temp/
 tmp/
 backup/
@@ -213,6 +212,10 @@ _audion_docs/
 config/keys/
 config/ssh/
 config/rclone/
+# The cookies of a browser for yt-dlp, and the list of what was downloaded: the owner's, not the program's.
+/config/cookies.txt
+/config/cookies.dpapi
+/config/download-archive.txt
 .env
 .env.*
 !.env.example
@@ -223,3 +226,24 @@ config/rclone/
 # Generated documents: rebuilt by Audion Build PDF Render, shipped in archives.
 Docs/PDF/
 docs/PDF/
+
+# --- the window on Avalonia (Source) ---
+# Its markup, its project file and the fonts it carries are its source; what a build leaves
+# and the built program are not.
+!Source/**/*.axaml
+!Source/*.csproj
+# The PowerShell the program carries (App\AudionPs.exe) is a project of its own.
+!Source/Ps/*.csproj
+!Source/app.manifest
+!Source/Assets/**
+Source/bin/
+Source/obj/
+Source/Ps/bin/
+Source/Ps/obj/
+/App/
+# The state of the window: its look, what every page held, the history of paths - the owner's, not the program's.
+/config/window_settings.json
+/config/path_history.json
+/config/terminal_commands.json
+/config/gui_lut_cache.json
+/config/components_cache.json

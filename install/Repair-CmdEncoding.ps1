@@ -21,7 +21,6 @@ $excludedDirectoryNames = @(
     ".venv_latest",
     "._runtime",
     "__pycache__",
-    "Download",
     "input",
     "logs",
     "node_modules",
@@ -29,8 +28,6 @@ $excludedDirectoryNames = @(
     "report",
     "release",
     "runtime",
-    "Source",
-    "Transcoded",
     "venv",
     "wheelhouse",
     "workspace"

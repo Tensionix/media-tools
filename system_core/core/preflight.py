@@ -21,7 +21,7 @@ from .encoder_backends import (
     normalize_target as _normalize_target,
     target_for_backend as _target_for_backend,
 )
-from .path_cache import cached_output_path, cached_source_path
+from .path_cache import cached_output_path, cached_source_path, only_formats
 from .script_profiles import script_profile
 
 
@@ -184,6 +184,10 @@ def _normalize_extensions(values: list[str], fallback: set[str]) -> set[str]:
 
 
 def _media_files(source: Path, extensions: set[str]) -> list[Path]:
+    # Narrowed the way the engine narrows them (media_service._media_files): the check counts what the run will take.
+    only = only_formats()
+    if only:
+        extensions = set(extensions) & only
     if not source.exists():
         return []
     if source.is_file():
@@ -402,6 +406,15 @@ def _media_extensions_for(service_name: str, params: dict[str, Any]) -> set[str]
     return _normalize_extensions(raw, MEDIA_EXTENSIONS)
 
 
+def source_files(service: str, params: dict[str, Any], source: Path) -> list[Path] | None:
+    """The files of the Source an operation of these parameters takes, as its check counts them; None for a service
+    that takes no files of the Source (a download, a check of the tools)."""
+    service_name = _service_name(service)
+    if service_name not in MEDIA_SERVICES:
+        return None
+    return _media_files(source, _media_extensions_for(service_name, params))
+
+
 def _remux_pair(params: dict[str, Any]) -> tuple[str, str]:
     source_format = str(params.get("remux_source_format", "") or "").strip().lower()
     target_format = str(params.get("remux_target_format", "") or "").strip().lower()
@@ -447,13 +460,14 @@ def run_preflight(context: Any) -> dict[str, Any]:
         checks.append(_issue("OK" if yt_ok else "ERROR", "yt-dlp", yt_dlp if yt_ok else "yt-dlp was not found."))
         deno, deno_ok = _tool(root, "Tools/deno/deno.exe", "deno")
         checks.append(_issue("OK" if deno_ok else "WARN", "Deno", deno if deno_ok else "Deno was not found. YouTube formats may be limited."))
-        download_dir = root / "Download"
-        report["output"] = str(download_dir)
+        # The same folder and the same list the download takes: output\Download, urls.txt of the Source by default.
+        from system_core.services.media_service import youtube_download_dir, youtube_list_path
+
+        report["output"] = str(youtube_download_dir(root))
         source_mode = str(params.get("youtube_source_mode", "single") or "single").strip()
         if source_mode == "batch":
-            batch_file = Path(str(params.get("batch_file", "Download\\urls.txt")).strip().strip('"'))
-            if not batch_file.is_absolute():
-                batch_file = root / batch_file
+
+            batch_file = youtube_list_path(root, params)
             report["source"] = str(batch_file)
             if not batch_file.exists():
                 checks.append(_issue("ERROR", "batch file", f"Not found: {batch_file}"))
@@ -474,7 +488,7 @@ def run_preflight(context: Any) -> dict[str, Any]:
         report["output"] = str(output)
         source_files: list[Path] = []
         if not source.exists():
-            checks.append(_issue("ERROR", "Source", f"Source does not exist: {source}"))
+            checks.append(_issue("ERROR", "input", f"The source does not exist: {source}"))
         else:
             extensions = _media_extensions_for(service_name, params)
             files = _media_files(source, extensions)
@@ -488,11 +502,11 @@ def run_preflight(context: Any) -> dict[str, Any]:
                 checks.append(_issue("ERROR", "Source files", f"No matching file(s) in {source}; extensions: {', '.join(sorted(extensions))}"))
         _append_dav1d_source_check(root, params, source_files, checks)
         if output.exists() and not output.is_dir():
-            checks.append(_issue("ERROR", "OUT", f"Output path is not a folder: {output}"))
+            checks.append(_issue("ERROR", "output", f"Output path is not a folder: {output}"))
         elif source.exists() and output.resolve() == source.resolve():
-            checks.append(_issue("WARN", "OUT", "Source and OUT point to the same folder."))
+            checks.append(_issue("WARN", "output", "Source and Target point to the same folder."))
         else:
-            checks.append(_issue("OK", "OUT", str(output)))
+            checks.append(_issue("OK", "output", str(output)))
 
         if service_name == "remux_media":
             source_format, target_format = _remux_pair(params)

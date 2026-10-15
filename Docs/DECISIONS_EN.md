@@ -11,38 +11,18 @@
 - [2026-08-26: MXF Rewrites PCM Instead Of Copying It](#2026-08-26-mxf-rewrites-pcm-instead-of-copying-it)
 - [2026-08-26: A Channel The File Does Not Have Is Refused](#2026-08-26-a-channel-the-file-does-not-have-is-refused)
 - [2026-08-25: A/V Sync Is Measured, Not Assumed](#2026-08-25-av-sync-is-measured-not-assumed)
-- [2026-08-25: The Form Shows What Survives, Not What Is Removed](#2026-08-25-the-form-shows-what-survives-not-what-is-removed)
-- [2026-08-25: Trimming Is Per File, And The Marks Are Remembered](#2026-08-25-trimming-is-per-file-and-the-marks-are-remembered)
+- [2026-08-25: Trimming Is Per File](#2026-08-25-trimming-is-per-file)
 - [2026-08-25: The Trim Backend Answers To A Source Matrix, Not To One Clip](#2026-08-25-the-trim-backend-answers-to-a-source-matrix-not-to-one-clip)
 - [2026-08-25: A Container That Cannot Hold The Stream Is Refused Before The Run](#2026-08-25-a-container-that-cannot-hold-the-stream-is-refused-before-the-run)
 - [2026-08-25: Cut Points Are Wall-Clock Time, Timecode Is Metadata](#2026-08-25-cut-points-are-wall-clock-time-timecode-is-metadata)
 - [2026-08-26: A Stopped Run Leaves Nothing That Cannot Be Opened](#2026-08-26-a-stopped-run-leaves-nothing-that-cannot-be-opened)
 - [2026-08-26: FFmpeg 9.0.1 Was Verified, Not Adopted Blindly](#2026-08-26-ffmpeg-901-was-verified-not-adopted-blindly)
-- [2026-08-26: The Scrub Plays One Frame, Not One Second](#2026-08-26-the-scrub-plays-one-frame-not-one-second)
-- [2026-08-26: Sound Answers Before Picture](#2026-08-26-sound-answers-before-picture)
 - [2026-08-26: The Rate Comes From The File, Unaltered](#2026-08-26-the-rate-comes-from-the-file-unaltered)
 - [2026-08-25: The Head Snaps To A Keyframe, The Tail Is Counted In Frames](#2026-08-25-the-head-snaps-to-a-keyframe-the-tail-is-counted-in-frames)
 - [2026-08-25: A Refused Overwrite Is A Skip, Not A Success](#2026-08-25-a-refused-overwrite-is-a-skip-not-a-success)
 - [2026-08-24: Trimming Targets Camera Footage, Not Film Muxing](#2026-08-24-trimming-targets-camera-footage-not-film-muxing)
 - [2026-08-24: Trimming Cuts On Keyframes Only](#2026-08-24-trimming-cuts-on-keyframes-only)
-- [2026-05-04: GUI Shell Over CLI](#2026-05-04-gui-shell-over-cli)
-- [2026-05-04: Separate Server And Window](#2026-05-04-separate-server-and-window)
-- [2026-05-04: Dark Terminal-First Layout](#2026-05-04-dark-terminal-first-layout)
-- [2026-05-04: Compact Ghost Buttons](#2026-05-04-compact-ghost-buttons)
-- [2026-05-04: Operation Buttons Left-Align Their Labels](#2026-05-04-operation-buttons-left-align-their-labels)
-- [2026-05-04: Laptop Compression Is A Baseline Requirement](#2026-05-04-laptop-compression-is-a-baseline-requirement)
-- [2026-05-07: 1600x900 Is The Roomy Default Window](#2026-05-07-1600x900-is-the-roomy-default-window)
-- [2026-05-07: Form Order Follows User Decisions](#2026-05-07-form-order-follows-user-decisions)
-- [2026-05-07: One Visible Action Per User Outcome](#2026-05-07-one-visible-action-per-user-outcome)
-- [2026-05-07: Actions Must Name Their Object](#2026-05-07-actions-must-name-their-object)
-- [2026-05-07: Advanced Fields Collapse By Default](#2026-05-07-advanced-fields-collapse-by-default)
-- [2026-05-07: Model List Is Not Model Access](#2026-05-07-model-list-is-not-model-access)
-- [2026-05-07: Visual Smoke Screenshots Are Part Of Porting](#2026-05-07-visual-smoke-screenshots-are-part-of-porting)
-- [2026-05-04: Stage External Input Locally](#2026-05-04-stage-external-input-locally)
-- [2026-05-04: Language And Theme Are Conservative](#2026-05-04-language-and-theme-are-conservative)
-- [2026-05-06: Completion State Is Persistent](#2026-05-06-completion-state-is-persistent)
-- [2026-05-06: Hide Windows CLI Helpers At Process Creation](#2026-05-06-hide-windows-cli-helpers-at-process-creation)
-- [2026-05-06: CMD Encoding Is A Build Gate](#2026-05-06-cmd-encoding-is-a-build-gate)
+- [The Window](#the-window)
 
 ## 2026-09-28: What The 2.6.0 Audit Found In Trimming
 
@@ -99,9 +79,7 @@ pieces under a second are not what a split is used for.
 The `▲▼` spinners do not break a timecode into one field per section: it could no
 longer be copied and pasted whole. The field stays one line, and an arrow steps
 the section the caret stands in. The smallest section steps by a frame of the
-file, not a millisecond, which changes nothing in a cut on 25p. The step is
-worked out in the page, not on the server: the caret exists only in the browser,
-and a round trip per step would make a held button stutter.
+file, not a millisecond, which changes nothing in a cut on 25p.
 
 ## 2026-09-14: A Split Decides Each Joint Once
 
@@ -249,42 +227,15 @@ packet. The precise measurement disproved it - MKV shifts the start of both
 streams together, which is not a sync error - and the warning was removed rather
 than left in as a plausible-sounding caution.
 
-## 2026-08-25: The Form Shows What Survives, Not What Is Removed
-
-The trim form answers one question — what will be left — and it answers it
-visually. The kept span is lit green on both waveform strips and outlined; the
-discarded parts are covered by a dark veil. Modes are named by their outcome
-("Drop the head", "Keep the middle") rather than by the act of cutting.
-
-Points are IN and OUT, the words an editor already uses. The earlier "head" and
-"tail" collided with the words in the mode names, so nothing on screen told the
-two apart.
-
-Controls under the faders are icons with tooltips, grouped and centred the way a
-viewer's transport bar is, with a frame-of-total and time readout on the right.
-The only text in the row is the time field itself, which states its format —
-`hh:mm:ss,ms`, neither timecode nor samples.
-
-Two operations joined the section because they answer questions asked while the
-cut point is being chosen: a still of the current frame (PNG or JPG, full size,
-into `Transcoded/Stills`) and a split, which cuts the file in two at CUT and
-throws nothing away — `_part1` and `_part2`, with the second part's timecode
-shifted.
-
-## 2026-08-25: Trimming Is Per File, And The Marks Are Remembered
+## 2026-08-25: Trimming Is Per File
 
 A folder of takes does not share cut points: the keyframes differ, the slate
-differs, the walk-away differs. So the GUI trims one file at a time, and the
+differs, the walk-away differs. So the window trims one file at a time, and the
 file is chosen by stepping — a badge with the current name and an arrow on each
 side — rather than from a dropdown.
 
-Points are remembered per file for as long as the window is open, keyed by a
-cheap content hash (size plus the first and last megabyte) so that renaming a
-take does not lose its marks. Running trims every marked file at its own points
-in one pass, and the badge says how many are queued.
-
 The CLI wrappers trim one file too: the one `AUDION_TRIM_FILE` points at, or
-the first staged in Source, and the wrapper says which. Cutting a folder to one
+the first in `input`, and the wrapper says which. Cutting a folder to one
 pair of numbers was never the useful behaviour, only the easy one.
 
 ## 2026-08-25: The Trim Backend Answers To A Source Matrix, Not To One Clip
@@ -369,32 +320,6 @@ NVIDIA driver version - on most machines that is the 8.x branch. Both are
 therefore kept working, and the docs name the build the numbers came from rather
 than a shipped version.
 
-## 2026-08-26: The Scrub Plays One Frame, Not One Second
-
-A waveform shows where sound is, not what it says, so the fader sounds. The chunk
-is one frame long and aligned to the frame boundary, the way an editor scrubs:
-half a frame of drift is a different syllable at the head of a word. Three frames
-are available for when one is too short.
-
-The audio track is decoded into memory whole (mono, 24 kHz) rather than cut from
-disk per movement - 0.84 ms a slice against 0.35 s of starting a player. Above
-three hours it is held in two-minute blocks instead; a four-hour reel would be
-660 MB, and the fader lives in one part of a file at a time.
-
-Holding a resident FFmpeg was considered and rejected: starting the binary costs
-0.02 s. What costs is opening and decoding, and that is what memory now holds.
-
-## 2026-08-26: Sound Answers Before Picture
-
-The redraw used to decode a still (0.69 s) and re-render the waveform (0.13 s)
-before playing the slice that costs 0.8 ms - so finding a phrase by ear meant
-waiting a second for the eyes. The slice now goes first on a shorter debounce and
-the still follows at its own pace.
-
-The same pass removed two repeated costs: `ffprobe` was asked about an unchanged
-file on every movement, and the waveform window was re-rendered even when the
-point had not left it.
-
 ## 2026-08-26: The Rate Comes From The File, Unaltered
 
 `ffprobe` reports the exact rational rate, so nothing is inferred from it. A
@@ -428,8 +353,9 @@ exit code of **0**. A run that wrote nothing therefore reads as a success, and a
 verification step then measures the previous file. The trim path checks the
 target itself and reports `[SKIP]`.
 
-The same trap exists in the older encode and remux paths; it is noted here so
-the next person does not rediscover it as a mystery.
+Encoding, sound, repackaging, subtitles, frame rate and colour check their
+target the same way: a file already in the Target is passed by before FFmpeg is
+started, with a `[SKIP]` line in the journal, and counted as skipped, not written.
 
 ## 2026-08-24: Trimming Targets Camera Footage, Not Film Muxing
 
@@ -463,126 +389,33 @@ Consequence: the interface must show the *actual* cut point, not the requested
 one — nearest keyframe from `ffprobe`, with the offset spelled out
 ("00:01:28,4, −1,6 s"). A silent correction is worse than a slow cut.
 
-Plan with the full reasoning, preview and slider design: `Docs/PLAN_TRIM_RU.md`.
+The trim in detail: `Docs/tools/TRIM_RU.md`.
 
-## 2026-05-04: GUI Shell Over CLI
+## The Window
 
-The GUI layer is a shell over the existing CLI, not a rewrite.
+**The window is the face of the console command.** A button of the window and
+`media_cli.cmd run` are one and the same: the window starts an operation through
+the command, and the first line of a run in the journal is a ready command that
+can be repeated. The form of every operation is drawn from its description in the
+manifest, so the window, the console and the documents say one thing.
 
-Rationale: Audion tools already have working CMD/FZF workflows. The GUI should make common actions safer and more visible while preserving terminal truth.
+**The terminal plays the main part.** FFmpeg's output is part of the work: the
+lines of an operation come in the colours of their services, FFmpeg's own line
+stands under the progress bar. The outcome of a run stays on screen, not in a
+notification that is easy to miss.
 
-## 2026-05-04: Separate Server And Window
+**The forms are separate.** Every section and mode has a form of its own,
+remembered between launches; only the encoder and the decoder are shared by the
+whole window: they are a choice of the machine, not of the task.
 
-Use:
+**An action names its object.** A button stands at its field, and its tooltip
+names it: "Add LUT files", "Open the LUTs folder" - not "Add" and "Open": one
+screen may hold several fields with files.
 
-```text
-launcher_gui.cmd -> system_core/ui_nicegui/window.py -> app.py --no-browser -> pywebview
-```
+**External input is staged locally.** The add buttons copy what was chosen into
+the input folder: safer than long operations on network paths and removable
+drives.
 
-Do not default to NiceGUI `native=True`.
-
-Rationale: the separate process model survived the real canary better, avoids browser surprises, and makes port conflicts easier to diagnose.
-
-## 2026-05-04: Dark Terminal-First Layout
-
-Default layout:
-
-- left: staging, folders, actions, parameters;
-- right: status and terminal log;
-- terminal log around 2/3 of window height or more.
-
-Rationale: many Audion tools were born as CMD/FZF utilities. Their output is not secondary; it is part of the UX.
-
-Scrollbars (2026-09-28) are darker than the browser's own, whose light grey stripe stood out on every dark theme. The colour is mixed from the theme's, so a light theme stays in key.
-
-## 2026-05-04: Compact Ghost Buttons
-
-Use flat blue text buttons with subtle hover frame instead of large filled buttons.
-
-Rationale: future tools may have 15-20 commands. Fixed large buttons waste vertical space and break with long Russian labels.
-
-## 2026-05-04: Operation Buttons Left-Align Their Labels
-
-Command rows use a dedicated operation-button class. Labels are aligned left inside a fixed command column and overflow only to the right with ellipsis. Short toolbar/folder buttons may stay centered.
-
-Rationale: NiceGUI/Quasar `q-btn` can clip centered long labels from both sides, hiding the beginning of the command. Wider windows do not fix the internal clipping.
-
-## 2026-05-04: Laptop Compression Is A Baseline Requirement
-
-The two-column layout must stay active until about `900px` CSS width and remain usable when compressed toward a WUXGA `1920x1200` laptop at Windows 150% scaling.
-
-Rationale: early wide breakpoints such as `1420px` caused the terminal to fall below the commands. Window size alone does not solve layout resilience.
-
-## 2026-05-07: 1600x900 Is The Roomy Default Window
-
-pywebview windows start at `1600x900` with a practical `1180x720` minimum. Large forms use compact parameter grids, subdued field borders, stable scrollbar gutters, and a draggable splitter between commands and terminal.
-
-Rationale: real Audion Docs AI usage benefits from a spacious first launch, but the GUI must still be resizable and usable on smaller logical workspaces.
-
-## 2026-05-07: Form Order Follows User Decisions
-
-Group related choices together and order fields by the user's decision flow rather than by CLI argument order. Provider key and model belong together; rules, instructions, filters, and rare parameters can sit below. Use radio buttons for small fixed one-of-several choices and searchable selects for long or dynamic lists.
-
-Rationale: Audion Docs AI showed that complex LLM/API tools become understandable when the first visible block answers "what access/model will run this?" and secondary constraints do not interrupt that pair.
-
-## 2026-05-07: One Visible Action Per User Outcome
-
-Do not expose duplicate actions when one command already produces the complete user-facing result. Also avoid duplicate favorite controls: one explicit action or one checkbox, not both for the same list on the same screen.
-
-Rationale: labels such as "audit" vs "full workflow" or checkbox "favorite" vs button "favorite" created more cognitive load than power. CLI/TUI may keep expert wrappers, but the GUI should present the clean user outcome.
-
-## 2026-05-07: Actions Must Name Their Object
-
-Avoid detached, objectless commands. If a screen contains several possible targets, the action label must name the target object or be visually bound to exactly one field: `Favorite model`, `Favorite API key`, `Favorite instruction`, `Check model`, `Delete quick instruction`.
-
-Rationale: Audion Docs AI showed that a lone `Favorite` checkbox or button becomes ambiguous as soon as key, model, task instruction, and quick instruction coexist in one form.
-
-## 2026-05-07: Advanced Fields Collapse By Default
-
-When a form grows beyond the primary decision path, put rare fields such as chunk sizes, retries, timeouts, manual overrides, and strictness toggles into a collapsible advanced block. Persist the block state in GUI settings.
-
-Rationale: Audion Docs AI showed that power settings are useful, but seeing them all the time makes the main action feel further away than it is.
-
-## 2026-05-07: Model List Is Not Model Access
-
-For API projects, keep dynamic model list refresh separate from selected-model smoke checks. The smoke check is explicit, small, cached, and dated.
-
-Rationale: a provider can list historical models that the current account cannot run. A cached selected-model status prevents confusing access errors with code regressions.
-
-Corollary: avoid hand-curated fixed model ids in project YAML or sidecar list files when a live provider list/cache exists. A developed LLM model selector with cache, favorites, and selected-model smoke status replaces old files such as `models.yaml`, `models.txt`, or static provider profile lists. Static config should hold stable provider settings, env names, prompts, and runtime limits; model ids belong to the GUI cache/favorites/smoke layer.
-
-## 2026-05-07: Visual Smoke Screenshots Are Part Of Porting
-
-After layout changes, save screenshots of the root screen, a representative command form, any changed advanced state, and the terminal after a short successful run.
-
-Rationale: GUI regressions are often visual and contextual. A screenshot catches crowding, duplicated controls, clipped labels, harsh borders, and missing final status faster than code review alone.
-
-## 2026-05-04: Stage External Input Locally
-
-GUI should offer `Add files...` and `Add folder...` actions that copy selected items into `input`.
-
-Rationale: safer than long operations directly on network paths, removable drives, or deep user folders.
-
-## 2026-05-04: Language And Theme Are Conservative
-
-Dark mode is the default. Runtime language switching may reload the UI. Light theme and full international edition are later refinements.
-
-Rationale: live switching caused instability during the canary. Reliability wins.
-
-## 2026-05-06: Completion State Is Persistent
-
-The right terminal panel keeps a small final-status indicator below the log: idle grey, running blue, success green, failure red.
-
-Rationale: transient notifications can be missed when the GUI window is inactive. The terminal footer is a permanent, low-noise place to show that the last operation really finished.
-
-## 2026-05-06: Hide Windows CLI Helpers At Process Creation
-
-Windows subprocess helpers, especially `pwsh.exe` and `powershell.exe`, must be hidden through Python process creation flags (`STARTUPINFO/SW_HIDE` and `CREATE_NO_WINDOW`). `-WindowStyle Hidden` may stay as a second layer, but it is not sufficient by itself.
-
-Rationale: PowerShell can briefly create a console window before its own flags take effect. In batch tools this creates distracting per-file flashes. The GUI terminal should mirror output; separate CLI mirror windows should not be the default UX.
-
-## 2026-05-06: CMD Encoding Is A Build Gate
-
-All project-owned `.cmd` files are UTF-8 without BOM and strict CRLF. The template provides `install\Check-CmdEncoding.cmd -Fix` / `install\Repair-CmdEncoding.ps1 -Fix`, and portable build, offline install, verify, doctor, tests, and release packaging check this automatically.
-
-Rationale: CMD encoding and line endings are too easy to break during GUI porting. The standard should live in the template tooling, not in repeated verbal reminders.
+**CMD encoding is a build gate.** Every `.cmd` of the project is UTF-8 without a
+byte order mark and with strict CRLF; the check is built into the build of the
+environment and stands on its own as `install\Check-CmdEncoding.cmd`.

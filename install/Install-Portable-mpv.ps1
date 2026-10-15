@@ -95,6 +95,11 @@ Write-Step '[1/6] Finding the latest release...'
 $asset = Get-LatestMpvAsset
 $archive = Join-Path $downloadDir (Split-Path -Leaf $asset.Url)
 Write-Step "[URL] $($asset.Url)"
+if ($env:AUDION_INSTALL_PLAN -eq '1') {
+    # Say what would be downloaded (install\Plan-Download.ps1) and stop; the sources of the GPL build follow it.
+    & (Join-Path $PSScriptRoot 'Plan-Download.ps1') -Url $asset.Url -What 'mpv'
+    exit 0
+}
 
 Write-Step '[2/6] Downloading...'
 Invoke-WebRequest -Headers @{ 'User-Agent' = 'Audion-Media-Tools' } -Uri $asset.Url -OutFile $archive

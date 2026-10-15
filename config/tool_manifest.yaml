@@ -2,24 +2,15 @@ tool:
   id: audion_media_tools
   name: "Audion Media Tools"
   category: "Media"
-  version: "2.5.1"
+  version: "3.0.0"
 
 paths:
-  input: "Source"
-  output: "Transcoded"
+  input: "input"
+  output: "output"
   logs: "logs"
   report: "report"
   workspace: "workspace"
   config: "config"
-  release: "release"
-
-ui:
-  title: "Audion Media Tools"
-  host: "127.0.0.1"
-  port: 8080
-  native: false
-  reload: false
-  open_browser: true
 
 _shared_fields:
   input_video_formats: &input_video_formats
@@ -42,6 +33,8 @@ _shared_fields:
 
   decode_backend: &decode_backend
     id: decode_backend
+    tooltip: "Hardware/software decode preference before encoding."
+    tooltip_ru: "Предпочтение аппаратного или программного декодирования перед кодированием."
     type: "radio"
     choice_style: "buttons"
     layout: "five_columns"
@@ -92,6 +85,8 @@ _shared_fields:
 
   audio_mode: &audio_mode
     id: audio_mode
+    tooltip: "Audio policy for the output: stream copy, lossy/lossless encode, PCM depth, or no audio. MXF permits only compatible PCM modes."
+    tooltip_ru: "Политика аудио результата: copy потока, lossy/lossless-кодирование, разрядность PCM или без аудио. Для MXF доступны только совместимые PCM-режимы."
     type: "radio"
     group: "audio"
     choice_style: "buttons"
@@ -113,6 +108,8 @@ _shared_fields:
 
   mxf_safe_audio_mode: &mxf_safe_audio_mode
     id: audio_mode
+    tooltip: "Audio policy for the output: stream copy, lossy/lossless encode, PCM depth, or no audio. MXF permits only compatible PCM modes."
+    tooltip_ru: "Политика аудио результата: copy потока, lossy/lossless-кодирование, разрядность PCM или без аудио. Для MXF доступны только совместимые PCM-режимы."
     type: "radio"
     group: "audio"
     choice_style: "buttons"
@@ -135,6 +132,8 @@ _shared_fields:
 
   mp3_lame_preset_encode: &mp3_lame_preset_encode
     id: mp3_lame_preset
+    tooltip: "LAME quality mode for MP3 output."
+    tooltip_ru: "Режим качества LAME для MP3."
     type: "radio"
     group: "lame"
     choice_style: "buttons"
@@ -156,6 +155,8 @@ _shared_fields:
 
   audio_bitrate: &audio_bitrate
     id: audio_bitrate
+    tooltip: "The bitrate of a lossy sound: AAC, Opus (at most 256 kbps), and MP3 when its LAME preset is By bitrate (at most 320 kbps)."
+    tooltip_ru: "Битрейт сжатого звука: AAC, Opus (не выше 256 кбит/с) и MP3, когда его пресет LAME - «По битрейту» (не выше 320 кбит/с)."
     type: "select"
     label: "Audio bitrate"
     label_ru: "Битрейт аудио"
@@ -174,6 +175,8 @@ _shared_fields:
 
   audio_sample_rate: &audio_sample_rate
     id: audio_sample_rate
+    tooltip: "Target sample rate. Source keeps the original rate."
+    tooltip_ru: "Целевая частота дискретизации. Родная оставляет исходную частоту."
     type: "radio"
     group: "audio"
     choice_style: "buttons"
@@ -265,6 +268,8 @@ _shared_fields:
 
   pix_fmt: &pix_fmt
     id: pix_fmt
+    tooltip: "Output pixel format and bit depth. Keep it compatible with the selected codec and delivery/editing workflow."
+    tooltip_ru: "Pixel format и разрядность результата. Значение должно соответствовать выбранному кодеку и монтажному либо delivery-сценарию."
     type: "select"
     label: "Pixel format"
     label_ru: "Pixel format"
@@ -278,6 +283,8 @@ _shared_fields:
 
   output_resolution: &output_resolution
     id: output_resolution
+    tooltip: "Optional scaling target. Source keeps the original frame size."
+    tooltip_ru: "Необязательное масштабирование. Исходное сохраняет размер кадра."
     type: "select"
     label: "Resolution"
     label_ru: "Разрешение"
@@ -290,8 +297,24 @@ _shared_fields:
       - {value: "720", label: "720p", label_ru: "720p"}
       - {value: "480", label: "480p", label_ru: "480p"}
 
+  scan_mode: &scan_mode
+    id: scan_mode
+    tooltip: "What becomes of a source of two fields (25i, 29.97i, 50i). Progressive x2, the default: bwdif makes a frame of each field, the rate doubled and the motion whole - 50i becomes 50p. Progressive: a whole frame of each frame, the rate kept. Keep fields: the fields and their order stay, for an interlaced broadcast. A progressive source is not touched."
+    tooltip_ru: "Что станет с источником из двух полей (25i, 29,97i, 50i). «Прогрессив x2», по умолчанию: bwdif делает кадр из каждого поля, частота вдвое выше, движение целиком - 50i становится 50p. «Прогрессив»: цельный кадр из каждого кадра, частота прежняя. «Оставить поля»: поля и их порядок сохраняются - для чересстрочного эфира. Прогрессивный источник не трогается."
+    type: "radio"
+    priority: "rare"
+    label: "Interlaced source"
+    label_ru: "Чересстрочный источник"
+    default: "double"
+    options:
+      - {value: "keep", label: "Keep fields", label_ru: "Оставить поля", tooltip: "The fields and their order stay as they are; x264 codes them as fields.", tooltip_ru: "Поля и их порядок остаются; x264 кодирует их как поля."}
+      - {value: "progressive", label: "Progressive", label_ru: "Прогрессив", tooltip: "bwdif: a whole frame of each frame, the rate kept - 50i becomes 25p.", tooltip_ru: "bwdif: цельный кадр из каждого кадра, частота прежняя - 50i становится 25p."}
+      - {value: "double", label: "Progressive x2", label_ru: "Прогрессив x2", tooltip: "bwdif: a frame of each field, the rate doubled - 50i becomes 50p, the motion smooth.", tooltip_ru: "bwdif: кадр из каждого поля, частота вдвое выше - 50i становится 50p, движение плавное."}
+
   output_container: &output_container
     id: output_container
+    tooltip: "Container for encoded output when the selected codec family allows it."
+    tooltip_ru: "Контейнер результата, если выбранное семейство кодеков его допускает."
     type: "radio"
     choice_style: "buttons"
     layout: "three_columns"
@@ -307,6 +330,8 @@ _shared_fields:
 
   editing_output_container: &editing_output_container
     id: output_container
+    tooltip: "Container for encoded output when the selected codec family allows it."
+    tooltip_ru: "Контейнер результата, если выбранное семейство кодеков его допускает."
     type: "radio"
     choice_style: "buttons"
     layout: "two_columns"
@@ -321,6 +346,8 @@ _shared_fields:
 
   crf: &crf
     id: crf
+    tooltip: "Quality target for software encoders: lower means larger and cleaner."
+    tooltip_ru: "Цель качества для software-кодеков: ниже означает крупнее и чище."
     type: "number"
     label: "CRF"
     label_ru: "CRF"
@@ -332,6 +359,8 @@ _shared_fields:
 
   cq: &cq
     id: cq
+    tooltip: "Constant-quality value for hardware encoders."
+    tooltip_ru: "Constant Quality для аппаратных кодировщиков."
     type: "number"
     label: "CQ/QP"
     label_ru: "CQ/QP"
@@ -358,6 +387,8 @@ _shared_fields:
 
   overwrite: &overwrite
     id: overwrite
+    tooltip: "Allow FFmpeg to replace existing output files."
+    tooltip_ru: "Разрешить FFmpeg заменять существующие выходные файлы."
     type: "checkbox"
     label: "Overwrite"
     label_ru: "Перезаписывать"
@@ -374,6 +405,8 @@ _shared_fields:
 
   dry_run: &dry_run
     id: dry_run
+    tooltip: "Print commands without processing media."
+    tooltip_ru: "Показать команды без обработки медиа."
     type: "checkbox"
     label: "Dry run"
     label_ru: "Только показать команду"
@@ -384,7 +417,7 @@ operations:
     title: "Inventory"
     title_ru: "Инвентаризация"
     description: "Count project folders."
-    description_ru: "Посчитать Source, Transcoded, Download и LUTs."
+    description_ru: "Посчитать файлы в Источнике, Назначении и LUTs."
     service: "system_core.services.media_service:inventory"
     kind: "safe"
 
@@ -404,6 +437,8 @@ operation_groups:
     description_ru: "Нативные профили yt-dlp, архив скачиваний по умолчанию выключен."
     fields:
       - id: youtube_preset
+        tooltip: "A preset fills the fields of the download in one click; any of them can be changed afterwards."
+        tooltip_ru: "Пресет одним нажатием заполняет поля загрузки; любое из них можно потом поменять."
         type: "profile_select"
         label: "Download profile"
         label_ru: "Профиль скачивания"
@@ -491,8 +526,8 @@ operation_groups:
           - id: batch_best
             label: "Batch from urls.txt"
             label_ru: "Batch из urls.txt"
-            description: "Read links from Download\\urls.txt."
-            description_ru: "Читать ссылки из Download\\urls.txt."
+            description: "Read links from input\\urls.txt."
+            description_ru: "Читать ссылки из input\\urls.txt."
             values:
               youtube_profile: "best_mp4"
               youtube_source_mode: "batch"
@@ -505,19 +540,44 @@ operation_groups:
               parallel_fragments: 8
               download_archive: false
       - id: youtube_url
+        tooltip: "The link of a video - or of a playlist when Source is Playlist. yt-dlp takes YouTube and most video sites."
+        tooltip_ru: "Ссылка на видео, а при Источнике «Плейлист» - на плейлист. yt-dlp берёт YouTube и большинство видеосайтов."
         type: "text"
         label: "URL"
         label_ru: "URL"
         default: ""
         placeholder: "https://www.youtube.com/watch?v=..."
         span: "full"
+      - id: youtube_sections
+        type: "text"
+        label: "Section"
+        label_ru: "Фрагмент"
+        default: ""
+        placeholder: "*00:01:00-00:02:00"
+        priority: "advanced"
+        tooltip: "A part of the video only, as yt-dlp writes it: *start-end. Empty - the whole video."
+        tooltip_ru: "Только часть видео, в записи yt-dlp: *начало-конец. Пусто - видео целиком."
+      - id: youtube_playlist_items
+        type: "text"
+        label: "Playlist items"
+        label_ru: "Диапазон списка"
+        default: ""
+        placeholder: "1-10,15"
+        priority: "advanced"
+        visible_if: {youtube_source_mode: "playlist"}
+        tooltip: "Which videos of the playlist, by their numbers in it: 1-10,15, or -5: for the last five. Empty - the whole playlist."
+        tooltip_ru: "Какие видео плейлиста, по их номерам в нём: 1-10,15 или -5: - последние пять. Пусто - плейлист целиком."
       - id: batch_file
+        tooltip: "A text file of links, one a line. The default input\\urls.txt is urls.txt of the Source, wherever the Source is."
+        tooltip_ru: "Текстовый файл ссылок, по одной в строке. По умолчанию input\\urls.txt - это urls.txt Источника, где бы Источник ни был."
         type: "file"
         label: "Batch file"
         label_ru: "Файл ссылок"
-        default: "Download\\urls.txt"
+        default: "input\\urls.txt"
         file_filter: "Text files (*.txt)|*.txt|All files (*.*)|*.*"
       - id: youtube_profile
+        tooltip: "How yt-dlp picks the formats. Best MP4: the best picture, with M4A sound where the site has it, in MP4. Safe MP4: the same, one fragment at a time, with retries, pauses, IPv4 and the Safari client, for a link that breaks off. Custom video and Upload ready: by the resolution, codec and container below. Custom audio: the sound alone. Subtitles only: no video."
+        tooltip_ru: "Как yt-dlp выбирает форматы. «Лучшее MP4» - лучшая картинка со звуком M4A, где он есть у сайта, в MP4. «Надёжное MP4» - то же по одному фрагменту, с повторами, паузами, IPv4 и клиентом Safari, для ссылки, которая обрывается. «Своё видео» и «Для загрузки» - по разрешению, кодеку и контейнеру ниже. «Своё аудио» - только звук. «Только субтитры» - без видео."
         type: "select"
         label: "Engine profile"
         label_ru: "Форматный профиль"
@@ -530,6 +590,8 @@ operation_groups:
           - {value: "audio_custom", label: "Custom audio", label_ru: "Custom audio"}
           - {value: "subs_only", label: "Subtitles only", label_ru: "Только субтитры"}
       - id: youtube_resolution
+        tooltip: "The limit of the resolution: the best one up to it. Best - the highest the site has."
+        tooltip_ru: "Предел разрешения: берётся лучшее не выше него. «Лучшее» - самое высокое, какое есть у сайта."
         type: "select"
         label: "Resolution"
         label_ru: "Разрешение"
@@ -542,6 +604,8 @@ operation_groups:
           - {value: "720", label: "720p", label_ru: "720p"}
           - {value: "480", label: "480p", label_ru: "480p"}
       - id: youtube_video_codec
+        tooltip: "The codec to prefer, not to demand: without it the best other one comes. H.264 in MP4 comes with AAC sound, for editors and upload forms that take no Opus."
+        tooltip_ru: "Кодек, которому отдаётся предпочтение, а не требование: без него придёт лучший другой. H.264 в MP4 приходит со звуком AAC - для монтажа и форм загрузки, которые не берут Opus."
         type: "select"
         label: "Video codec"
         label_ru: "Видео кодек"
@@ -552,6 +616,8 @@ operation_groups:
           - {value: "av1", label: "AV1", label_ru: "AV1"}
           - {value: "vp9", label: "VP9", label_ru: "VP9"}
       - id: youtube_audio_format
+        tooltip: "The sound of Custom audio. Source: the best sound as the site keeps it, not re-encoded. M4A: the AAC of the site where it has one, else converted. Opus and MP3 (VBR V0): the sound in that codec, converted by FFmpeg where the site keeps another."
+        tooltip_ru: "Звук «Своего аудио». «Родной» - лучший звук, как его хранит сайт, без перекодирования. M4A - AAC сайта, если он есть, иначе перекодирование. Opus и MP3 (VBR V0) - звук в этом кодеке, FFmpeg перекодирует, если у сайта другой."
         type: "select"
         label: "Audio format"
         label_ru: "Формат аудио"
@@ -562,6 +628,8 @@ operation_groups:
           - {value: "opus", label: "Opus", label_ru: "Opus"}
           - {value: "mp3", label: "MP3", label_ru: "MP3"}
       - id: youtube_container
+        tooltip: "The container the picture and the sound are merged into."
+        tooltip_ru: "Контейнер, в который сводятся картинка и звук."
         type: "radio"
         choice_style: "buttons"
         layout: "three_columns"
@@ -573,16 +641,21 @@ operation_groups:
           - {value: "mkv", label: "MKV", label_ru: "MKV"}
           - {value: "webm", label: "WEBM", label_ru: "WEBM"}
       - id: youtube_source_mode
+        tooltip: "Where the links come from: one link, the list of input\\urls.txt, or a whole playlist."
+        tooltip_ru: "Откуда ссылки: одна ссылка, список input\\urls.txt или весь плейлист."
         type: "radio"
         choice_style: "buttons"
-        layout: "two_columns"
+        layout: "three_columns"
         label: "Source"
         label_ru: "Источник"
         default: "single"
         options:
           - {value: "single", label: "Single URL", label_ru: "Одна ссылка"}
-          - {value: "batch", label: "Download\\urls.txt", label_ru: "Download\\urls.txt"}
+          - {value: "batch", label: "input\\urls.txt", label_ru: "input\\urls.txt"}
+          - {value: "playlist", label: "Playlist", label_ru: "Плейлист", tooltip: "The link is a playlist: every video of it, numbered in its order; a video that fails is passed over.", tooltip_ru: "Ссылка - плейлист: все его видео, с номерами по порядку; видео, которое не скачалось, пропускается."}
       - id: youtube_options
+        tooltip: "Retries: ten tries for a request and for a fragment, two seconds apart. IPv4: IPv4 connections only. Metadata + thumbnail: the tags and the cover into the file. No playlist: for the links of input\\urls.txt - of a link to a video in a playlist, the video alone; one link always takes its video alone, Playlist takes the whole list."
+        tooltip_ru: "«Повторы» - десять попыток на запрос и на фрагмент, через две секунды. IPv4 - только соединения IPv4. «Метаданные + обложка» - теги и обложка в файл. «Без плейлиста» - для ссылок из input\\urls.txt: из ссылки на видео в плейлисте только это видео; одна ссылка всегда берёт только своё видео, «Плейлист» - весь список."
         type: "checkboxes"
         label: "Download tuning"
         label_ru: "Тюнинг скачивания"
@@ -593,6 +666,8 @@ operation_groups:
           - {value: "embed_metadata", label: "Metadata + thumbnail", label_ru: "Метаданные + обложка"}
           - {value: "no_playlist", label: "No playlist", label_ru: "Без плейлиста"}
       - id: subtitle_options
+        tooltip: "Manual: the subtitles people wrote, as files beside the video. Auto: the ones the site made itself. Embed: the subtitles inside the video file."
+        tooltip_ru: "«Ручные» - субтитры, написанные людьми, файлами рядом с видео. «Авто» - сделанные самим сайтом. «Встроить» - субтитры внутрь файла видео."
         type: "checkboxes"
         label: "Subtitles"
         label_ru: "Субтитры"
@@ -602,6 +677,8 @@ operation_groups:
           - {value: "write_auto_subs", label: "Auto", label_ru: "Авто"}
           - {value: "embed_subs", label: "Embed", label_ru: "Встроить"}
       - id: parallel_fragments
+        tooltip: "How many fragments of one video are downloaded at once (yt-dlp -N). More is faster on a good line; a site that limits may answer with errors."
+        tooltip_ru: "Сколько фрагментов одного видео качается одновременно (yt-dlp -N). Больше - быстрее на хорошем канале; сайт с ограничениями может ответить ошибками."
         type: "number"
         label: "Parallel"
         label_ru: "Потоки"
@@ -610,6 +687,8 @@ operation_groups:
         max: 16
         step: 1
       - id: youtube_client
+        tooltip: "Which YouTube player yt-dlp presents itself as. Default suits most links; Safari or Android when formats are missing or the speed is cut."
+        tooltip_ru: "Каким плеером YouTube представляется yt-dlp. Default подходит большинству ссылок; Safari или Android - когда не хватает форматов или режется скорость."
         type: "radio"
         choice_style: "buttons"
         layout: "three_columns"
@@ -622,24 +701,49 @@ operation_groups:
           - {value: "safari", label: "Safari", label_ru: "Safari"}
           - {value: "android", label: "Android", label_ru: "Android"}
       - id: subtitle_languages
+        tooltip: "The languages of the subtitles, comma-separated; a pattern is allowed: en.* takes en, en-US, en-GB."
+        tooltip_ru: "Языки субтитров через запятую; можно шаблоном: en.* берёт en, en-US, en-GB."
         type: "text"
         label: "Subtitle languages"
         label_ru: "Языки субтитров"
         default: "ru,en.*"
         priority: "advanced"
-      - id: cookies_path
-        type: "text"
+      - id: cookies_source
+        tooltip: "Where yt-dlp takes the cookies of a link that wants a sign-in. A browser: yt-dlp reads its profile at the download and the program keeps nothing; Chrome and Edge seal their cookies with their own encryption, and yt-dlp may fail to read them - Firefox is the sure one. File: the copy taken with TAKE UNDER DPAPI, kept sealed for this account of Windows; without it, the file of the field Cookies file when it is there. None: no cookies."
+        tooltip_ru: "Откуда yt-dlp берёт cookies для ссылки, которой нужен вход. Браузер: yt-dlp читает его профиль в момент загрузки, программа ничего не хранит; Chrome и Edge закрывают cookies своим шифрованием, и yt-dlp может их не прочитать - надёжнее Firefox. Файл: копия, взятая кнопкой «Взять под DPAPI», хранится запечатанной для этой учётной записи Windows; без неё - файл поля «Файл cookies», если он есть. Нет: без cookies."
+        type: "radio"
+        choice_style: "buttons"
         label: "Cookies"
         label_ru: "Cookies"
-        default: "Download\\cookies.txt"
+        default: "file"
+        priority: "advanced"
+        options:
+          - {value: "none", label: "None", label_ru: "Нет"}
+          - {value: "chrome", label: "Chrome", label_ru: "Chrome"}
+          - {value: "edge", label: "Edge", label_ru: "Edge"}
+          - {value: "firefox", label: "Firefox", label_ru: "Firefox"}
+          - {value: "brave", label: "Brave", label_ru: "Brave"}
+          - {value: "file", label: "File", label_ru: "Файл"}
+      - id: cookies_path
+        tooltip: "A cookies file of a browser (Netscape format, cookies.txt) for a link that wants a sign-in. TAKE UNDER DPAPI keeps a sealed copy of it, and the open file is no longer needed; without the copy the file is read as it is, when it is there."
+        tooltip_ru: "Файл cookies браузера (формат Netscape, cookies.txt) для ссылки, которой нужен вход. «Взять под DPAPI» хранит его запечатанную копию, и открытый файл больше не нужен; без копии файл читается как есть, если он есть."
+        type: "file"
+        file_filter: "Cookies (*.txt)|*.txt|All files (*.*)|*.*"
+        label: "Cookies file"
+        label_ru: "Файл cookies"
+        default: "config\\cookies.txt"
         priority: "advanced"
       - id: download_archive
+        tooltip: "Remembers what was downloaded in config\\download-archive.txt; a link already there is passed over."
+        tooltip_ru: "Запоминает скачанное в config\\download-archive.txt; ссылка, которая там уже есть, пропускается."
         type: "checkbox"
         label: "Use download archive"
         label_ru: "Вести архив скачиваний"
         default: false
         priority: "advanced"
       - id: youtube_dry_run
+        tooltip: "Says the yt-dlp command and runs nothing."
+        tooltip_ru: "Показывает команду yt-dlp и ничего не запускает."
         type: "checkbox"
         label: "Dry run"
         label_ru: "Только показать команду"
@@ -651,6 +755,20 @@ operation_groups:
         description: "Run the selected yt-dlp profile."
         description_ru: "Запустить выбранный профиль yt-dlp."
         service: "system_core.services.media_service:download_youtube"
+        kind: "safe"
+      - id: youtube_formats
+        title: "Formats of the link"
+        title_ru: "Форматы ссылки"
+        description: "What formats the link offers - resolution, codecs, size - listed in the journal, nothing downloaded. One of them is taken with the profile Own video."
+        description_ru: "Какие форматы есть у ссылки - разрешение, кодеки, размер - списком в журнале, ничего не скачивается. Взять один из них - профилем «Своё видео»."
+        service: "system_core.services.media_service:list_youtube_formats"
+        kind: "safe"
+      - id: youtube_cookies_import
+        title: "Take under DPAPI"
+        title_ru: "Взять под DPAPI"
+        description: "The cookies file of the field Cookies file sealed with DPAPI for this account of Windows into config\\cookies.dpapi: downloads with Cookies - File take this copy, and the open file is no longer needed."
+        description_ru: "Файл поля «Файл cookies» запечатывается DPAPI для этой учётной записи Windows в config\\cookies.dpapi: загрузки с Cookies - «Файл» берут эту копию, и открытый файл больше не нужен."
+        service: "system_core.services.media_service:import_youtube_cookies"
         kind: "safe"
 
   - id: audio
@@ -1011,6 +1129,8 @@ operation_groups:
               audio_lufs_mode: "report"
               audio_lufs: "-23"
       - id: audio_workflow
+        tooltip: "Choose what the audio operation changes: extract tracks, update audio in a video copy, or process standalone audio files."
+        tooltip_ru: "Выберите сценарий: извлечь дорожки, обновить звук в копии видео или обработать отдельные аудиофайлы."
         type: "radio"
         choice_style: "segmented"
         group: "workflow"
@@ -1035,14 +1155,14 @@ operation_groups:
             label: "Convert audio"
             label_ru: "Конвертировать аудио"
             tooltip: "Process standalone audio files from Source, such as WAV, FLAC, M4A, MP3, AAC or Opus."
-            tooltip_ru: "Обработать отдельные аудиофайлы из Source: WAV, FLAC, M4A, MP3, AAC или Opus."
+            tooltip_ru: "Обработать отдельные аудиофайлы из Источника: WAV, FLAC, M4A, MP3, AAC или Opus."
       - id: input_formats
         type: "checkboxes"
         group: "source"
         label: "Source file filter"
         label_ru: "Фильтр файлов источника"
-        hint: "Source is scanned recursively; OUT keeps the same subfolder structure."
-        hint_ru: "Source обходится рекурсивно; OUT сохраняет такую же структуру подпапок."
+        hint: "The Source is scanned recursively; the Target keeps the same subfolder structure."
+        hint_ru: "Источник обходится рекурсивно; Назначение сохраняет такую же структуру подпапок."
         default: []
         options:
           - {value: "wav", label: "WAV", label_ru: "WAV"}
@@ -1088,6 +1208,8 @@ operation_groups:
           - {value: "ts", label: "TS", label_ru: "TS"}
           - {value: "3gp", label: "3GP", label_ru: "3GP"}
       - id: audio_format
+        tooltip: "Output audio codec/container. Copy preserves the selected audio stream without re-encoding; ALAC writes Apple Lossless into M4A."
+        tooltip_ru: "Формат результата. Copy сохраняет выбранный аудиопоток без перекодирования; ALAC пишет Apple Lossless в M4A."
         type: "radio"
         choice_style: "buttons"
         group: "format"
@@ -1106,6 +1228,8 @@ operation_groups:
           - {value: "mp3", label: "MP3", label_ru: "MP3"}
           - {value: "opus", label: "Opus", label_ru: "Opus"}
       - id: audio_copy_container
+        tooltip: "Container policy for extracted Copy files: Auto chooses by codec and channel count; MKA/M4A/codec file force a specific wrapping policy."
+        tooltip_ru: "Политика контейнера для извлечённых Copy-файлов: Auto выбирает по кодеку и числу каналов; MKA/M4A/файл кодека задают упаковку вручную."
         type: "radio"
         choice_style: "buttons"
         group: "format"
@@ -1140,6 +1264,8 @@ operation_groups:
             tooltip: "Write native codec files when possible, for example AAC, AC3, E-AC3, DTS, FLAC or MP3."
             tooltip_ru: "Писать родные файлы кодека, где возможно: AAC, AC3, E-AC3, DTS, FLAC или MP3."
       - id: audio_sample_rate
+        tooltip: "Target sample rate. Source keeps the original rate."
+        tooltip_ru: "Целевая частота дискретизации. Родная оставляет исходную частоту."
         type: "radio"
         group: "format"
         choice_style: "buttons"
@@ -1157,6 +1283,8 @@ operation_groups:
           - {value: "176400", label: "176.4 kHz", label_ru: "176.4 kHz"}
           - {value: "192000", label: "192 kHz", label_ru: "192 kHz"}
       - id: audio_bit_depth
+        tooltip: "PCM/FLAC bit depth. Source keeps the original depth where the codec supports it."
+        tooltip_ru: "Разрядность PCM/FLAC. Родная сохраняет исходную разрядность, если формат это поддерживает."
         type: "radio"
         group: "format"
         choice_style: "buttons"
@@ -1171,6 +1299,8 @@ operation_groups:
           - {value: "24", label: "24-bit", label_ru: "24-bit"}
           - {value: "32f", label: "32-bit float", label_ru: "32-bit float"}
       - id: audio_resampler
+        tooltip: "Resampling engine used when changing sample rate."
+        tooltip_ru: "Движок ресемплинга при изменении частоты дискретизации."
         type: "radio"
         choice_style: "buttons"
         group: "format"
@@ -1181,7 +1311,19 @@ operation_groups:
         default: "soxr"
         options:
           - {value: "soxr", label: "SoX 100% quality", label_ru: "SoX 100% quality"}
+      - id: audio_resync
+        type: "checkbox"
+        group: "format"
+        hidden_if: {audio_format: "copy"}
+        priority: "advanced"
+        label: "Even the timestamps"
+        label_ru: "Выровнять метки времени"
+        tooltip: "Fills the gaps of the sound and trims its overlaps by the timestamps, from zero (aresample=async=1:first_pts=0): a recording with broken timestamps keeps in step with its picture."
+        tooltip_ru: "Заполняет пропуски звука и срезает наложения по меткам времени, от нуля (aresample=async=1:first_pts=0): запись с битыми метками не расходится с картинкой."
+        default: false
       - id: audio_video_container
+        tooltip: "Container for video-copy mode. Some audio codecs are disabled for unsafe container pairs."
+        tooltip_ru: "Контейнер для режима обновления звука в видео. Небезопасные пары кодек/контейнер отключаются."
         type: "radio"
         choice_style: "buttons"
         group: "format"
@@ -1203,6 +1345,8 @@ operation_groups:
             - {audio_format: ["m4a", "opus"]}
             - {all: [{audio_format: "mp3"}, {mp3_lame_preset: "bitrate"}]}
       - id: audio_stream_mode
+        tooltip: "Which audio stream(s) to process from each source file."
+        tooltip_ru: "Какие аудиопотоки брать из каждого исходного файла."
         type: "radio"
         choice_style: "buttons"
         group: "streams"
@@ -1218,6 +1362,8 @@ operation_groups:
           - {value: "index", label: "By index", label_ru: "По индексу"}
           - {value: "language", label: "By language", label_ru: "По языку"}
       - id: audio_stream_index
+        tooltip: "Zero-based audio stream index: a0 is the first audio stream."
+        tooltip_ru: "Индекс аудиопотока с нуля: a0 означает первый аудиопоток."
         type: "number"
         group: "streams"
         visible_if: {audio_stream_mode: "index"}
@@ -1228,6 +1374,8 @@ operation_groups:
         max: 32
         step: 1
       - id: audio_language
+        tooltip: "Match streams by container language tag such as eng, rus or ukr."
+        tooltip_ru: "Выбор дорожек по языковому тегу контейнера, например eng, rus или ukr."
         type: "select"
         group: "streams"
         visible_if: {audio_stream_mode: "language"}
@@ -1250,6 +1398,8 @@ operation_groups:
           - {value: "fra", label: "French (fra)", label_ru: "Французский (fra)"}
           - {value: "jpn", label: "Japanese (jpn)", label_ru: "Японский (jpn)"}
       - id: audio_lufs
+        tooltip: "Target integrated loudness for loudnorm."
+        tooltip_ru: "Целевая интегральная громкость для loudnorm."
         type: "radio"
         choice_style: "buttons"
         layout: "four_columns"
@@ -1270,6 +1420,8 @@ operation_groups:
           - {value: "-16", label: "-16", label_ru: "-16"}
           - {value: "-23", label: "-23", label_ru: "-23"}
       - id: audio_lufs_mode
+        tooltip: "Report analyzes loudness only; one-pass is quick; two-pass is more accurate."
+        tooltip_ru: "Отчёт только измеряет громкость; один проход быстрее; два прохода точнее."
         type: "radio"
         choice_style: "buttons"
         layout: "four_columns"
@@ -1288,6 +1440,8 @@ operation_groups:
           - {value: "one_pass", label: "One pass", label_ru: "One pass"}
           - {value: "two_pass", label: "Two pass", label_ru: "Two pass"}
       - id: audio_channel_mode
+        tooltip: "Channel layout operation: keep original channels, downmix to stereo/mono, or make dual mono."
+        tooltip_ru: "Операция с каналами: сохранить, свести в stereo/mono или сделать dual mono."
         type: "radio"
         choice_style: "buttons"
         group: "channels"
@@ -1315,6 +1469,29 @@ operation_groups:
         hint: "Adds DPLII-style matrix encoding while downmixing to stereo."
         hint_ru: "Добавляет DPLII matrix-совместимость при сведении в стерео."
         default: false
+      - id: downmix_formula
+        type: "radio"
+        choice_style: "buttons"
+        group: "channels"
+        layout: "two_columns"
+        span: "full"
+        visible_if:
+          all:
+            - {audio_channel_mode: "stereo"}
+            - {matrix_51: false}
+            - not: {audio_format: "copy"}
+        label: "Downmix"
+        label_ru: "Сведение"
+        tooltip: "How 5.1 becomes stereo. A stereo source stays as it is either way."
+        tooltip_ru: "Как 5.1 становится стерео. Стерео-источник в обоих случаях остаётся как есть."
+        default: "ffmpeg"
+        options:
+          - {value: "ffmpeg", label: "FFmpeg", label_ru: "FFmpeg",
+             description: "FFmpeg's own (-ac 2): centre and surrounds -3 dB, LFE out, the whole scaled down so it never clips - about 7.6 dB quieter on a full 5.1.",
+             description_ru: "Собственное FFmpeg (-ac 2): центр и тылы -3 дБ, LFE не идёт, всё вместе ослаблено, чтобы не было перегрузки, - на полном 5.1 тише примерно на 7,6 дБ."}
+          - {value: "surround_6db", label: "Surround -6 dB", label_ru: "Тылы -6 дБ",
+             description: "Fronts at full level, centre -3 dB, surrounds -6 dB, LFE out; not scaled down - a loud mix may clip.",
+             description_ru: "Фронт в полный уровень, центр -3 дБ, тылы -6 дБ, LFE не идёт; без ослабления - громкий микс может перегрузиться."}
       - <<: *mp3_lame_preset_encode
         group: "format"
         visible_if: {audio_format: "mp3"}
@@ -1337,6 +1514,8 @@ operation_groups:
     description_ru: "Долговременные мастер-форматы: FFV1 и x264 lossless."
     fields:
       - id: archive_profile
+        tooltip: "Lossless archive masters: FFV1 with FLAC in MKV, x264 lossless, or both. The preset fills the form below; any field can be changed afterwards."
+        tooltip_ru: "Архивные мастер-копии без потерь: FFV1 с FLAC в MKV, x264 без потерь или обе. Пресет заполняет форму ниже; любое поле можно потом поменять."
         type: "profile_buttons"
         label: "Archive preset"
         label_ru: "Архивный пресет"
@@ -1346,8 +1525,8 @@ operation_groups:
             label: "FFV1 MKV + FLAC"
             label_ru: "FFV1 MKV + FLAC"
             tone: "lossless"
-            description: "Archive master with all streams mapped and FLAC audio."
-            description_ru: "Архивный мастер со всеми потоками и FLAC аудио."
+            description: "Archive master with all streams mapped and FLAC audio; float PCM, which FLAC cannot hold, is copied as it is. A pixel format FFV1 cannot keep is refused."
+            description_ru: "Архивный мастер со всеми потоками и FLAC аудио; PCM с плавающей точкой, которого FLAC не держит, копируется как есть. Пиксельный формат, который FFV1 не сохранит, отклоняется."
             values:
               target_codecs: ["ffv1"]
               audio_mode: "flac"
@@ -1357,8 +1536,8 @@ operation_groups:
             label: "x264 lossless MKV"
             label_ru: "x264 lossless MKV"
             tone: "lossless"
-            description: "CRF 0 x264 archive variant, useful when FFV1 is too heavy."
-            description_ru: "CRF 0 x264 как архивный вариант, когда FFV1 слишком тяжелый."
+            description: "CRF 0 x264 archive variant, useful when FFV1 is too heavy. Keeps YUV of 8 and 10 bits; a 12-bit, RGB or alpha source is refused - FFV1 keeps it."
+            description_ru: "CRF 0 x264 как архивный вариант, когда FFV1 слишком тяжелый. Держит YUV 8 и 10 бит; источник 12 бит, RGB или с альфой отклоняется — его сохранит FFV1."
             values:
               target_codecs: ["x264_lossless"]
               audio_mode: "source"
@@ -1377,6 +1556,8 @@ operation_groups:
               pix_fmt: "auto"
       - *input_video_formats
       - id: target_codecs
+        tooltip: "One or more output targets. Multiple targets are written separately for each Source file."
+        tooltip_ru: "Один или несколько выходных таргетов. Каждый таргет пишется отдельно для каждого файла Источника."
         type: "checkboxes"
         label: "Archive formats"
         label_ru: "Архивные форматы"
@@ -1412,25 +1593,29 @@ operation_groups:
     description_ru: "Промежуточные форматы для монтажа: ProRes и DNxHR. Pixel format задаётся самой монтажной целью."
     fields:
       - id: editing_profile
+        tooltip: "Intermediate codecs for the edit: ProRes and DNxHR in MOV or MXF, with PCM sound. The preset fills the form below; any field can be changed afterwards."
+        tooltip_ru: "Монтажные кодеки: ProRes и DNxHR в MOV или MXF со звуком PCM. Пресет заполняет форму ниже; любое поле можно потом поменять."
         type: "profile_buttons"
         label: "Editing preset"
         label_ru: "Монтажный пресет"
         default: "prores_422_mov"
         presets:
-          - {id: "prores_proxy_mov", label: "Proxy", label_ru: "Proxy", group: "prores_mov", group_label: "ProRes · MOV", group_label_ru: "ProRes · MOV", tone: "lossless", description_ru: "Лёгкий proxy для отзывчивого монтажа.", values: {target_codecs: ["prores_proxy"], output_container: "mov", audio_mode: "pcm_s16", pix_fmt: "yuv422p10le"}}
-          - {id: "prores_lt_mov", label: "LT", label_ru: "LT", group: "prores_mov", group_label: "ProRes · MOV", group_label_ru: "ProRes · MOV", tone: "lossless", description_ru: "Облегчённый монтажный ProRes.", values: {target_codecs: ["prores_lt"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
-          - {id: "prores_422_mov", label: "422", label_ru: "422", group: "prores_mov", group_label: "ProRes · MOV", group_label_ru: "ProRes · MOV", tone: "lossless", description_ru: "Сбалансированный 10-bit 4:2:2 mezzanine.", values: {target_codecs: ["prores_422"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
-          - {id: "prores_hq_mov", label: "HQ", label_ru: "HQ", group: "prores_mov", group_label: "ProRes · MOV", group_label_ru: "ProRes · MOV", tone: "lossless", description_ru: "Высокобитрейтный ProRes 422 HQ.", values: {target_codecs: ["prores_hq"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
-          - {id: "prores_proxy_mxf", label: "Proxy", label_ru: "Proxy", group: "prores_mxf", group_label: "ProRes · MXF", group_label_ru: "ProRes · MXF", tone: "lossless", description_ru: "ProRes Proxy в MXF с PCM 16-bit.", values: {target_codecs: ["prores_proxy"], output_container: "mxf", audio_mode: "pcm_s16", pix_fmt: "yuv422p10le"}}
-          - {id: "prores_lt_mxf", label: "LT", label_ru: "LT", group: "prores_mxf", group_label: "ProRes · MXF", group_label_ru: "ProRes · MXF", tone: "lossless", description_ru: "ProRes LT в MXF с PCM 24-bit.", values: {target_codecs: ["prores_lt"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
-          - {id: "prores_422_mxf", label: "422", label_ru: "422", group: "prores_mxf", group_label: "ProRes · MXF", group_label_ru: "ProRes · MXF", tone: "lossless", description_ru: "ProRes 422 в MXF с PCM 24-bit.", values: {target_codecs: ["prores_422"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
-          - {id: "prores_hq_mxf", label: "HQ", label_ru: "HQ", group: "prores_mxf", group_label: "ProRes · MXF", group_label_ru: "ProRes · MXF", tone: "lossless", description_ru: "ProRes 422 HQ в MXF с PCM 24-bit.", values: {target_codecs: ["prores_hq"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
-          - {id: "dnxhr_hq_mov", label: "HQ", label_ru: "HQ", group: "dnxhr_mov", group_label: "DNxHR · MOV", group_label_ru: "DNxHR · MOV", tone: "lossless", description_ru: "DNxHR HQ 8-bit в MOV.", values: {target_codecs: ["dnxhr_hq"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p"}}
-          - {id: "dnxhr_hqx_mov", label: "HQX", label_ru: "HQX", group: "dnxhr_mov", group_label: "DNxHR · MOV", group_label_ru: "DNxHR · MOV", tone: "lossless", description_ru: "DNxHR HQX 10-bit в MOV.", values: {target_codecs: ["dnxhr_hqx"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
-          - {id: "dnxhr_hq_mxf", label: "HQ", label_ru: "HQ", group: "dnxhr_mxf", group_label: "DNxHR · MXF", group_label_ru: "DNxHR · MXF", tone: "lossless", description_ru: "DNxHR HQ 8-bit в MXF с PCM 24-bit.", values: {target_codecs: ["dnxhr_hq"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p"}}
-          - {id: "dnxhr_hqx_mxf", label: "HQX", label_ru: "HQX", group: "dnxhr_mxf", group_label: "DNxHR · MXF", group_label_ru: "DNxHR · MXF", tone: "lossless", description_ru: "DNxHR HQX 10-bit в MXF с PCM 24-bit.", values: {target_codecs: ["dnxhr_hqx"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_proxy_mov", label: "Proxy", label_ru: "Proxy", group: "prores_mov", group_label: "ProRes · MOV", group_label_ru: "ProRes · MOV", tone: "lossless", description: "A light proxy for a responsive edit.", description_ru: "Лёгкий proxy для отзывчивого монтажа.", values: {target_codecs: ["prores_proxy"], output_container: "mov", audio_mode: "pcm_s16", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_lt_mov", label: "LT", label_ru: "LT", group: "prores_mov", group_label: "ProRes · MOV", group_label_ru: "ProRes · MOV", tone: "lossless", description: "A lighter ProRes for the edit.", description_ru: "Облегчённый монтажный ProRes.", values: {target_codecs: ["prores_lt"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_422_mov", label: "422", label_ru: "422", group: "prores_mov", group_label: "ProRes · MOV", group_label_ru: "ProRes · MOV", tone: "lossless", description: "A balanced 10-bit 4:2:2 mezzanine.", description_ru: "Сбалансированный 10-bit 4:2:2 mezzanine.", values: {target_codecs: ["prores_422"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_hq_mov", label: "HQ", label_ru: "HQ", group: "prores_mov", group_label: "ProRes · MOV", group_label_ru: "ProRes · MOV", tone: "lossless", description: "ProRes 422 HQ at a high bitrate.", description_ru: "Высокобитрейтный ProRes 422 HQ.", values: {target_codecs: ["prores_hq"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_proxy_mxf", label: "Proxy", label_ru: "Proxy", group: "prores_mxf", group_label: "ProRes · MXF", group_label_ru: "ProRes · MXF", tone: "lossless", description: "ProRes Proxy in MXF with PCM 16-bit.", description_ru: "ProRes Proxy в MXF с PCM 16-bit.", values: {target_codecs: ["prores_proxy"], output_container: "mxf", audio_mode: "pcm_s16", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_lt_mxf", label: "LT", label_ru: "LT", group: "prores_mxf", group_label: "ProRes · MXF", group_label_ru: "ProRes · MXF", tone: "lossless", description: "ProRes LT in MXF with PCM 24-bit.", description_ru: "ProRes LT в MXF с PCM 24-bit.", values: {target_codecs: ["prores_lt"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_422_mxf", label: "422", label_ru: "422", group: "prores_mxf", group_label: "ProRes · MXF", group_label_ru: "ProRes · MXF", tone: "lossless", description: "ProRes 422 in MXF with PCM 24-bit.", description_ru: "ProRes 422 в MXF с PCM 24-bit.", values: {target_codecs: ["prores_422"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "prores_hq_mxf", label: "HQ", label_ru: "HQ", group: "prores_mxf", group_label: "ProRes · MXF", group_label_ru: "ProRes · MXF", tone: "lossless", description: "ProRes 422 HQ in MXF with PCM 24-bit.", description_ru: "ProRes 422 HQ в MXF с PCM 24-bit.", values: {target_codecs: ["prores_hq"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "dnxhr_hq_mov", label: "HQ", label_ru: "HQ", group: "dnxhr_mov", group_label: "DNxHR · MOV", group_label_ru: "DNxHR · MOV", tone: "lossless", description: "DNxHR HQ 8-bit in MOV.", description_ru: "DNxHR HQ 8-bit в MOV.", values: {target_codecs: ["dnxhr_hq"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p"}}
+          - {id: "dnxhr_hqx_mov", label: "HQX", label_ru: "HQX", group: "dnxhr_mov", group_label: "DNxHR · MOV", group_label_ru: "DNxHR · MOV", tone: "lossless", description: "DNxHR HQX 10-bit in MOV.", description_ru: "DNxHR HQX 10-bit в MOV.", values: {target_codecs: ["dnxhr_hqx"], output_container: "mov", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
+          - {id: "dnxhr_hq_mxf", label: "HQ", label_ru: "HQ", group: "dnxhr_mxf", group_label: "DNxHR · MXF", group_label_ru: "DNxHR · MXF", tone: "lossless", description: "DNxHR HQ 8-bit in MXF with PCM 24-bit.", description_ru: "DNxHR HQ 8-bit в MXF с PCM 24-bit.", values: {target_codecs: ["dnxhr_hq"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p"}}
+          - {id: "dnxhr_hqx_mxf", label: "HQX", label_ru: "HQX", group: "dnxhr_mxf", group_label: "DNxHR · MXF", group_label_ru: "DNxHR · MXF", tone: "lossless", description: "DNxHR HQX 10-bit in MXF with PCM 24-bit.", description_ru: "DNxHR HQX 10-bit в MXF с PCM 24-bit.", values: {target_codecs: ["dnxhr_hqx"], output_container: "mxf", audio_mode: "pcm_s24", pix_fmt: "yuv422p10le"}}
       - *input_video_formats
       - id: target_codecs
+        tooltip: "One or more output targets. Multiple targets are written separately for each Source file."
+        tooltip_ru: "Один или несколько выходных таргетов. Каждый таргет пишется отдельно для каждого файла Источника."
         type: "checkboxes"
         label: "Editing targets"
         label_ru: "Монтажные цели"
@@ -1450,6 +1635,7 @@ operation_groups:
       - *audio_bitrate
       - *editing_output_container
       - *output_resolution
+      - *scan_mode
       - *overwrite
       - *limit_first_file
       - *dry_run
@@ -1469,6 +1655,8 @@ operation_groups:
     description_ru: "Компактные качественные файлы для библиотеки или передачи."
     fields:
       - id: storage_profile
+        tooltip: "Compact encodes to keep: H.264, HEVC 10-bit, SVT-AV1 at CRF 14. The preset fills the form below; any field can be changed afterwards."
+        tooltip_ru: "Компактные копии для хранения: H.264, HEVC 10 бит, SVT-AV1 с CRF 14. Пресет заполняет форму ниже; любое поле можно потом поменять."
         type: "profile_buttons"
         label: "Storage preset"
         label_ru: "Пресет хранения"
@@ -1544,6 +1732,8 @@ operation_groups:
               pix_fmt: "yuv420p10le"
       - *input_video_formats
       - id: target_codecs
+        tooltip: "One or more output targets. Multiple targets are written separately for each Source file."
+        tooltip_ru: "Один или несколько выходных таргетов. Каждый таргет пишется отдельно для каждого файла Источника."
         type: "checkboxes"
         label: "Storage codecs"
         label_ru: "Кодеки хранения"
@@ -1565,6 +1755,7 @@ operation_groups:
       - *qsv_encoder_preset
       - *amf_quality
       - *output_resolution
+      - *scan_mode
       - *av1_preset
       - *pix_fmt
       - *crf
@@ -1589,6 +1780,8 @@ operation_groups:
     description_ru: "Кодирование для просмотра, заливки и публикации."
     fields:
       - id: delivery_profile
+        tooltip: "Encodes to send or to upload: H.264, HEVC 10-bit, SVT-AV1. The preset fills the form below; any field can be changed afterwards."
+        tooltip_ru: "Копии для отправки и загрузки на площадки: H.264, HEVC 10 бит, SVT-AV1. Пресет заполняет форму ниже; любое поле можно потом поменять."
         type: "profile_buttons"
         label: "Delivery preset"
         label_ru: "Пресет публикации"
@@ -1664,6 +1857,8 @@ operation_groups:
               pix_fmt: "yuv420p10le"
       - *input_video_formats
       - id: target_codecs
+        tooltip: "One or more output targets. Multiple targets are written separately for each Source file."
+        tooltip_ru: "Один или несколько выходных таргетов. Каждый таргет пишется отдельно для каждого файла Источника."
         type: "checkboxes"
         label: "Delivery codecs"
         label_ru: "Кодеки публикации"
@@ -1685,6 +1880,7 @@ operation_groups:
       - *qsv_encoder_preset
       - *amf_quality
       - *output_resolution
+      - *scan_mode
       - *av1_preset
       - *pix_fmt
       - *crf
@@ -1709,6 +1905,8 @@ operation_groups:
     description_ru: "Менять контейнеры без перекодирования, где возможно."
     fields:
       - id: remux_stream_mode
+        tooltip: "What goes into the new container without re-encoding: the picture, the sound, or both."
+        tooltip_ru: "Что переносится в новый контейнер без перекодирования: картинка, звук или то и другое."
         type: "radio"
         group: "streams"
         choice_style: "buttons"
@@ -1723,6 +1921,8 @@ operation_groups:
           - {value: "audio", label: "Audio", label_ru: "Audio", tone: "copy", tooltip: "Extract/copy audio streams to the selected audio container.", tooltip_ru: "Отделить/скопировать аудиотреки в выбранный аудиоконтейнер."}
           - {value: "video_audio", label: "Video&Audio", label_ru: "Video&Audio", tone: "copy", tooltip: "Copy video and audio streams together into one output container.", tooltip_ru: "Скопировать видео и аудио вместе в один выходной контейнер."}
       - id: remux_target_format
+        tooltip: "The new container. A file whose codec the container cannot hold is passed over with the reason - the check reads the codec, not the container alone."
+        tooltip_ru: "Новый контейнер. Файл, кодек которого контейнер не примет, пропускается с причиной - проверка смотрит на кодек, а не только на контейнер."
         type: "remux_format"
         group: "package"
         span: "full"
@@ -1759,6 +1959,8 @@ operation_groups:
           - {value: "hflip", label: "Mirror left-right", label_ru: "Зеркало по горизонтали", tone: "copy", tooltip: "For a shot filmed through a mirror rig, or a selfie-facing camera.", tooltip_ru: "Для съёмки через зеркальный риг или фронтальной камерой."}
           - {value: "vflip", label: "Mirror top-bottom", label_ru: "Зеркало по вертикали", tone: "copy", tooltip: "Rarely wanted on its own; some optical rigs need it.", tooltip_ru: "Редко нужно само по себе, но некоторые оптические риги требуют."}
       - id: remux_audio_target_format
+        tooltip: "The file the sound goes into, without re-encoding. MKA takes any sound; the others their own codecs - M4A AAC and ALAC, WAV PCM."
+        tooltip_ru: "Файл, в который уходит звук без перекодирования. MKA принимает любой звук, остальные - свои кодеки: M4A - AAC и ALAC, WAV - PCM."
         type: "remux_format"
         group: "package"
         span: "full"
@@ -1795,6 +1997,27 @@ operation_groups:
         service: "system_core.services.media_service:remux_media"
         kind: "safe"
 
+  - id: subtitles
+    title: "Subtitles"
+    title_ru: "Субтитры"
+    description: "Take the subtitle streams out of the videos as they are."
+    description_ru: "Вынуть потоки субтитров из видео как есть."
+    fields:
+      - <<: *overwrite
+        group: "run"
+      - <<: *limit_first_file
+        group: "run"
+      - <<: *dry_run
+        group: "run"
+    children:
+      - id: subtitles_extract
+        title: "Take subtitles out"
+        title_ru: "Вынуть субтитры"
+        description: "Every subtitle stream of a video, copied as it is into an MKS file beside its name; a video without subtitles is passed over."
+        description_ru: "Все потоки субтитров видео, скопированные как есть в файл MKS с его именем; видео без субтитров пропускается."
+        service: "system_core.services.media_service:extract_subtitles"
+        kind: "safe"
+
   - id: trim
     title: "Trim"
     title_ru: "Обрезка"
@@ -1812,9 +2035,11 @@ operation_groups:
         label: "File to trim"
         label_ru: "Какой файл резать"
         tooltip: "The video and sound files staged in Source, alphabetically. One file is trimmed at a time: takes rarely share a keyframe, let alone a cut point."
-        tooltip_ru: "Видео- и звуковые файлы из Source по алфавиту. Режется один файл за раз: у дублей редко совпадают ключевые кадры, не говоря о точках реза."
+        tooltip_ru: "Видео- и звуковые файлы из Источника по алфавиту. Режется один файл за раз: у дублей редко совпадают ключевые кадры, не говоря о точках реза."
         default: ""
       - id: trim_action
+        tooltip: "What happens to the piece between the points: it is kept, it is cut out and the ends are joined, or the file is split at the points."
+        tooltip_ru: "Что делается с куском между точками: он остаётся, он вырезается и концы сшиваются, или файл делится по точкам."
         type: "radio"
         choice_style: "buttons"
         layout: "three_columns"
@@ -1850,6 +2075,8 @@ operation_groups:
         tooltip_ru: "Конец считается кадрами по точной дроби частоты, поэтому попадает ровно в запрошенный кадр. У звукового файла — ровно по сэмплу."
         default: ""
       - id: trim_rows
+        tooltip: "The points, in hours, minutes, seconds and milliseconds: 00:01:02,500. Each row added with + is written to a file of its own."
+        tooltip_ru: "Точки - часы, минуты, секунды и миллисекунды: 00:01:02,500. Каждая строка, добавленная кнопкой +, пишется в свой файл."
         # Draws IN and OUT as row 1 and holds the rows after it: each row of a
         # keep or a cut is a run of its own. For a split it draws the points.
         type: "trim_rows"
@@ -1922,6 +2149,8 @@ operation_groups:
             tooltip: "Closes the window. It also closes by itself when the program stops."
             tooltip_ru: "Закрывает окно. Оно и само закроется, когда программа остановится."
       - id: trim_container
+        tooltip: "The container of the piece. As is keeps the camera's own."
+        tooltip_ru: "Контейнер куска. «Как есть» оставляет контейнер камеры."
         # A sound file is written by format instead: see trim_audio_format.
         hidden_if: {trim_media_kind: "audio"}
         type: "radio"
@@ -1939,6 +2168,8 @@ operation_groups:
           - {value: "mkv", label: "MKV", label_ru: "MKV", tooltip: "Takes anything, but keeps a timecode only as a text tag. Editors may not read it.", tooltip_ru: "Примет что угодно, но таймкод хранит текстовым тегом — монтажка может его не прочитать."}
           - {value: "mxf", label: "MXF", label_ru: "MXF", tooltip: "Premiere's own working format. PCM audio is rewritten sample-accurately, so the picture and the sound stay exactly where they were. Compressed audio — AAC, AC-3, MP3, FLAC, ALAC — MXF refuses outright; those files are skipped with the reason, and MOV takes them unchanged.", tooltip_ru: "Рабочий формат Premiere. Звук PCM переписывается сэмпл-в-сэмпл, картинка и звук остаются ровно там, где были. Сжатый звук — AAC, AC-3, MP3, FLAC, ALAC — MXF не принимает вовсе: такой файл будет пропущен с объяснением, а MOV возьмёт его как есть."}
       - id: trim_audio
+        tooltip: "The sound of the piece: copied as it is, or dropped."
+        tooltip_ru: "Звук куска: копируется как есть или убирается."
         hidden_if: {trim_media_kind: "audio"}
         type: "radio"
         choice_style: "buttons"
@@ -1953,6 +2184,8 @@ operation_groups:
           - {value: "copy", label: "Copy", label_ru: "Копировать", tone: "copy", tooltip: "The track is copied as it is, without a generation loss.", tooltip_ru: "Дорожка копируется как есть, без потери поколения."}
           - {value: "none", label: "Drop", label_ru: "Убрать", tooltip: "A silent file for the edit or for a GIF.", tooltip_ru: "Немой файл для монтажа или для гифки."}
       - id: trim_audio_channel
+        tooltip: "Which channels of the sound go into the piece: both, one of the two, or both folded to mono."
+        tooltip_ru: "Какие каналы звука идут в кусок: оба, один из двух или оба, сведённые в моно."
         hidden_if: {trim_media_kind: "audio"}
         type: "radio"
         choice_style: "buttons"
@@ -1969,19 +2202,32 @@ operation_groups:
           - {value: "second", label: "Second", label_ru: "Второй", tooltip: "Usually the lav. Rebuilds the track: free on PCM, a generation on AAC.", tooltip_ru: "Обычно петличка. Дорожка пересобирается: на PCM бесплатно, на AAC — потеря поколения."}
           - {value: "mono", label: "Fold to mono", label_ru: "Свести в моно", tooltip: "Mix both channels into one.", tooltip_ru: "Смешать оба канала в один."}
       - id: trim_exact
-        # A sound file only. On: decoded, cut on the sample, written in the format
-        # below. Off: compressed packets copied untouched, each point moved to a
-        # packet boundary - what that costs at a joint was measured per codec.
-        type: "checkbox"
+        # A sound file only: two modes of a cut (the owner, 15.10.2026: "переключатель: lossy-резка (точно) и
+        # lossless"). Exact (true): decoded, cut on the sample, written in the format below - a compressed sound is
+        # encoded once more. Lossless (false): compressed packets copied untouched, each point moved to a packet
+        # boundary - what that costs at a joint was measured per codec. WAV, FLAC, ALAC, AIFF: on the sample either way.
+        # Lossless by default (the owner, 15.10.2026): an AAC cut exactly was encoded once more, and that is what the
+        # owner met as "AAC is not cut without loss".
+        type: "radio"
+        choice_style: "buttons"
         group: "package"
-        label: "Exact cut"
-        label_ru: "Точная резка"
-        default: true
+        label: "Cut"
+        label_ru: "Резка"
+        default: false
         refresh_on_change: true
         visible_if: {trim_media_kind: "audio"}
-        tooltip: "On: the sound is decoded, cut on the exact sample and written in the format below - the piece is, bit for bit, the stretch the source plays. Off, for the purist: nothing is decoded, compressed packets are copied untouched, each point moves to the nearest packet boundary, and the log says what that codec loses at a joint. WAV, FLAC, ALAC and AIFF are cut on the sample either way."
-        tooltip_ru: "Включено: звук декодируется, режется ровно по сэмплу и пишется в формат ниже — кусок бит в бит тот отрезок, что играет исходник. Выключено — для пуристов: ничего не декодируется, сжатые пакеты копируются нетронутыми, точка уходит к ближайшей границе пакета, а журнал говорит, что этот кодек теряет на стыке. WAV, FLAC, ALAC и AIFF режутся по сэмплу в любом случае."
+        options:
+          - {value: true, label: "Exact", label_ru: "Точно", tone: "lossy",
+             tooltip: "Cut on the exact sample. A compressed sound - AAC, MP3, Opus, Vorbis - is decoded and encoded once more: one generation of loss. WAV, FLAC, ALAC and AIFF lose nothing.",
+             tooltip_ru: "Ровно по сэмплу. Сжатый звук - AAC, MP3, Opus, Vorbis - декодируется и кодируется заново: одно поколение потерь. WAV, FLAC, ALAC и AIFF ничего не теряют."}
+          - {value: false, label: "Lossless", label_ru: "Без потерь", tone: "lossless",
+             tooltip: "Nothing is decoded: the compressed packets are copied untouched, each point moves to the nearest packet boundary - for AAC 1024 samples, about 21 ms at 48 kHz - and the log says what the codec loses at a joint. WAV, FLAC, ALAC and AIFF are cut on the sample.",
+             tooltip_ru: "Ничего не декодируется: сжатые пакеты копируются нетронутыми, точка уходит к ближайшей границе пакета - у AAC это 1024 сэмпла, около 21 мс при 48 кГц, - а журнал говорит, что кодек теряет на стыке. WAV, FLAC, ALAC и AIFF режутся по сэмплу."}
+        tooltip: "How a sound file is cut: exactly on the sample, a compressed sound encoded once more, or without loss, the compressed packets copied as they are and the points moved to packet boundaries."
+        tooltip_ru: "Как режется звуковой файл: ровно по сэмплу, со сжатым звуком, закодированным заново, или без потерь - сжатые пакеты копируются как есть, а точки уходят к границам пакетов."
       - id: trim_audio_format
+        tooltip: "The format a piece of a sound file is written in. As is keeps the source's, sample for sample where it is lossless."
+        tooltip_ru: "Формат, в котором пишется кусок звукового файла. «Как есть» - формат источника, сэмпл в сэмпл, где он без потерь."
         type: "radio"
         choice_style: "buttons"
         layout: "four_columns"
@@ -2001,6 +2247,8 @@ operation_groups:
           - {value: "mp3", label: "MP3", label_ru: "MP3", tooltip: "LAME with the preset below. Up to 48 kHz: a higher rate goes to 48 kHz through soxr.", tooltip_ru: "LAME с пресетом ниже. До 48 кГц: частота выше приводится к 48 кГц через soxr."}
           - {value: "opus", label: "Opus", label_ru: "Opus", tooltip: "Opus at the bitrate below, at most 256 kbps. Opus works at 48 kHz: other rates go there through soxr.", tooltip_ru: "Opus с битрейтом ниже, не больше 256 kbps. Opus работает на 48 кГц: другие частоты приводятся к ней через soxr."}
       - id: trim_mp3_preset
+        tooltip: "The LAME quality of a piece written as MP3."
+        tooltip_ru: "Качество LAME для куска, записанного в MP3."
         type: "radio"
         choice_style: "buttons"
         layout: "three_columns"
@@ -2016,6 +2264,8 @@ operation_groups:
           - {value: "insane", label: "Insane 320", label_ru: "Insane 320", tooltip: "Insane CBR 320 kbps.", tooltip_ru: "Insane CBR 320 kbps."}
           - {value: "bitrate", label: "By bitrate", label_ru: "По битрейту", tooltip: "The bitrate below, up to the 320 kbps LAME ceiling.", tooltip_ru: "Битрейт ниже, максимум 320 kbps."}
       - id: trim_audio_bitrate
+        tooltip: "The bitrate of a piece written as AAC, Opus (at most 256 kbps) or MP3 by bitrate (at most 320 kbps)."
+        tooltip_ru: "Битрейт куска в AAC, Opus (не выше 256 кбит/с) или MP3 по битрейту (не выше 320 кбит/с)."
         type: "radio"
         choice_style: "buttons"
         layout: "four_columns"
@@ -2055,6 +2305,8 @@ operation_groups:
         tooltip: "Carries subtitle streams over. Camera files rarely have them, but a DJI writes its flight data as subtitles, and dropping them loses the flight log. The lines are rebuilt for the cut rather than copied: each is trimmed to the piece kept and moved onto its timeline, so a line across IN or OUT keeps its part inside, and after Cut it out the lines sit where the join puts them. MP4 and MOV write them as mov_text, MKV as SRT; picture subtitles stay behind, and the log says so."
         tooltip_ru: "Переносит субтитры. У камерных файлов они редки, но DJI пишет субтитрами данные полёта — выбросить их значит потерять журнал полёта. Реплики не копируются, а собираются заново: каждая обрезается по сохраняемому куску и сдвигается на его шкалу времени, так что реплика через IN или OUT сохраняет свою часть внутри, а после «Вырезать» реплики стоят там, куда их ставит склейка. MP4 и MOV пишут их как mov_text, MKV — как SRT; субтитры картинкой остаются, и журнал это скажет."
       - id: trim_timecode
+        tooltip: "The timecode of the piece: shifted by what was cut away - the edit syncs cameras by it - or from zero."
+        tooltip_ru: "Таймкод куска: со сдвигом на отрезанное - по нему монтаж синхронизирует камеры - или от нуля."
         hidden_if: {trim_media_kind: "audio"}
         type: "radio"
         choice_style: "buttons"
@@ -2099,6 +2351,8 @@ operation_groups:
     fields:
       - *input_video_formats
       - id: fps_mode
+        tooltip: "Varispeed plays every frame faster or slower and the sound with it: the pitch moves with the speed. Conform keeps the pitch and stretches the sound. Up to 1 % of change both keep the samples of the sound."
+        tooltip_ru: "Varispeed проигрывает каждый кадр быстрее или медленнее и звук вместе с ним: тон идёт за скоростью. Conform держит тон и растягивает звук. До 1 % изменения скорости оба режима сохраняют сэмплы звука."
         type: "radio"
         choice_style: "buttons"
         layout: "two_columns"
@@ -2110,6 +2364,8 @@ operation_groups:
           - {value: "varispeed", label: "Varispeed", label_ru: "Varispeed"}
           - {value: "conform", label: "Conform", label_ru: "Conform"}
       - id: fps_target
+        tooltip: "The frame rate the file is played at. Every frame stays: the duration changes, not the picture."
+        tooltip_ru: "Частота, с которой файл будет проигрываться. Все кадры остаются: меняется длительность, а не картинка."
         type: "radio"
         choice_style: "buttons"
         layout: "four_columns"
@@ -2130,6 +2386,8 @@ operation_groups:
           - {value: "60000/1001", label: "59.94", label_ru: "59.94", tooltip: "NTSC high definition.", tooltip_ru: "NTSC высокой чёткости."}
           - {value: "60", label: "60", label_ru: "60", tooltip: "True 60.000 — web video and screen capture.", tooltip_ru: "Честные 60,000 — веб-видео и запись экрана."}
       - id: fps_output_profile
+        tooltip: "The codec and the container of the result: H.264 or HEVC in MP4 with AAC, ProRes or DNxHR in MOV or MXF with PCM."
+        tooltip_ru: "Кодек и контейнер результата: H.264 или HEVC в MP4 с AAC, ProRes или DNxHR в MOV или MXF с PCM."
         type: "profile_buttons"
         group: "fps"
         span: "full"
@@ -2144,6 +2402,7 @@ operation_groups:
             group_label: "Delivery"
             group_label_ru: "Delivery"
             tone: "lossy"
+            description: "MP4 with H.264 and AAC. The bitrate of the sound is chosen below."
             description_ru: "MP4 с H.264 и AAC. Битрейт аудио выбирается ниже."
             values: {fps_output_profile: "h264", encode_backend: "cpu", audio_bitrate: "384k", fps_audio_pcm_depth: "s24", fps_audio_oversample: "x1", crf: 14, cq: 19, cpu_encoder_preset: "medium"}
           - id: "hevc"
@@ -2153,6 +2412,7 @@ operation_groups:
             group_label: "Delivery"
             group_label_ru: "Delivery"
             tone: "lossy"
+            description: "MP4 with H.265/HEVC and AAC. The bitrate of the sound is chosen below."
             description_ru: "MP4 с H.265/HEVC и AAC. Битрейт аудио выбирается ниже."
             values: {fps_output_profile: "hevc", encode_backend: "cpu", audio_bitrate: "384k", fps_audio_pcm_depth: "s24", fps_audio_oversample: "x1", crf: 16, cq: 19, cpu_encoder_preset: "medium"}
           - id: "prores"
@@ -2214,6 +2474,8 @@ operation_groups:
       - <<: *cq
         visible_if: {fps_output_profile: ["h264", "hevc"], encode_backend: ["cuda", "qsv", "amd"]}
       - id: fps_audio_pcm_depth
+        tooltip: "The bit depth of the PCM sound of ProRes and DNxHR. MXF takes 16 or 24 bits."
+        tooltip_ru: "Разрядность звука PCM у ProRes и DNxHR. MXF берёт 16 или 24 бита."
         type: "radio"
         group: "audio"
         choice_style: "buttons"
@@ -2271,6 +2533,8 @@ operation_groups:
         hint_ru: "По умолчанию LUTs\\active.cube или первый LUT-файл из папки LUTs."
       - *input_video_formats
       - id: grading_profile
+        tooltip: "The primary mode for the entire Color/LUT window. It selects the transform and production defaults; fields below remain explicit overrides."
+        tooltip_ru: "Главный режим всего окна Color/LUT. Кнопка выбирает преобразование и рабочие defaults; поля ниже остаются явными overrides."
         type: "profile_buttons"
         group: "color"
         label: "Color preset"
@@ -2301,6 +2565,8 @@ operation_groups:
           - {value: "ff-grade-pregamma-lut-prores422.cmd", label: "Pregamma + LUT ProRes 422", label_ru: "Pregamma + LUT ProRes 422"}
           - {value: "ff-hdr2sdr-hable-x264.cmd", label: "HDR to SDR Hable", label_ru: "HDR to SDR Hable"}
       - id: pre_gamma
+        tooltip: "Gamma applied before the LUT. Values above 1 lift 18% gray; values below 1 lower it. The preview is a pre-LUT technical reference."
+        tooltip_ru: "Gamma применяется до LUT. Значения выше 1 поднимают 18% серый, ниже 1 — опускают. Preview показывает технический ориентир до LUT."
         type: "float"
         group: "color"
         label: "Pre-LUT gamma"
@@ -2313,6 +2579,8 @@ operation_groups:
         visible_if:
           script_preset: ["ff-grade-preexpose-lut-x264.cmd", "ff-grade-pregamma-lut-x264.cmd", "ff-grade-pregamma-lut-hevc10.cmd", "ff-grade-pregamma-lut-prores422.cmd"]
       - id: target_codecs
+        tooltip: "One or more output targets. Multiple targets are written separately for each Source file."
+        tooltip_ru: "Один или несколько выходных таргетов. Каждый таргет пишется отдельно для каждого файла Источника."
         type: "checkboxes"
         label: "Color output targets"
         label_ru: "Цели цветового вывода"
@@ -2335,6 +2603,7 @@ operation_groups:
       - *qsv_encoder_preset
       - *amf_quality
       - *output_resolution
+      - *scan_mode
       - *av1_preset
       - *pix_fmt
       - *crf
@@ -2361,7 +2630,7 @@ operation_groups:
         title: "Inventory"
         title_ru: "Инвентаризация"
         description: "Count project folders."
-        description_ru: "Посчитать Source, Transcoded, Download и LUTs."
+        description_ru: "Посчитать файлы в Источнике, Назначении и LUTs."
         service: "system_core.services.media_service:inventory"
         kind: "safe"
       - id: selftest
@@ -2420,13 +2689,20 @@ operation_groups:
         description_ru: "Установить или обновить portable yt-dlp и Deno в Tools."
         service: "system_core.services.media_service:install_portable_ytdlp"
         kind: "safe"
+      - id: install_mpv
+        title: "Install mpv"
+        title_ru: "Установить mpv"
+        description: "Install or refresh portable mpv into Tools/mpv: the player of the trim."
+        description_ru: "Установить или обновить portable mpv в Tools/mpv: плеер нарезки."
+        service: "system_core.services.media_service:install_portable_mpv"
+        kind: "safe"
 
 maintenance_operations:
   - id: probe_source
     title: "Probe Source"
     title_ru: "Проверить источник"
     description: "Run ffprobe once for Source, print a compact table and update the media status line."
-    description_ru: "Один раз запустить ffprobe по Source, вывести таблицу и обновить строку параметров."
+    description_ru: "Один раз запустить ffprobe по Источнику, вывести таблицу и обновить строку параметров."
     service: "system_core.services.media_service:probe_source"
     kind: "safe"
     parameters:
@@ -2436,7 +2712,7 @@ maintenance_operations:
     title: "Source Info"
     title_ru: "Инфо об источниках"
     description: "Run ffprobe for Source and print every audio stream: codec, sample format, sample rate, bit depth, channels, bitrate and tags."
-    description_ru: "Прогнать ffprobe по Source и вывести все аудиопотоки: codec, sample_fmt, sample rate, bits, channels, bitrate, language/title."
+    description_ru: "Прогнать ffprobe по Источнику и вывести все аудиопотоки: codec, sample_fmt, sample rate, bits, channels, bitrate, language/title."
     service: "system_core.services.media_service:source_info"
     kind: "safe"
     parameters:
@@ -2444,17 +2720,17 @@ maintenance_operations:
 
   - id: cleanup_source
     title: "Clear Source"
-    title_ru: "Очистить Source"
+    title_ru: "Очистить Источник"
     description: "Delete files from the selected Source folder, including an external selected Source after confirmation."
-    description_ru: "Удалить файлы из выбранной папки Source, включая внешний выбранный Source после подтверждения."
+    description_ru: "Удалить файлы из выбранного Источника, включая внешнюю папку или файл после подтверждения."
     service: "system_core.services.media_service:cleanup_source"
     kind: "dangerous"
 
   - id: cleanup_transcoded
-    title: "Clear OUT"
-    title_ru: "Очистить OUT"
+    title: "Clear Target"
+    title_ru: "Очистить Назначение"
     description: "Delete files from the selected destination/output folder, including an external selected folder after confirmation."
-    description_ru: "Удалить файлы из выбранного назначения/OUT, включая внешнюю выбранную папку после подтверждения."
+    description_ru: "Удалить файлы из выбранного Назначения, включая внешнюю папку после подтверждения."
     service: "system_core.services.media_service:cleanup_transcoded"
     kind: "dangerous"
 

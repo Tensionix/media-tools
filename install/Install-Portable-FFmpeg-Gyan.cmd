@@ -31,7 +31,8 @@ shift
 goto PARSE_ARGS
 :DONE_ARGS
 
-if exist "%ROOT%\system_core\powershell\pwsh.exe" set "PS_EXE=%ROOT%\system_core\powershell\pwsh.exe"
+rem The PowerShell the program carries comes first; the one of the machine - where App\ is not built yet.
+if exist "%ROOT%\App\AudionPs.exe" set "PS_EXE=%ROOT%\App\AudionPs.exe"
 if not defined PS_EXE where pwsh.exe >nul 2>nul && set "PS_EXE=pwsh.exe"
 if not defined PS_EXE where powershell.exe >nul 2>nul && set "PS_EXE=powershell.exe"
 
@@ -62,6 +63,13 @@ echo.
 if not defined PS_EXE goto ERR_POWERSHELL
 if not defined SEVENZIP_EXE goto ERR_7ZIP
 if not exist "%GYAN_INSTALLER%" goto ERR_DOWNLOADER
+
+rem AUDION_INSTALL_PLAN=1: the installer says the archive it would download and stops (install\Plan-Download.ps1).
+if "%AUDION_INSTALL_PLAN%"=="1" (
+  "%PS_EXE%" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%GYAN_INSTALLER%" -ArchivePath "%DL%\ffmpeg-gyan-release-full.7z" -Variant full -ReleaseVersion "%GYAN_VERSION%" -SevenZipPath "%SEVENZIP_EXE%"
+  if errorlevel 1 goto ERR_DOWNLOAD
+  goto PLAN_DONE
+)
 
 echo [1/4] Downloading and extracting FFmpeg Gyan FULL build...
 call :TRY_PROVIDER "Gyan release full 7z" "%DL%\ffmpeg-gyan-release-full.7z" "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-full.7z" "7z"
@@ -212,3 +220,7 @@ exit /b 0
 :PAUSE_IF_NEEDED
 if not "%NO_PAUSE%"=="1" pause
 goto :eof
+
+:PLAN_DONE
+rem A plan was said: nothing was downloaded, nothing waits for a key.
+exit /b 0

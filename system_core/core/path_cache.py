@@ -3,17 +3,31 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import json
+import os
+
+from .paths import INPUT_DIR, OUTPUT_DIR
 
 
 MAX_RECENT_PATHS = 200
+# The Source and the Target a process was started with: the console command names them for the run, and the
+# wrappers have always read the same two names. Without them - the folders the window last pointed at.
+SOURCE_ENV = "AUDION_SOURCE"
+OUTPUT_ENV = "AUDION_OUTPUT"
+# The kinds of file a run of the console command takes, when it narrows them (a wrapper MKV -> MP4 takes MKV alone).
+ONLY_FORMATS_ENV = "AUDION_ONLY_FORMATS"
+
+
+def only_formats() -> set[str]:
+    """The kinds of file this process is narrowed to; empty - no narrowing."""
+    return {item.strip().lower().lstrip(".") for item in os.environ.get(ONLY_FORMATS_ENV, "").split(",") if item.strip()}
 
 
 def _default_cache(root: Path) -> dict[str, Any]:
     return {
-        "source_path": str(root / "Source"),
-        "output_path": str(root / "Transcoded"),
-        "recent_source_paths": [str(root / "Source")],
-        "recent_output_paths": [str(root / "Transcoded")],
+        "source_path": str(root / INPUT_DIR),
+        "output_path": str(root / OUTPUT_DIR),
+        "recent_source_paths": [str(root / INPUT_DIR)],
+        "recent_output_paths": [str(root / OUTPUT_DIR)],
         "pinned_source_paths": [],
         "pinned_output_paths": [],
     }
@@ -87,13 +101,19 @@ def resolve_cached_path(root: Path, value: Any, fallback: Path) -> Path:
 
 
 def cached_source_path(root: Path) -> Path:
+    given = os.environ.get(SOURCE_ENV, "").strip()
+    if given:
+        return resolve_cached_path(root, given, root / INPUT_DIR)
     cache = load_path_cache(root)
-    return resolve_cached_path(root, cache.get("source_path"), root / "Source")
+    return resolve_cached_path(root, cache.get("source_path"), root / INPUT_DIR)
 
 
 def cached_output_path(root: Path) -> Path:
+    given = os.environ.get(OUTPUT_ENV, "").strip()
+    if given:
+        return resolve_cached_path(root, given, root / OUTPUT_DIR)
     cache = load_path_cache(root)
-    return resolve_cached_path(root, cache.get("output_path"), root / "Transcoded")
+    return resolve_cached_path(root, cache.get("output_path"), root / OUTPUT_DIR)
 
 
 def update_path_cache(root: Path, role: str, path_value: str, *, pinned: bool | None = None) -> dict[str, Any]:
@@ -104,7 +124,7 @@ def update_path_cache(root: Path, role: str, path_value: str, *, pinned: bool | 
     target_path = resolve_cached_path(
         root,
         path_value,
-        root / ("Source" if role == "source" else "Transcoded"),
+        root / (INPUT_DIR if role == "source" else OUTPUT_DIR),
     )
     text = str(target_path)
     current_key = f"{role}_path"

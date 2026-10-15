@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 import json
+import shutil
 
 
 MAX_RECENT_LUTS = 200
@@ -90,6 +91,58 @@ def save_lut_cache(root: Path, cache: dict[str, Any]) -> None:
     normalized["pinned_luts"] = _dedupe(list(normalized.get("pinned_luts", [])))
     normalized["selected_lut"] = _clean(normalized.get("selected_lut"))
     path.write_text(json.dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def listed_luts(root: Path, current: str = "") -> list[tuple[str, str]]:
+    """The LUTs a window lists, as (path, name): the pinned first, then the chosen one, the recent ones and the rest of
+    LUTs\\; a name is the path within LUTs\\, a LUT elsewhere keeps its whole path (the window on NiceGUI: lut_options)."""
+    cache = load_lut_cache(root)
+    ordered = [*cache.get("pinned_luts", []), current, cache.get("selected_lut", ""), *cache.get("recent_luts", []), *scan_luts(root)]
+    lut_root = (root / "LUTs").resolve()
+    listed: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for item in ordered:
+        text = _clean(item)
+        if not text:
+            continue
+        path = resolve_lut_path(root, text)
+        if str(path).casefold() in seen or not path.is_file():
+            continue
+        seen.add(str(path).casefold())
+        try:
+            name = str(path.relative_to(lut_root))
+        except ValueError:
+            name = str(path)
+        listed.append((str(path), name))
+    return listed
+
+
+def pinned_luts(root: Path) -> list[str]:
+    return [str(resolve_lut_path(root, item)) for item in load_lut_cache(root).get("pinned_luts", [])]
+
+
+def import_luts(root: Path, files: list[str] | None = None, folder: str = "") -> list[Path]:
+    """LUT files copied into LUTs\\ of the program: files one by one, a folder with its tree under its own name. What is not
+    a LUT is passed over; a file already in LUTs\\ stays where it is. The copies, in order."""
+    lut_root = (root / "LUTs").resolve()
+    lut_root.mkdir(parents=True, exist_ok=True)
+    pairs: list[tuple[Path, Path]] = []
+    if folder:
+        source_root = Path(folder).resolve()
+        target_root = lut_root if source_root == lut_root else lut_root / source_root.name
+        pairs = [(source, target_root / source.relative_to(source_root)) for source in sorted(source_root.rglob("*"))]
+    for name in files or []:
+        source = Path(name).resolve()
+        pairs.append((source, lut_root / source.name))
+    copied: list[Path] = []
+    for source, target in pairs:
+        if not source.is_file() or source.suffix.lower() not in LUT_EXTENSIONS:
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source != target.resolve():
+            shutil.copy2(source, target)
+        copied.append(target.resolve())
+    return copied
 
 
 def update_lut_cache(root: Path, value: str, *, pinned: bool | None = None) -> dict[str, Any]:

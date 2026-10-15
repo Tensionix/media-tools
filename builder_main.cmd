@@ -20,7 +20,7 @@ call :SYNC_VERSION
 
 :SYNC_VERSION
 set "SYNC_PS="
-if exist "%BASE_DIR%\system_core\powershell\pwsh.exe" set "SYNC_PS=%BASE_DIR%\system_core\powershell\pwsh.exe"
+if exist "%BASE_DIR%\App\AudionPs.exe" set "SYNC_PS=%BASE_DIR%\App\AudionPs.exe"
 if not defined SYNC_PS where pwsh.exe >nul 2>nul && set "SYNC_PS=pwsh.exe"
 if not defined SYNC_PS where powershell.exe >nul 2>nul && set "SYNC_PS=powershell.exe"
 if not defined SYNC_PS exit /b 0
@@ -43,7 +43,6 @@ goto FALLBACK_MENU
 >"%MENU_FILE%" echo [01] PYTHON ENV CMD                        ^| build_cmd         ^| build portable runtime via CMD
 >>"%MENU_FILE%" echo [02] PYTHON ENV PS                         ^| build_ps          ^| optional PowerShell env builder
 >>"%MENU_FILE%" echo [03] FZF                                   ^| update_fzf        ^| install/update system_core\fzf.exe
->>"%MENU_FILE%" echo [04] POWERSHELL                            ^| install_pwsh      ^| install portable PowerShell
 >>"%MENU_FILE%" echo [09] PORTABLE OFFLINE                      ^| install_offline   ^| install from local runtime/wheelhouse
 >>"%MENU_FILE%" echo.
 >>"%MENU_FILE%" echo [10] 7-ZIP                                 ^| install_7zip      ^| install portable 7-Zip
@@ -55,10 +54,6 @@ goto FALLBACK_MENU
 >>"%MENU_FILE%" echo [70] CLEAN INSTALL CACHE                   ^| clean_cache       ^| clean install cache/staging/bytecode
 >>"%MENU_FILE%" echo [71] VERIFY / DOCTOR                       ^| verify            ^| run portable environment checks
 >>"%MENU_FILE%" echo [72] CMD ENCODING CHECK                    ^| cmd_encoding      ^| UTF-8 no-BOM CRLF check/fix
->>"%MENU_FILE%" echo [74] COLLECT LICENSES                      ^| collect_licenses  ^| collect third-party license files
->>"%MENU_FILE%" echo [75] PRUNE LICENSES                        ^| prune_licenses    ^| remove stale license folders
->>"%MENU_FILE%" echo [76] DEDUP LICENSES                        ^| dedupe_licenses   ^| deduplicate exact license texts
->>"%MENU_FILE%" echo [77] MAKE RELEASE ARCHIVE                  ^| release           ^| stage and create release zip
 >>"%MENU_FILE%" echo.
 >>"%MENU_FILE%" echo [90] PROJECT LAUNCHER                      ^| project           ^| open project workflow menu
 >>"%MENU_FILE%" echo.
@@ -66,7 +61,6 @@ goto FALLBACK_MENU
 >>"%MENU_FILE%" echo [96] OPEN runtime                          ^| open_runtime      ^| explorer runtime
 >>"%MENU_FILE%" echo [97] OPEN wheelhouse                       ^| open_wheels       ^| explorer wheelhouse
 >>"%MENU_FILE%" echo [98] OPEN licenses                         ^| open_licenses     ^| explorer licenses
->>"%MENU_FILE%" echo [99] OPEN release                          ^| open_release      ^| explorer release
 >>"%MENU_FILE%" echo.
 >>"%MENU_FILE%" echo [00] EXIT                                  ^| exit              ^| close builder
 
@@ -74,6 +68,7 @@ type "%MENU_FILE%" | "%FZF_EXE%" --prompt="audion@portable-builder > " --pointer
 
 set "CHOICE="
 set /p CHOICE=<"%RES_FILE%"
+del /q "%MENU_FILE%" "%RES_FILE%" >nul 2>&1
 if not defined CHOICE goto MAIN
 
 for /f "tokens=2 delims=|" %%a in ("%CHOICE%") do set "RAW=%%a"
@@ -82,7 +77,6 @@ call :TRIM RAW
 if /I "%RAW%"=="build_cmd" goto BUILD_CMD
 if /I "%RAW%"=="build_ps" goto BUILD_PS
 if /I "%RAW%"=="update_fzf" goto UPDATE_FZF
-if /I "%RAW%"=="install_pwsh" goto INSTALL_PWSH
 if /I "%RAW%"=="install_offline" goto INSTALL_OFFLINE
 if /I "%RAW%"=="install_7zip" goto INSTALL_7ZIP
 if /I "%RAW%"=="install_ffmpeg_btbn" goto INSTALL_FFMPEG_BTBN
@@ -93,16 +87,11 @@ if /I "%RAW%"=="install_mpv" goto INSTALL_MPV
 if /I "%RAW%"=="clean_cache" goto CLEAN_CACHE
 if /I "%RAW%"=="verify" goto VERIFY
 if /I "%RAW%"=="cmd_encoding" goto CMD_ENCODING
-if /I "%RAW%"=="collect_licenses" goto COLLECT_LICENSES
-if /I "%RAW%"=="prune_licenses" goto PRUNE_LICENSES
-if /I "%RAW%"=="dedupe_licenses" goto DEDUPE_LICENSES
-if /I "%RAW%"=="release" goto RELEASE
 if /I "%RAW%"=="project" goto PROJECT
 if /I "%RAW%"=="open_install" goto OPEN_INSTALL
 if /I "%RAW%"=="open_runtime" goto OPEN_RUNTIME
 if /I "%RAW%"=="open_wheels" goto OPEN_WHEELS
 if /I "%RAW%"=="open_licenses" goto OPEN_LICENSES
-if /I "%RAW%"=="open_release" goto OPEN_RELEASE
 if /I "%RAW%"=="exit" exit /b 0
 goto MAIN
 
@@ -110,7 +99,6 @@ goto MAIN
 echo [01] PYTHON ENV CMD
 echo [02] PYTHON ENV PS
 echo [03] FZF
-echo [04] POWERSHELL
 echo [09] PORTABLE OFFLINE
 echo.
 echo [10] 7-ZIP
@@ -122,10 +110,6 @@ echo.
 echo [70] CLEAN INSTALL CACHE
 echo [71] VERIFY / DOCTOR
 echo [72] CMD ENCODING CHECK
-echo [74] COLLECT LICENSES
-echo [75] PRUNE LICENSES
-echo [76] DEDUP LICENSES
-echo [77] MAKE RELEASE ARCHIVE
 echo.
 echo [90] PROJECT LAUNCHER
 echo.
@@ -133,7 +117,6 @@ echo [95] OPEN install
 echo [96] OPEN runtime
 echo [97] OPEN wheelhouse
 echo [98] OPEN licenses
-echo [99] OPEN release
 echo.
 echo [00] EXIT
 echo.
@@ -150,9 +133,6 @@ if /I "%RAW%"=="build_ps" goto BUILD_PS
 if /I "%RAW%"=="03" goto UPDATE_FZF
 if /I "%RAW%"=="3" goto UPDATE_FZF
 if /I "%RAW%"=="update_fzf" goto UPDATE_FZF
-if /I "%RAW%"=="04" goto INSTALL_PWSH
-if /I "%RAW%"=="4" goto INSTALL_PWSH
-if /I "%RAW%"=="install_pwsh" goto INSTALL_PWSH
 if /I "%RAW%"=="09" goto INSTALL_OFFLINE
 if /I "%RAW%"=="9" goto INSTALL_OFFLINE
 if /I "%RAW%"=="install_offline" goto INSTALL_OFFLINE
@@ -173,14 +153,6 @@ if /I "%RAW%"=="71" goto VERIFY
 if /I "%RAW%"=="verify" goto VERIFY
 if /I "%RAW%"=="72" goto CMD_ENCODING
 if /I "%RAW%"=="cmd_encoding" goto CMD_ENCODING
-if /I "%RAW%"=="74" goto COLLECT_LICENSES
-if /I "%RAW%"=="collect_licenses" goto COLLECT_LICENSES
-if /I "%RAW%"=="75" goto PRUNE_LICENSES
-if /I "%RAW%"=="prune_licenses" goto PRUNE_LICENSES
-if /I "%RAW%"=="76" goto DEDUPE_LICENSES
-if /I "%RAW%"=="dedupe_licenses" goto DEDUPE_LICENSES
-if /I "%RAW%"=="77" goto RELEASE
-if /I "%RAW%"=="release" goto RELEASE
 if /I "%RAW%"=="90" goto PROJECT
 if /I "%RAW%"=="project" goto PROJECT
 if /I "%RAW%"=="95" goto OPEN_INSTALL
@@ -191,8 +163,6 @@ if /I "%RAW%"=="97" goto OPEN_WHEELS
 if /I "%RAW%"=="open_wheels" goto OPEN_WHEELS
 if /I "%RAW%"=="98" goto OPEN_LICENSES
 if /I "%RAW%"=="open_licenses" goto OPEN_LICENSES
-if /I "%RAW%"=="99" goto OPEN_RELEASE
-if /I "%RAW%"=="open_release" goto OPEN_RELEASE
 if /I "%RAW%"=="00" exit /b 0
 if /I "%RAW%"=="0" exit /b 0
 if /I "%RAW%"=="exit" exit /b 0
@@ -203,10 +173,6 @@ goto MAIN
 
 :BUILD_PS
 call "%BASE_DIR%\install\Build_Portable_Env.cmd"
-goto MAIN
-
-:INSTALL_PWSH
-call "%BASE_DIR%\install\Install-Portable-PowerShell.cmd"
 goto MAIN
 
 :INSTALL_FFMPEG_BTBN
@@ -246,22 +212,6 @@ goto MAIN
 call "%BASE_DIR%\install\launcher-tools-update_fzf.cmd"
 goto MAIN
 
-:COLLECT_LICENSES
-call "%BASE_DIR%\system_core\license\Run-Collect-ThirdPartyLicenses.cmd"
-goto MAIN
-
-:PRUNE_LICENSES
-call "%BASE_DIR%\system_core\license\Run-Prune-Stale-ThirdPartyLicenses.cmd"
-goto MAIN
-
-:DEDUPE_LICENSES
-call "%BASE_DIR%\system_core\license\Run-Deduplicate-ThirdPartyLicenses.cmd"
-goto MAIN
-
-:RELEASE
-call "%BASE_DIR%\install\make_release_archive.cmd"
-goto MAIN
-
 :CLEAN_CACHE
 call "%BASE_DIR%\install\Clean-Install-Cache.cmd"
 goto MAIN
@@ -280,10 +230,6 @@ goto MAIN
 :OPEN_LICENSES
 if not exist "%BASE_DIR%\licenses" mkdir "%BASE_DIR%\licenses" >nul 2>nul
 start "" explorer "%BASE_DIR%\licenses"
-goto MAIN
-
-:OPEN_RELEASE
-start "" explorer "%BASE_DIR%\release"
 goto MAIN
 
 :PROJECT

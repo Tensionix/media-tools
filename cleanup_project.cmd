@@ -37,9 +37,9 @@ for %%A in (%*) do (
   if /I "%%~A"=="--help" goto usage
 )
 
-if not exist "%BASE_DIR%\system_core\ui_nicegui\app.py" (
+if not exist "%BASE_DIR%\system_core\cli.py" (
   echo [ERROR] Project marker not found:
-  echo %BASE_DIR%\system_core\ui_nicegui\app.py
+  echo %BASE_DIR%\system_core\cli.py
   echo.
   echo Cleanup aborted.
   call :WAIT_KEY
@@ -62,20 +62,22 @@ echo Root:
 echo   %BASE_DIR%
 echo.
 echo This script returns the project to a small source-only / LEAN state.
-echo It keeps downloaded content results, LUTs, scripts, documentation, permanent configs and licenses.
+echo It keeps downloaded content (output\Download), LUTs, scripts, documentation, permanent configs and licenses.
 echo It removes generated workspace content, build/runtime payloads, downloaded tool payloads and caches:
-echo   - Source, Transcoded, logs, report, workspace, data, release contents
+echo   - input, output (but output\Download), logs, report, workspace contents
 echo   - runtime, wheelhouse, install\download contents, including cached 7-Zip distributives
 echo   - Tools\ffmpeg, Tools\mpv, Tools\yt-dlp, Tools\deno, Tools\7zip contents
-echo   - machine-local hardware, GUI path and terminal command caches
+echo   - the state of the window and the machine: window settings and forms, path history, the sealed and the open
+echo     cookies, the download archive, the caches of components, LUTs and hardware
 echo   - root/runtime/system_core cache folders: .runtime, _runtime, ._runtime, __pycache__
 echo   - root pytest/mypy/ruff caches, root build/dist folders
-echo   - system_core\fzf.exe and system_core\powershell contents
+echo   - system_core\fzf.exe: step 03 of the builder brings it back
+echo   - Source\bin, Source\obj, Source\Ps\bin, Source\Ps\obj: what a build of the window leaves; App\ stays
 echo   - system_core\7zip bootstrap extractor contents
 echo   - transient installer temp folders in system_core
 echo   - generated files inside managed cleanup folders
 echo.
-echo Protected user data: Download, LUTs.
+echo Protected user data: output\Download, LUTs.
 echo Protected source: Scripts, system_core source, config, Docs, launchers, install scripts, licenses.
 echo.
 if "%DRY_RUN%"=="1" echo Dry-run: ON. Nothing will be deleted.
@@ -105,22 +107,20 @@ call :RemoveDir "%BASE_DIR%\.ruff_cache"
 call :RemoveDir "%BASE_DIR%\system_core\__pycache__"
 call :RemoveDir "%BASE_DIR%\system_core\core\__pycache__"
 call :RemoveDir "%BASE_DIR%\system_core\services\__pycache__"
-call :RemoveDir "%BASE_DIR%\system_core\ui_nicegui\__pycache__"
+call :RemoveDir "%BASE_DIR%\system_core\tests\__pycache__"
+call :RemoveDir "%BASE_DIR%\tests\__pycache__"
 
-call :ClearDir "%BASE_DIR%\Source"
-call :ClearDir "%BASE_DIR%\Transcoded"
+call :ClearDir "%BASE_DIR%\input"
+call :ClearDir "%BASE_DIR%\output" "Download"
 call :ClearDir "%BASE_DIR%\logs"
 call :ClearDir "%BASE_DIR%\report"
 call :ClearDir "%BASE_DIR%\workspace"
-call :ClearDir "%BASE_DIR%\data"
-call :ClearDir "%BASE_DIR%\release"
 call :ClearDir "%BASE_DIR%\runtime"
 call :ClearDir "%BASE_DIR%\wheelhouse"
 call :RemoveFile "%BASE_DIR%\install\download\7zr.exe"
 call :RemoveFilesInDirByPattern "%BASE_DIR%\install\download" "7z*.7z"
 call :RemoveFilesInDirByPattern "%BASE_DIR%\install\download" "7zip*.7z"
 call :ClearDir "%BASE_DIR%\install\download"
-call :ClearDir "%BASE_DIR%\system_core\powershell"
 call :RemoveDir "%BASE_DIR%\system_core\7zip"
 call :ClearDir "%BASE_DIR%\Tools\ffmpeg"
 call :RemoveFilesInDirByPattern "%BASE_DIR%\Tools" "ffmpeg-*-source.tar.gz"
@@ -130,7 +130,7 @@ call :ClearDir "%BASE_DIR%\Tools\yt-dlp"
 call :ClearDir "%BASE_DIR%\Tools\deno"
 call :ClearDir "%BASE_DIR%\Tools\7zip"
 
-call :RemoveFile "%BASE_DIR%\Transcoded\.gitkeep"
+call :RemoveFile "%BASE_DIR%\output\.gitkeep"
 
 call :RemoveDir "%BASE_DIR%\build"
 call :RemoveDir "%BASE_DIR%\dist"
@@ -138,13 +138,20 @@ call :RemoveDir "%BASE_DIR%\system_core\_ffmpeg_tmp"
 call :RemoveDir "%BASE_DIR%\system_core\_ffmpeg_btbn_tmp"
 call :RemoveDir "%BASE_DIR%\system_core\_deno_tmp"
 call :RemoveDir "%BASE_DIR%\system_core\_7zip_tmp"
-call :RemoveDir "%BASE_DIR%\system_core\_pwsh_tmp"
-call :RemoveDir "%BASE_DIR%\system_core\_powershell_tmp"
 call :RemoveDir "%BASE_DIR%\system_core\_fzf_tmp"
 call :RemoveFile "%BASE_DIR%\system_core\fzf.exe"
 call :RemoveFile "%BASE_DIR%\config\hardware_capabilities_cache.json"
-call :RemoveFile "%BASE_DIR%\config\gui_path_cache.json"
-call :RemoveFile "%BASE_DIR%\config\terminal_commands.json"
+call :RemoveFile "%BASE_DIR%\config\window_settings.json"
+call :RemoveFile "%BASE_DIR%\config\path_history.json"
+call :RemoveFile "%BASE_DIR%\config\components_cache.json"
+call :RemoveFile "%BASE_DIR%\config\gui_lut_cache.json"
+call :RemoveFile "%BASE_DIR%\config\cookies.dpapi"
+call :RemoveFile "%BASE_DIR%\config\cookies.txt"
+call :RemoveFile "%BASE_DIR%\config\download-archive.txt"
+call :RemoveDir "%BASE_DIR%\Source\bin"
+call :RemoveDir "%BASE_DIR%\Source\obj"
+call :RemoveDir "%BASE_DIR%\Source\Ps\bin"
+call :RemoveDir "%BASE_DIR%\Source\Ps\obj"
 
 if exist "%BASE_DIR%\install\init_folders.cmd" (
   if "%DRY_RUN%"=="1" (
@@ -196,25 +203,10 @@ echo Options:
 echo   /Y, /YES, --yes       Run without confirmation.
 echo   /DRYRUN, --dry-run    Print actions without deleting anything.
 exit /b 0
-:RemoveNamedDirs
-set "DIR_NAME=%~1"
-echo [DIRS] Removing folders named %DIR_NAME%
-for /f "delims=" %%D in ('dir /ad /b /s "%BASE_DIR%" 2^>nul') do (
-  if /I "%%~nxD"=="%DIR_NAME%" (
-    if "%DRY_RUN%"=="1" (
-      echo   [DRY] rmdir /s /q "%%~fD"
-    ) else (
-      echo   rmdir "%%~fD"
-      attrib -r -s -h "%%~fD\*" /s /d >nul 2>nul
-      rd /s /q "%%~fD" >nul 2>nul
-      if exist "%%~fD\" call :MarkError "Could not remove directory: %%~fD"
-    )
-  )
-)
-exit /b 0
-
 :ClearDir
 set "TARGET_DIR=%~1"
+rem A second argument names a folder inside that stays: downloads in output\Download.
+set "KEEP_NAME=%~2"
 call :AssertInside "%TARGET_DIR%" || (
   set /a ERROR_COUNT+=1
   exit /b 1
@@ -229,8 +221,19 @@ if not exist "%TARGET_DIR%\" (
   )
   exit /b 0
 )
+call :IsLink "%TARGET_DIR%"
+if "!IS_LINK!"=="1" (
+  call :MarkError "Not cleared: %TARGET_DIR% is a link to another place, and what lies there is not the project's"
+  exit /b 1
+)
 echo [CLEAR] %TARGET_DIR%
 for /f "delims=" %%I in ('dir /a /b "%TARGET_DIR%" 2^>nul') do (
+  call :IsLink "%TARGET_DIR%\%%I"
+  if /I "%%I"=="%KEEP_NAME%" (
+    echo   [KEEP] %TARGET_DIR%\%%I
+  ) else if "!IS_LINK!"=="1" (
+    call :RemoveLink "%TARGET_DIR%\%%I"
+  ) else (
     if exist "%TARGET_DIR%\%%I\" (
       if "%DRY_RUN%"=="1" (
         echo   [DRY] rmdir /s /q "%TARGET_DIR%\%%I"
@@ -250,6 +253,7 @@ for /f "delims=" %%I in ('dir /a /b "%TARGET_DIR%" 2^>nul') do (
         if exist "%TARGET_DIR%\%%I" call :MarkError "Could not remove file: %TARGET_DIR%\%%I"
       )
     )
+  )
 )
 exit /b 0
 
@@ -259,6 +263,11 @@ if not exist "%TARGET%\" exit /b 0
 call :AssertInside "%TARGET%" || (
   set /a ERROR_COUNT+=1
   exit /b 1
+)
+call :IsLink "%TARGET%"
+if "!IS_LINK!"=="1" (
+  call :RemoveLink "%TARGET%"
+  exit /b 0
 )
 if "%DRY_RUN%"=="1" (
   echo   [DRY] rmdir /s /q "%TARGET%"
@@ -286,27 +295,17 @@ attrib -r -s -h "%TARGET%" >nul 2>nul
 del /f /q "%TARGET%" >nul 2>nul
 if exist "%TARGET%" call :MarkError "Could not remove file: %TARGET%"
 exit /b 0
-:RemoveFilesByPattern
-set "PATTERN=%~1"
-echo [FILES] Removing %PATTERN%
-for /f "delims=" %%F in ('dir /a-d /b /s "%BASE_DIR%\%PATTERN%" 2^>nul') do (
-  if "%DRY_RUN%"=="1" (
-    echo   [DRY] del "%%~fF"
-  ) else (
-    echo   del "%%~fF"
-    attrib -r -s -h "%%~fF" >nul 2>nul
-    del /f /q "%%~fF" >nul 2>nul
-    if exist "%%~fF" call :MarkError "Could not remove file: %%~fF"
-  )
-)
-exit /b 0
-
 :RemoveFilesInDirByPattern
 set "TARGET_DIR=%~1"
 set "PATTERN=%~2"
 if not exist "%TARGET_DIR%\" exit /b 0
 call :AssertInside "%TARGET_DIR%" || (
   set /a ERROR_COUNT+=1
+  exit /b 1
+)
+call :IsLink "%TARGET_DIR%"
+if "!IS_LINK!"=="1" (
+  call :MarkError "Not cleared: %TARGET_DIR% is a link to another place"
   exit /b 1
 )
 echo [FILES] Removing %PATTERN% in %TARGET_DIR%
@@ -320,6 +319,28 @@ for /f "delims=" %%F in ('dir /a-d /b "%TARGET_DIR%\%PATTERN%" 2^>nul') do (
     if exist "%TARGET_DIR%\%%F" call :MarkError "Could not remove file: %TARGET_DIR%\%%F"
   )
 )
+exit /b 0
+
+:IsLink
+rem IS_LINK=1 when the path is a link - a junction or a symbolic link, of a folder or a file: the parent lists it among
+rem its reparse points. A path inside a project may lead out of it through such a link; its contents are never walked.
+set "IS_LINK=0"
+set "LINK_PATH=%~f1"
+for %%P in ("!LINK_PATH!\..") do set "LINK_PARENT=%%~fP"
+for %%N in ("!LINK_PATH!") do set "LINK_NAME=%%~nxN"
+for /f "delims=" %%L in ('dir /al /b "!LINK_PARENT!" 2^>nul') do if /I "%%L"=="!LINK_NAME!" set "IS_LINK=1"
+exit /b 0
+
+:RemoveLink
+rem The link itself goes; what it leads to stays where it is.
+if "%DRY_RUN%"=="1" (
+  echo   [DRY] unlink "%~1"
+  exit /b 0
+)
+echo   unlink "%~1"
+if exist "%~1\" (rd "%~1" >nul 2>nul) else (del /f /q /a:l "%~1" >nul 2>nul)
+call :IsLink "%~1"
+if "!IS_LINK!"=="1" call :MarkError "Could not remove link: %~1"
 exit /b 0
 
 :AssertInside

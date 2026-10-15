@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from typing import Any
-import ctypes
 import re
 import html
-import locale
-import os
 
 try:
     from .output_decode import decode_process_bytes
@@ -52,7 +49,6 @@ SGR_BG = {
     107: "#eeeeec",
 }
 
-MOJIBAKE_PENALTY_CHARS = set("ЋЎўЈ¤ҐЄє©«»¬­®Її")
 
 # A pipe can swallow the escape and leave the rest of an SGR sequence behind.
 # "[36m" is noise; "[OK]" is text, and the final "m" is what tells them apart.
@@ -342,10 +338,6 @@ class AnsiHtmlRenderer:
         )
 
 
-# DocFlow names the same class this way.
-StatefulAnsiHtmlRenderer = AnsiHtmlRenderer
-
-
 def ansi_to_html(text: str) -> str:
     """Render whitelisted SGR ANSI as escaped HTML spans, with no memory."""
     return AnsiHtmlRenderer().render(text)
@@ -354,7 +346,6 @@ def ansi_to_html(text: str) -> str:
 # Two apps style their terminal under their own prefix; the class is theirs to
 # name, the way the sixteen basic colours are.
 TERMINAL_LINE_CLASS = "audion-terminal-line"
-TERMINAL_PRE_CLASS = "audion-terminal-pre"
 
 BOX_DRAWING = frozenset(chr(code) for code in range(0x2500, 0x2580))
 RULE_CHARS = frozenset("-=+_ \t")
@@ -414,97 +405,6 @@ def terminal_lines_html(
     return prefix + "\n".join(rendered)
 
 
-def terminal_html(
-    lines: Iterable[str],
-    *,
-    renderer: AnsiHtmlRenderer | None = None,
-    history_limit: int | None = None,
-    start_id: int | None = None,
-    skip: int = 0,
-) -> str:
-    visible = list(lines)
-    if history_limit:
-        visible = visible[-history_limit:]
-    body = terminal_lines_html(visible, renderer=renderer, start_id=start_id, skip=skip)
-    return (
-        f'<pre class="{TERMINAL_PRE_CLASS}" spellcheck="false"'
-        f' aria-label="Operation terminal">{body}</pre>'
-    )
-
-
-def _windows_oem_encoding() -> str | None:
-    if os.name != "nt":
-        return None
-    try:
-        codepage = int(ctypes.windll.kernel32.GetOEMCP())  # type: ignore[attr-defined]
-    except Exception:
-        return None
-    return f"cp{codepage}" if codepage > 0 else None
-
-
-def _decode_utf16_ish(data: bytes) -> str | None:
-    if data.startswith(b"\xff\xfe") or data.startswith(b"\xfe\xff"):
-        try:
-            return data.decode("utf-16")
-        except UnicodeDecodeError:
-            return None
-
-    sample = data[:200]
-    if len(sample) < 4:
-        return None
-    even_slots = sample[0::2]
-    odd_slots = sample[1::2]
-    even_nuls = even_slots.count(0)
-    odd_nuls = odd_slots.count(0)
-    even_total = max(1, len(even_slots))
-    odd_total = max(1, len(odd_slots))
-
-    if odd_nuls / odd_total >= 0.35 and even_nuls / even_total <= 0.10:
-        try:
-            return data.decode("utf-16-le")
-        except UnicodeDecodeError:
-            return None
-    if even_nuls / even_total >= 0.35 and odd_nuls / odd_total <= 0.10:
-        try:
-            return data.decode("utf-16-be")
-        except UnicodeDecodeError:
-            return None
-    return None
-
-
-def _unique_encodings(values: Iterable[str | None]) -> list[str]:
-    result: list[str] = []
-    seen: set[str] = set()
-    for value in values:
-        if not value:
-            continue
-        key = value.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        result.append(value)
-    return result
-
-
-def _decoded_score(text: str, priority: int) -> float:
-    score = float(priority)
-    lower = text.lower()
-    score += sum(2.0 for char in text if "а" <= char.lower() <= "я" or char in "ёЁ")
-    score += sum(0.2 for char in text if char.isascii() and (char.isalnum() or char.isspace() or char in ":;.,/\\-_[](){}"))
-    score -= sum(12.0 for char in text if "\u2500" <= char <= "\u259f")
-    score -= sum(8.0 for char in text if char in MOJIBAKE_PENALTY_CHARS)
-    score -= text.count("\ufffd") * 20.0
-    score -= sum(20.0 for char in text if _is_control_char(char))
-    for word in ("ошибка", "файл", "найти", "не ", "уда"):
-        if word in lower:
-            score += 12.0
-    return score
-
-
-def decode_output_bytes(data: bytes) -> str:
-    return decode_process_bytes(data)
-
-
 SPINNER_FRAME_CHARS = set("-\\|/ \t")
 
 
@@ -523,47 +423,6 @@ def _is_spinner_only_line(line: str) -> bool:
     """
     stripped = line.strip()
     return len(stripped) == 1 and stripped in SPINNER_FRAME_CHARS
-
-
-def _redrawn_line(part: str) -> str:
-    """What a terminal would be showing after the carriage returns in one line.
-
-    A progress bar writes its line again and again separated by `\\r`, never by a
-    newline, so a whole tqdm run arrives here as a single part. Turning each `\\r`
-    into a line break spilled a hundred redraws into a hundred log lines.
-
-    A carriage return moves the cursor to the start of the line; it does not clear
-    it. Each segment is written over what is already there, and whatever the new
-    segment does not reach stays visible — which is why a bar that grows leaves
-    only its final state, while a short redraw over a long line does not swallow
-    the tail.
-    """
-    if "\r" not in part:
-        return part
-    rendered = ""
-    for segment in part.split("\r"):
-        rendered = segment + rendered[len(segment) :]
-    return rendered
-
-
-def _decoded_output_lines(chunk: bytes | str) -> list[str]:
-    text = decode_output_bytes(chunk) if isinstance(chunk, bytes) else str(chunk)
-    text = text.replace("\r\n", "\n")
-    result: list[str] = []
-    for part in text.split("\n"):
-        line = _redrawn_line(part).rstrip()
-        if not line or _is_spinner_only_line(line):
-            continue
-        result.append(line)
-    return result
-
-
-def iter_process_output_lines(stream: Any) -> Iterator[str]:
-    while True:
-        chunk = stream.readline()
-        if chunk == b"" or chunk == "":
-            break
-        yield from _decoded_output_lines(chunk)
 
 
 # Kept from this project's own renderer: names its code imports that the

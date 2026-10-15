@@ -1,22 +1,10 @@
 from __future__ import annotations
 
-import array
 import warnings
-
-try:  # Removed in Python 3.13; the peak scan falls back to pure Python without it.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        import audioop as _audioop
-except ImportError:  # pragma: no cover - depends on the interpreter version
-    _audioop = None
-import math
-import threading
 import time
 from pathlib import Path
 from typing import Any, Callable
 from fractions import Fraction
-import base64
-import hashlib
 import importlib
 import json
 import os
@@ -24,6 +12,8 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
+import tempfile
 
 from system_core.core.ansi_terminal import ansi_status
 from system_core.core.audio_contract import (
@@ -35,10 +25,6 @@ from system_core.core.audio_contract import (
     soxr_resample_filter,
 )
 from system_core.core.encoder_backends import (
-    AMF_QUALITY_PRESETS,
-    CPU_ENCODER_PRESETS,
-    NVENC_PRESETS,
-    QSV_ENCODER_PRESETS,
     decode_args as _backend_decode_args,
     decode_backend_from_params as _decode_backend,
     decode_label as _backend_decode_label,
@@ -55,16 +41,15 @@ from system_core.core.encoder_backends import (
 from system_core.core.ffmpeg_escape import ffmpeg_filter_number, ffmpeg_filter_path
 from system_core.core.fps_contract import (
     build_fps_command as _build_fps_command,
-    fps_audio_filter as _fps_audio_filter,
+    fps_audio_mode as _fps_audio_mode,
     fps_audio_output_rate as _fps_audio_output_rate,
     fps_audio_target_rate as _fps_audio_target_rate,
-    fps_oversample_factor as _fps_oversample_factor,
     fps_pcm_audio_args as _fps_pcm_audio_args,
 )
 from system_core.core.jobs import JobContext, hidden_subprocess_kwargs, run_cmd_script, run_process, utf8_subprocess_env
 from system_core.core.logging_utils import timestamp
 from system_core.core.manifest import CommandNode, load_manifest
-from system_core.core.path_cache import cached_output_path, cached_source_path
+from system_core.core.path_cache import cached_output_path, cached_source_path, only_formats
 from system_core.core.script_profiles import load_script_profiles, script_profile
 from system_core.core.trim_contract import (
     audio_channel_complaint,
@@ -85,8 +70,8 @@ from system_core.core.trim_contract import (
     format_seconds,
     frames_to_seconds,
     is_variable_rate,
+    stream_rate,
     keyframe_probe_command,
-    nearest_keyframe,
     extra_stream_plan,
     parse_keyframe_times,
     plan_gap,
@@ -274,6 +259,9 @@ def _normalize_extensions(values: list[str]) -> set[str]:
 
 
 def _media_files(source: Path, extensions: set[str]) -> list[Path]:
+    only = only_formats()
+    if only:
+        extensions = set(extensions) & only
     if not source.exists():
         return []
     if source.is_file():
@@ -301,7 +289,10 @@ def _source_relative_parent(source: Path, source_root: Path | None) -> Path:
 def _source_display_name(source: Path, source_root: Path | None = None) -> str:
     if source_root is not None:
         try:
-            return source.resolve().relative_to(source_root.resolve()).as_posix()
+            relative = source.resolve().relative_to(source_root.resolve()).as_posix()
+            # A Source that is one file is its own root: "." would name nothing.
+            if relative not in {"", "."}:
+                return relative
         except (OSError, ValueError):
             pass
     return source.name
@@ -483,13 +474,6 @@ def _encode_audio_filter_args(params: dict[str, Any], audio_mode: str) -> list[s
     return resample_filter_args(params.get("audio_sample_rate"), audio_mode)
 
 
-def _audio_resampler(params: dict[str, Any]) -> str:
-    value = str(params.get("audio_resampler", "soxr")).strip().lower()
-    if value in {"sox", "soxr", "libsoxr", "swr", "ffmpeg", "auto", ""}:
-        return "soxr"
-    return "soxr"
-
-
 def _audio_bit_depth(params: dict[str, Any]) -> str:
     value = str(params.get("audio_bit_depth", "24")).strip().lower()
     if value in {"source", "native", "original", "auto", ""}:
@@ -550,6 +534,14 @@ def _audio_lufs_filter(params: dict[str, Any], measured: dict[str, Any] | None =
     return f"loudnorm=I={value}:TP={true_peak}:LRA=11", suffix
 
 
+# 5.1 to stereo the way the wrapper audio-downmix-51-to-20 always did it: fronts at full level, centre -3 dB, surrounds
+# -6 dB (the back and the side pair both named, whichever the layout has), LFE out. A stereo source passes unchanged.
+SURROUND_6DB_DOWNMIX = ("pan=stereo|FL=1.0*FL+0.707*FC+0.5*BL+0.5*SL+0.0*LFE"
+                        "|FR=1.0*FR+0.707*FC+0.5*BR+0.5*SR+0.0*LFE")
+# The sound laid on its timestamps from zero: gaps filled, overlaps trimmed (the wrappers audio-resample-*_sync).
+RESYNC_FILTER = "aresample=async=1:first_pts=0"
+
+
 def _audio_filter_args(params: dict[str, Any], lufs_override: str = "", *, include_lufs: bool = True) -> tuple[list[str], list[str]]:
     channel_mode = str(params.get("audio_channel_mode", "")).strip().lower()
     if _as_bool(params.get("downmix_stereo"), False) and not channel_mode:
@@ -557,6 +549,7 @@ def _audio_filter_args(params: dict[str, Any], lufs_override: str = "", *, inclu
     channel_mode = channel_mode or "keep"
     matrix = _as_bool(params.get("matrix_51"), False) and channel_mode == "stereo"
     downmix = matrix or channel_mode in {"stereo", "mono", "dual_mono"}
+    by_pan = channel_mode == "stereo" and not matrix and str(params.get("downmix_formula", "")).strip().lower() == "surround_6db"
     filters: list[str] = []
     suffixes: list[str] = []
     sample_rate = _audio_sample_rate(params)
@@ -564,10 +557,16 @@ def _audio_filter_args(params: dict[str, Any], lufs_override: str = "", *, inclu
     if matrix:
         filters.append("aresample=matrix_encoding=dplii")
         suffixes.append("dplii")
+    if by_pan:
+        filters.append(SURROUND_6DB_DOWNMIX)
+        suffixes.append("stereo")
 
     if sample_rate != "source":
         filters.append(soxr_resample_filter(sample_rate))
         suffixes.append("soxr")
+    if _as_bool(params.get("audio_resync"), False):
+        filters.append(RESYNC_FILTER)
+        suffixes.append("sync")
 
     if include_lufs:
         if lufs_override:
@@ -589,7 +588,7 @@ def _audio_filter_args(params: dict[str, Any], lufs_override: str = "", *, inclu
         if channel_mode == "mono":
             args.extend(["-ac", "1"])
             suffixes.append("mono")
-        elif channel_mode != "dual_mono":
+        elif channel_mode != "dual_mono" and not by_pan:
             args.extend(["-ac", "2"])
             if "stereo" not in suffixes:
                 suffixes.append("stereo")
@@ -625,6 +624,11 @@ def _audio_copy_container(params: dict[str, Any]) -> str:
     }
     value = aliases.get(value, value)
     return value if value in {"auto", "elementary", "m4a", "mka"} else "auto"
+
+
+# The PCM a WAV (RIFF) file holds as it is, measured with the bundled FFmpeg: the little-endian kinds, unsigned 8-bit,
+# A-law and mu-law. Big-endian PCM, signed 8-bit, DVD and Blu-ray PCM are refused there.
+WAV_COPY_PCM = {"pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm_f32le", "pcm_f64le", "pcm_u8", "pcm_alaw", "pcm_mulaw"}
 
 
 def _audio_copy_extension(params: dict[str, Any], row: dict[str, Any] | None) -> str:
@@ -663,7 +667,8 @@ def _audio_copy_extension(params: dict[str, Any], row: dict[str, Any] | None) ->
     if codec in {"ac3", "eac3", "dts", "truehd", "mlp", "mp3", "flac", "opus", "vorbis"}:
         return elementary_by_codec[codec]
     if codec.startswith("pcm_"):
-        return "wav"
+        # WAV holds little-endian PCM only: a copy of big-endian PCM there is refused by FFmpeg.
+        return "wav" if codec in WAV_COPY_PCM else "mka"
     if codec.startswith("dsd_"):
         return "mka"
     return "mka"
@@ -857,9 +862,8 @@ def inventory(context: JobContext) -> dict[str, object]:
     output_path = cached_output_path(context.paths.root)
     rows: list[dict[str, object]] = []
     for label, folder in [
-        ("Source", source_path),
-        ("Transcoded", output_path),
-        ("Download", context.paths.root / "Download"),
+        ("input", source_path),
+        ("output", output_path),
         ("LUTs", context.paths.root / "LUTs"),
     ]:
         if folder.is_file():
@@ -897,23 +901,78 @@ def selftest(context: JobContext) -> dict[str, object]:
 
 def _run_installer(context: JobContext, script_name: str, label: str) -> dict[str, object]:
     script = Path("install") / script_name
+    if _as_bool(context.operation.parameters.get("dry_run"), False):
+        # A dry run runs nothing, an installer neither: it would download. It says what it would run, as the
+        # wrapper yt-update always did.
+        context.log("[DRY RUN] The installer was not run.")
+        context.log(subprocess.list2cmdline(["cmd.exe", "/d", "/c", "call", str(context.paths.root / script), "/NOPAUSE"]))
+        context.progress(1.0)
+        return {"script": str(script), "lines": 0, "dry_run": True}
     context.log(f"Installing/updating {label}...")
     result = run_cmd_script(context, str(script), ["/NOPAUSE"], check=True, extra_env=_tool_env(context.paths.root))
     context.progress(1.0)
     return {"script": str(script), "lines": len(result.lines)}
 
 
+# The installers of SERVICE: an operation and its script in install\, with the words of its log. FFmpeg is installed
+# by the script of Gyan: it picks the release the NVIDIA driver allows; the one of BtbN hands over to it under the policy
+# of exact stable releases (install\FFmpeg-Driver-Fallback-Policy.md), so it is no choice of its own.
+INSTALLER_SCRIPTS = {
+    "install_7zip": ("Install-Portable-7Zip.cmd", "portable 7-Zip"),
+    "install_ffmpeg": ("Install-Portable-FFmpeg-Gyan.cmd", "portable FFmpeg Gyan Stable"),
+    "install_ytdlp": ("Install-Portable-yt-dlp.cmd", "portable yt-dlp"),
+    "install_mpv": ("Install-Portable-mpv.cmd", "portable mpv"),
+}
+
+
 def install_portable_7zip(context: JobContext) -> dict[str, object]:
-    return _run_installer(context, "Install-Portable-7Zip.cmd", "portable 7-Zip")
+    return _run_installer(context, *INSTALLER_SCRIPTS["install_7zip"])
 
 
 def install_portable_ffmpeg(context: JobContext) -> dict[str, object]:
     context.log("FFmpeg is a GPL/reviewed external tool payload; install stays explicit.")
-    return _run_installer(context, "Install-Portable-FFmpeg-Gyan.cmd", "portable FFmpeg Gyan Stable")
+    return _run_installer(context, *INSTALLER_SCRIPTS["install_ffmpeg"])
 
 
 def install_portable_ytdlp(context: JobContext) -> dict[str, object]:
-    return _run_installer(context, "Install-Portable-yt-dlp.cmd", "portable yt-dlp")
+    return _run_installer(context, *INSTALLER_SCRIPTS["install_ytdlp"])
+
+
+def install_portable_mpv(context: JobContext) -> dict[str, object]:
+    return _run_installer(context, *INSTALLER_SCRIPTS["install_mpv"])
+
+
+def installer_plan(root: Path, operation: str) -> dict[str, object]:
+    """What an installer of SERVICE would download, said by the script itself and nothing fetched: it runs to the point of
+    its download (the release, the policy of the NVIDIA driver, the mirror) with AUDION_INSTALL_PLAN=1 and says every
+    file - install\\Plan-Download.ps1: "[PLAN] component|file|url|bytes"; "cache" for an url is a verified archive at
+    hand. The window names the files, their source and their size before it runs the installer."""
+    if operation not in INSTALLER_SCRIPTS:
+        raise ValueError(f"{operation!r} is no installer of SERVICE")
+    script = Path(root) / "install" / INSTALLER_SCRIPTS[operation][0]
+    environment = {**os.environ, **_tool_env(Path(root)), "AUDION_INSTALL_PLAN": "1", "AUDION_NO_PAUSE": "1"}
+    creation = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+    try:
+        done = subprocess.run(["cmd.exe", "/d", "/c", str(script), "/NOPAUSE"], cwd=str(root), env=environment,
+                              capture_output=True, timeout=240, creationflags=creation)
+    except (OSError, subprocess.SubprocessError) as error:
+        return {"operation": operation, "ok": False, "files": [], "notes": [], "error": f"{type(error).__name__}: {error}"}
+    said = ((done.stdout or b"") + b"\n" + (done.stderr or b"")).decode("utf-8", errors="replace")
+    files: list[dict[str, object]] = []
+    notes: list[str] = []
+    trouble: list[str] = []
+    for line in (raw.strip() for raw in said.splitlines()):
+        if line.startswith("[PLAN] "):
+            what, name, url, size = (line[len("[PLAN] "):].split("|") + ["", "", "", ""])[:4]
+            files.append({"what": what, "name": name, "url": "" if url == "cache" else url, "cached": url == "cache",
+                          "size": int(size) if size.isdigit() else None})
+        elif line.startswith("[POLICY]"):
+            notes.append(line[len("[POLICY]"):].strip())
+        elif line.startswith(("[ERROR]", "WARNING:", "[WARN]")) or "Exception" in line:
+            trouble.append(line)
+    ok = done.returncode == 0 and bool(files)
+    return {"operation": operation, "ok": ok, "files": files, "notes": notes,
+            "error": "" if ok else " ".join(trouble[-3:]) or f"the installer said no file (exit {done.returncode})"}
 
 
 def _profile_id(script_name: str) -> str:
@@ -953,10 +1012,14 @@ def _profile_doctor_status(level: str, subject: str, detail: str) -> dict[str, s
     return {"level": level, "subject": subject, "detail": detail}
 
 
+# What the wrappers of the cut cut: the head (start), the tail (end), both ends (both), a piece out of the middle.
+TRIM_WRAPPER_PATTERNS = {"start", "end", "both", "middle"}
+
+
 def _validate_script_profile(profile_id: str, profile: dict[str, Any]) -> list[dict[str, str]]:
     kind = str(profile.get("kind", "")).strip().lower()
     issues: list[dict[str, str]] = []
-    allowed = {"audio", "color", "editing", "encode", "ff_selftest", "fps", "remux", "subtitles", "youtube"}
+    allowed = {"audio", "color", "editing", "encode", "ff_selftest", "fps", "remux", "subtitles", "trim", "youtube"}
     if kind not in allowed:
         return [_profile_doctor_status("ERROR", profile_id, f"Unsupported or missing kind: {kind or '<empty>'}")]
 
@@ -967,6 +1030,7 @@ def _validate_script_profile(profile_id: str, profile: dict[str, Any]) -> list[d
         "encode": ["target"],
         "fps": ["source_fps", "target_fps", "mode"],
         "remux": ["source", "target"],
+        "trim": ["pattern"],
         "youtube": [],
     }
     for key in required_by_kind.get(kind, []):
@@ -974,6 +1038,8 @@ def _validate_script_profile(profile_id: str, profile: dict[str, Any]) -> list[d
         if key not in profile or value is None or value == "" or value == []:
             issues.append(_profile_doctor_status("ERROR", profile_id, f"Missing required key: {key}"))
 
+    if kind == "trim" and profile.get("pattern") and profile.get("pattern") not in TRIM_WRAPPER_PATTERNS:
+        issues.append(_profile_doctor_status("ERROR", profile_id, f"Unknown trim pattern: {profile.get('pattern')}"))
     if kind == "youtube" and not profile.get("args") and profile.get("mode") not in {"selftest", "update"}:
         issues.append(_profile_doctor_status("WARN", profile_id, "YouTube profile has no args and no special mode."))
     if kind == "audio" and profile.get("action") == "m4a":
@@ -2071,7 +2137,7 @@ def _probe_media_json(root: Path, source: Path) -> dict[str, Any]:
         "-v",
         "error",
         "-show_entries",
-        "format=duration,bit_rate:stream=index,codec_type,codec_name,codec_tag_string,profile,width,height,avg_frame_rate,pix_fmt,color_space,color_transfer,color_primaries,sample_fmt,sample_rate,channels,channel_layout,bits_per_sample,bits_per_raw_sample,bit_rate:stream_tags=language,title",
+        "format=duration,bit_rate:stream=index,codec_type,codec_name,codec_tag_string,profile,width,height,r_frame_rate,avg_frame_rate,field_order,pix_fmt,color_space,color_transfer,color_primaries,sample_fmt,sample_rate,channels,channel_layout,bits_per_sample,bits_per_raw_sample,bit_rate:stream_tags=language,title",
         "-of",
         "json",
         str(source),
@@ -2107,6 +2173,148 @@ def _media_duration_seconds(root: Path, source: Path) -> float | None:
     return duration if duration > 0 else None
 
 
+def _claim_target(context: JobContext, source: Path, target: Path) -> Path:
+    """The file this source writes in this run. Two sources of one batch never share one: a second of the same stem -
+    take.wav beside take.flac, both to M4A - gets the extension of its own in the name (take_wav.m4a), and the journal
+    says so. The same order of the Source gives the same names at every run."""
+    claimed = getattr(context, "claimed", None)
+    if claimed is None:
+        return target
+    tag = source.suffix.lstrip(".").lower() or "file"
+    candidate, number = target, 1
+    while claimed.get(os.path.normcase(str(candidate)), str(source)) != str(source):
+        number += 1
+        candidate = target.with_name(f"{target.stem}_{tag}{number if number > 2 else ''}{target.suffix}")
+    if candidate != target:
+        context.log(f"    [NOTE] {target.name} is written from {Path(claimed[os.path.normcase(str(target))]).name} in this "
+                    f"run: {source.name} goes to {candidate.name}.")
+    claimed[os.path.normcase(str(candidate))] = str(source)
+    return candidate
+
+
+# The pixel formats a lossless archive encoder takes as they are, read from the bundled FFmpeg (`ffmpeg -h encoder=`).
+ARCHIVE_PIXEL_FORMATS = {
+    "ffv1": {
+        "yuv420p", "yuva420p", "yuva422p", "yuv444p", "yuva444p", "yuv440p", "yuv422p", "yuv411p", "yuv410p", "bgr0", "bgra",
+        "yuv420p16le", "yuv422p16le", "yuv444p16le", "yuv444p9le", "yuv422p9le", "yuv420p9le", "yuv420p10le", "yuv422p10le",
+        "yuv444p10le", "yuv420p12le", "yuv422p12le", "yuv444p12le", "yuva444p16le", "yuva422p16le", "yuva420p16le",
+        "yuva444p12le", "yuva422p12le", "yuva444p10le", "yuva422p10le", "yuva420p10le", "yuva444p9le", "yuva422p9le",
+        "yuva420p9le", "gray16le", "gray", "gbrp9le", "gbrp10le", "gbrp12le", "gbrp14le", "gbrap14le", "gbrap10le",
+        "gbrap12le", "ya8", "gray10le", "gray12le", "gray14le", "gbrp16le", "rgb48le", "gbrap16le", "rgba64le", "gray9le",
+        "yuv420p14le", "yuv422p14le", "yuv444p14le", "yuv440p10le", "yuv440p12le", "yaf16le", "grayf16le", "gbrpf16le",
+        "gbrpf32le",
+    },
+    "x264_lossless": {
+        "yuv420p", "yuvj420p", "yuv422p", "yuvj422p", "yuv444p", "yuvj444p", "nv12", "nv16", "nv21", "yuv420p10le",
+        "yuv422p10le", "yuv444p10le", "nv20le", "gray", "gray10le",
+    },
+}
+# The same samples in another layout: a conversion between them loses nothing.
+SAME_SAMPLES = {
+    "nv12": "yuv420p", "nv21": "yuv420p", "nv16": "yuv422p", "p010le": "yuv420p10le", "p016le": "yuv420p16le",
+    "yuyv422": "yuv422p", "uyvy422": "yuv422p", "yuvj420p": "yuv420p", "yuvj422p": "yuv422p", "yuvj444p": "yuv444p",
+    "rgb24": "bgr0", "bgr24": "bgr0", "gbrp": "bgr0", "rgb0": "bgr0", "0rgb": "bgr0", "0bgr": "bgr0", "rgba": "bgra",
+    "argb": "bgra", "abgr": "bgra",
+}
+ARCHIVE_NAMES = {"ffv1": "FFV1", "x264_lossless": "x264 lossless"}
+# Sound FLAC cannot hold: float and 64-bit PCM.
+FLAC_CANNOT_HOLD = ("pcm_f", "pcm_s64")
+
+
+def _archive_refusal(context: JobContext, source: Path, target: str, params: dict[str, Any]) -> str:
+    """Why a lossless archive target would not keep this source as it is - its pixel format is not one the encoder
+    takes; "" - it keeps it. A pixel format named by hand for x264 is the person's choice."""
+    takes = ARCHIVE_PIXEL_FORMATS.get(target)
+    if not takes:
+        return ""
+    chosen = str(params.get("pix_fmt") or "auto").strip().lower()
+    if target == "x264_lossless" and chosen not in {"", "auto"}:
+        return ""
+    try:
+        streams = _probe_media_json(context.paths.root, source).get("streams") or []
+    except (OSError, RuntimeError, ValueError):
+        return ""
+    pixel = next((str(stream.get("pix_fmt") or "").strip().lower() for stream in streams
+                  if isinstance(stream, dict) and stream.get("codec_type") == "video"), "")
+    if not pixel or pixel in takes or SAME_SAMPLES.get(pixel) in takes:
+        return ""
+    other = next((name for key, name in ARCHIVE_NAMES.items() if key != target
+                  and (pixel in ARCHIVE_PIXEL_FORMATS[key] or SAME_SAMPLES.get(pixel) in ARCHIVE_PIXEL_FORMATS[key])), "")
+    return (f"{ARCHIVE_NAMES[target]} cannot keep {pixel} as it is - the bits, the planes or the alpha would be lost"
+            + (f"; {other} keeps it." if other else "."))
+
+
+def _archive_audio(context: JobContext, source: Path, mode: str) -> str:
+    """FLAC for the sound of an archive, where FLAC holds it exactly; float or 64-bit PCM is copied as it is."""
+    if mode != "flac":
+        return mode
+    try:
+        streams = _probe_media_json(context.paths.root, source).get("streams") or []
+    except (OSError, RuntimeError, ValueError):
+        return mode
+    codecs = [str(stream.get("codec_name") or "").lower() for stream in streams
+              if isinstance(stream, dict) and stream.get("codec_type") == "audio"]
+    kept = sorted({codec for codec in codecs if codec.startswith(FLAC_CANNOT_HOLD)})
+    if not kept:
+        return mode
+    context.log(f"    [NOTE] FLAC cannot hold {', '.join(kept)} exactly: the sound is copied as it is.")
+    return "source"
+
+
+# The scan of an interlaced source, field `scan_mode`: bwdif, one frame of each frame or one of each field, and the tag
+# the folder of the settings gets - a progressive result is not mixed with the one that kept its fields.
+SCAN_FILTERS = {
+    "progressive": ("bwdif=mode=send_frame:parity=auto:deint=all", "progressive"),
+    "double": ("bwdif=mode=send_field:parity=auto:deint=all", "progressive_2x"),
+}
+
+
+def _field_order(context: JobContext, source: Path) -> str:
+    """The field order of the video of a source as ffprobe tells it; "" - not told."""
+    try:
+        streams = _probe_media_json(context.paths.root, source).get("streams") or []
+    except (OSError, RuntimeError, ValueError):
+        return ""
+    return next((str(stream.get("field_order") or "").strip().lower() for stream in streams
+                 if isinstance(stream, dict) and stream.get("codec_type") == "video"), "")
+
+
+def _scan_plan(context: JobContext, source: Path, params: dict[str, Any], video: list[str]) -> tuple[list[str], str, str]:
+    """For a source of two fields: the video arguments, a filter that makes it progressive and a tag for the folder of
+    the settings. Progressive and Progressive x2 run bwdif; Keep fields keeps them - x264 codes a picture of two fields
+    as one progressive frame unless told, and marks the file progressive (+ildct+ilme tells it); the other encoders keep
+    the mark by themselves (measured: ProRes, FFV1, x265, AV1). A progressive source is not touched."""
+    order = _field_order(context, source)
+    if order not in INTERLACED_FIELD_ORDERS:
+        return video, "", ""
+    mode = str(params.get("scan_mode") or "keep").strip().lower()
+    if mode in SCAN_FILTERS:
+        chain, tag = SCAN_FILTERS[mode]
+        how = "a whole frame of each frame" if mode == "progressive" else "a frame of each field, the rate doubled"
+        context.log(f"    [NOTE] {source.name} is interlaced ({order}): bwdif makes it progressive - {how}.")
+        return video, chain, tag
+    if "libx264" in video:
+        context.log(f"    [NOTE] {source.name} is interlaced ({order}): x264 codes its fields and keeps their order.")
+        return [*video, "-flags", "+ildct+ilme"], "", ""
+    return video, "", ""
+
+
+def _video_filters(*chains: str) -> list[str]:
+    """One -vf of the filters given, in their order; nothing when there are none."""
+    chain = ",".join(part for part in chains if part)
+    return ["-vf", chain] if chain else []
+
+
+def _kept_in_place(context: JobContext, target: Path, overwrite: bool) -> bool:
+    """A file already in the Target, and Overwrite off: it is passed by before FFmpeg is asked. FFmpeg answers `-n` on
+    it with "already exists. Exiting." and exit code 0, so the run would count as written a file it never touched, and
+    the next check would measure the old one. The cut looks at its target the same way."""
+    if overwrite or not target.exists():
+        return False
+    context.log(f"    [SKIP] {target.name} already exists and Overwrite is off.")
+    return True
+
+
 def _run_ffmpeg_media_process(
     context: JobContext,
     command: list[str],
@@ -2130,7 +2338,12 @@ def _run_ffmpeg_media_process(
     )
 
 
-def _rate_label(value: Any) -> str:
+# ffprobe's field_order for a picture of two fields: top first, bottom first, and the two mixed orders.
+INTERLACED_FIELD_ORDERS = {"tt", "bb", "tb", "bt"}
+
+
+def _rate_label(value: Any, scan: str = "p") -> str:
+    """`23.976p`, `25i`, `29.97p` - the rate as it is spoken about; `scan` "" leaves the number bare."""
     text = str(value or "").strip()
     if not text or text in {"0/0", "N/A"}:
         return "?"
@@ -2138,11 +2351,19 @@ def _rate_label(value: Any) -> str:
         rate = _parse_fps(text)
     except Exception:
         return text
-    if rate == Fraction(24000, 1001):
-        return "23.976p"
-    if rate.denominator == 1:
-        return f"{rate.numerator}p"
-    return f"{float(rate):.3f}p"
+    if rate <= 0:
+        return "?"
+    return rate_label(rate)[:-1] + scan
+
+
+def _video_rate_label(video: dict[str, Any]) -> str:
+    """The rate column of SOURCE INFO: `25i` for a picture of two fields, `VFR 30 (avg 28.875)` for a phone's
+    variable rate - both rates, since neither alone says what the file holds."""
+    nominal, average = video.get("r_frame_rate"), video.get("avg_frame_rate")
+    if is_variable_rate(nominal, average):
+        return f"VFR {_rate_label(nominal, '')} (avg {_rate_label(average, '')})"
+    scan = "i" if str(video.get("field_order") or "").strip().lower() in INTERLACED_FIELD_ORDERS else "p"
+    return _rate_label(stream_rate(nominal, average), scan)
 
 
 def _stream(data: dict[str, Any], kind: str) -> dict[str, Any]:
@@ -2182,14 +2403,26 @@ def _format_duration(value: Any) -> str:
     return f"{minutes:d}:{secs:02d}"
 
 
+# The video column of a file FFmpeg sees a video stream in but cannot read (TRIM_UNREADABLE_VIDEO says why).
+PROBE_UNREADABLE_VIDEO = "camera RAW, FFmpeg has no decoder"
+PROBE_BUSY = "busy: being copied or open elsewhere"
+PROBE_UNREADABLE_SAID = (
+    "FFmpeg sees a video stream it cannot read: camera RAW inside MXF (Sony X-OCN, ARRIRAW) has no decoder here. "
+    "Such material is read in the camera vendor's own software (Sony Catalyst, ARRI Reference Tool) or transcoded first."
+)
+
+
 def _probe_row(source: Path, data: dict[str, Any]) -> dict[str, str]:
     video = _stream(data, "video")
     audio = _stream(data, "audio")
     fmt = data.get("format", {}) if isinstance(data.get("format"), dict) else {}
+    if video and _video_stream_is_unreadable(video):
+        return {"file": source.name, "video": PROBE_UNREADABLE_VIDEO, "audio": "-", "duration": _format_duration(fmt.get("duration")),
+                "fingerprint": "unreadable", "kind": "unreadable"}
 
     video_codec = str(video.get("codec_name") or "-")
     resolution = f"{video.get('width')}x{video.get('height')}" if video.get("width") and video.get("height") else "-"
-    fps = _rate_label(video.get("avg_frame_rate"))
+    fps = _video_rate_label(video) if video else "-"
     pix_fmt = str(video.get("pix_fmt") or "-")
     hdr = _hdr_label(video)
     audio_codec = str(audio.get("codec_name") or "-")
@@ -2206,20 +2439,44 @@ def _probe_row(source: Path, data: dict[str, Any]) -> dict[str, str]:
         "audio": audio_summary or "-",
         "duration": duration,
         "fingerprint": "|".join([video_codec, resolution, fps, pix_fmt, hdr, audio_codec, sample_rate, channels, bits]),
+        "kind": "read",
     }
 
 
+def _file_is_busy(source: Path) -> bool:
+    """A file still being copied, or held by a program that shares it with no one: Windows will not open it."""
+    try:
+        with source.open("rb"):
+            return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
 def _probe_summary(rows: list[dict[str, str]], total_files: int) -> str:
+    """The folder in one line, said by the files read: what most of them are, and what could not be read.
+
+    A file being copied, a camera RAW and a failed probe say nothing about the folder; neither does the first
+    file of the list, which was what the line once showed.
+    """
     if not rows:
         return "Source probe: no media"
-    mixed = len({row["fingerprint"] for row in rows}) > 1
-    first = rows[0]
-    prefix = f"{total_files} file(s)"
-    if mixed:
-        prefix += ", mixed"
+    read = [row for row in rows if row.get("kind") == "read"]
+    left = {kind: sum(1 for row in rows if row.get("kind") == kind) for kind in ("busy", "unreadable", "error")}
+    tail = "".join(f", {count} {kind}" for kind, count in left.items() if count)
+    if not read:
+        return f"{total_files} file(s), none could be read{tail}"
+    counts: dict[str, int] = {}
+    for row in read:
+        counts[row["fingerprint"]] = counts.get(row["fingerprint"], 0) + 1
+    most = max(counts, key=counts.get)
+    like = next(row for row in read if row["fingerprint"] == most)
+    if len(counts) == 1:
+        prefix = f"{total_files} file(s), uniform"
     else:
-        prefix += ", uniform"
-    return f"{prefix} | V: {first['video']} | A: {first['audio']}"
+        prefix = f"{total_files} file(s), mixed: {counts[most]} of {len(read)} read like this"
+    return f"{prefix}{tail} | V: {like['video']} | A: {like['audio']}"
 
 
 def probe_source(context: JobContext) -> dict[str, object]:
@@ -2242,18 +2499,28 @@ def probe_source(context: JobContext) -> dict[str, object]:
         if context.cancelled():
             context.log("Probe cancelled by user.")
             return {"cancelled": True, "files": len(files), "summary": "Source probe cancelled"}
-        try:
-            row = _probe_row(source, _probe_media_json(root, source))
-        except Exception as exc:
-            row = {"file": source.name, "video": f"ERROR: {exc}", "audio": "-", "duration": "-", "fingerprint": f"error:{exc}"}
+        busy = {"file": source.name, "video": PROBE_BUSY, "audio": "-", "duration": "-", "fingerprint": "busy", "kind": "busy"}
+        if _file_is_busy(source):
+            row = busy
+        else:
+            try:
+                row = _probe_row(source, _probe_media_json(root, source))
+            except Exception as exc:
+                row = busy if "permission denied" in str(exc).lower() else {
+                    "file": source.name, "video": f"ERROR: {exc}", "audio": "-", "duration": "-", "fingerprint": f"error:{exc}", "kind": "error"}
         rows.append(row)
         context.log(f"{row['file'][:40]:40} | {row['video'][:44]:44} | {row['audio'][:34]:34} | {row['duration']}")
         context.progress(index / len(sample))
 
     summary = _probe_summary(rows, len(files))
     context.log("")
+    if any(row.get("kind") == "unreadable" for row in rows):
+        context.log(PROBE_UNREADABLE_SAID)
+    if any(row.get("kind") == "busy" for row in rows):
+        context.log("A busy file is read once the copy ends or the program holding it lets it go.")
     context.log(summary)
-    return {"files": len(files), "probed": len(sample), "mixed": len({row["fingerprint"] for row in rows}) > 1, "summary": summary}
+    read = {row["fingerprint"] for row in rows if row.get("kind") == "read"}
+    return {"files": len(files), "probed": len(sample), "mixed": len(read) > 1, "summary": summary}
 
 
 SOURCE_INFO_COLUMNS = (
@@ -2444,32 +2711,52 @@ def encode_targets(context: JobContext) -> dict[str, object]:
 
     ffmpeg = _ffmpeg(root)
     # Scaling runs as a software filter, so it rules out the GPU-only pipeline.
-    decode = _decode_args(params, context, has_video_filters=bool(_scale_args(params)))
+    # Scaling and a deinterlace run as software filters, so either rules out the GPU-only pipeline.
+    scanning = str(params.get("scan_mode") or "keep").strip().lower() in SCAN_FILTERS
+    decode = _decode_args(params, context, has_video_filters=bool(_scale_args(params)) or scanning)
     audio_mode = str(params.get("audio_mode", "aac_320")).strip()
     audio_bitrate = _audio_bitrate(params)
     dry_run = _as_bool(params.get("dry_run"), False)
     overwrite = _as_bool(params.get("overwrite"), True)
 
     processed = 0
+    skipped = 0
+    refused = 0
     total = len(files) * len(targets)
+    context.units(total)
     for source in files:
         for target_codec in targets:
             target_codec = {"hevc10": "hevc_x265", "prores422": "prores_422"}.get(target_codec, target_codec)
             if context.cancelled():
                 context.log("Encoding cancelled by user.")
-                return {"cancelled": True, "processed": processed}
+                return {"cancelled": True, "processed": processed, "skipped": skipped, "refused": refused}
 
             video, extension, suffix, family = _target_video_args(target_codec, params)
+            video, deinterlace, scan_tag = _scan_plan(context, source, params, video)
+            if scan_tag:
+                suffix = f"{suffix}_{scan_tag}"
             source_label = _source_display_name(source, source_dir)
             target_path = _output_path(source, output_dir, suffix, extension, source_root=source_dir, operation=_operation_output_folder(context, _target_family_output_folder(family)))
+            target_path = _claim_target(context, source, target_path)
+            if _kept_in_place(context, target_path, overwrite):
+                skipped += 1
+                context.progress((processed + skipped) / max(1, total))
+                continue
             command = [ffmpeg, "-hide_banner", "-stats", "-y" if overwrite else "-n", *decode, "-i", str(source)]
 
             if family == "archive":
+                refusal = _archive_refusal(context, source, target_codec, params)
+                if refusal:
+                    refused += 1
+                    context.log(f"[SKIP] {source_label} -> {target_codec}: {refusal}")
+                    context.progress((processed + skipped + refused) / max(1, total))
+                    continue
                 archive_audio = "flac" if target_codec == "ffv1" and audio_mode in {"aac_320", "source"} else audio_mode
+                archive_audio = _archive_audio(context, source, archive_audio)
                 command.extend(["-map", "0", "-dn", *video, *_audio_args(archive_audio, audio_bitrate, _mp3_lame_preset(params)), *_encode_audio_filter_args(params, archive_audio), "-c:s", "copy", "-map_metadata", "0"])
             elif family == "editing":
                 edit_audio = _container_audio_mode(extension, audio_mode)
-                command.extend(["-map", "0:v:0", "-map", "0:a?", "-sn", "-dn", *_scale_args(params), *video, *_audio_args(edit_audio, audio_bitrate, _mp3_lame_preset(params)), *_encode_audio_filter_args(params, edit_audio), "-map_metadata", "0"])
+                command.extend(["-map", "0:v:0", "-map", "0:a?", "-sn", "-dn", *_video_filters(deinterlace, _scale_filter(params)), *video, *_audio_args(edit_audio, audio_bitrate, _mp3_lame_preset(params)), *_encode_audio_filter_args(params, edit_audio), "-map_metadata", "0"])
                 if extension == "mxf":
                     command.extend(["-f", "mxf"])
                 elif extension == "mov":
@@ -2481,21 +2768,23 @@ def encode_targets(context: JobContext) -> dict[str, object]:
                 command.extend(["-map", "0:v:0"])
                 if target_audio_mode != "none":
                     command.extend(["-map", "0:a?"])
-                command.extend(["-sn", "-dn", *_scale_args(params), *video, *_audio_args(target_audio_mode, audio_bitrate, _mp3_lame_preset(params)), *_encode_audio_filter_args(params, target_audio_mode), "-map_metadata", "0"])
+                command.extend(["-sn", "-dn", *_video_filters(deinterlace, _scale_filter(params)), *video, *_audio_args(target_audio_mode, audio_bitrate, _mp3_lame_preset(params)), *_encode_audio_filter_args(params, target_audio_mode), "-map_metadata", "0"])
                 if extension == "mp4":
                     command.extend(["-movflags", "+faststart"])
 
             command.append(str(target_path))
-            context.log(f"[{processed + 1}/{total}] {source_label} -> {target_codec}")
+            context.log(f"[{processed + skipped + 1}/{total}] {source_label} -> {target_codec}")
             if dry_run:
                 context.log("[DRY RUN] Command was not executed.")
                 context.log(" ".join(f'"{part}"' if " " in part else part for part in command))
             else:
                 _run_ffmpeg_media_process(context, command, source, check=True, progress_seconds=900, label=f"{source_label} -> {target_codec}")
             processed += 1
-            context.progress(processed / max(1, total))
+            context.progress((processed + skipped + refused) / max(1, total))
 
-    return {"processed": processed, "files": len(files), "targets": targets, "dry_run": dry_run}
+    # A file an archive target would not keep as it is was refused: the run says so, not green.
+    return {"ok": refused == 0, "processed": processed, "skipped": skipped, "refused": refused, "files": len(files),
+            "targets": targets, "dry_run": dry_run}
 
 
 def _audio_stream_rows(root: Path, source: Path) -> list[dict[str, Any]]:
@@ -2663,13 +2952,15 @@ def _audio_in_video_process(
     overwrite: bool,
 ) -> dict[str, object]:
     processed = 0
+    skipped = 0
     report_rows: list[dict[str, Any]] = []
+    context.units(len(files))
 
     for index, source in enumerate(files, start=1):
         source_label = _source_display_name(source, source_root)
         if context.cancelled():
             context.log("Audio-in-video operation cancelled by user.")
-            return {"cancelled": True, "processed": processed}
+            return {"cancelled": True, "processed": processed, "skipped": skipped}
 
         selected_streams = _selected_audio_streams(context.paths.root, source, params)
         if not selected_streams:
@@ -2689,29 +2980,36 @@ def _audio_in_video_process(
         target_lufs = _audio_lufs_target(params)
         lufs_filter = ""
         lufs_stats: dict[str, Any] | None = None
-        if lufs_mode in {"report", "two_pass"}:
+        if lufs_mode == "report":
+            # Every chosen track measured on its own: one number written to every row read as the loudness of each.
+            for stream_row in selected_streams:
+                context.log(f"[LUFS] {source_label} stream a{stream_row['audio_index']} -> {target_lufs}")
+                track_stats: dict[str, Any] | None = None
+                if dry_run:
+                    context.log("[DRY RUN] LUFS analysis command was not executed.")
+                else:
+                    track_stats = _run_loudnorm_analysis(context, ffmpeg, source, _audio_stream_map_args(stream_row), target_lufs if target_lufs != "off" else "-23")
+                report_rows.append(
+                    {
+                        "status": "DRY" if dry_run else "OK",
+                        "source": source_label,
+                        "stream": f"a{stream_row['audio_index']}",
+                        "input": _audio_stream_summary(stream_row),
+                        "output": "",
+                        "mode": "in_video_lufs_report",
+                        "lufs": json.dumps(track_stats, ensure_ascii=False) if track_stats else target_lufs,
+                    }
+                )
+            processed += len(selected_streams)
+            context.progress(index / len(files))
+            continue
+        if lufs_mode == "two_pass":
             stream_row = selected_streams[0]
             context.log(f"[LUFS] {source_label} stream a{stream_row['audio_index']} -> {target_lufs}")
             if dry_run:
                 context.log("[DRY RUN] LUFS analysis command was not executed.")
             else:
                 lufs_stats = _run_loudnorm_analysis(context, ffmpeg, source, _audio_stream_map_args(stream_row), target_lufs if target_lufs != "off" else "-23")
-            if lufs_mode == "report":
-                for stream_row in selected_streams:
-                    report_rows.append(
-                        {
-                            "status": "DRY" if dry_run else "OK",
-                            "source": source_label,
-                            "stream": f"a{stream_row['audio_index']}",
-                            "input": _audio_stream_summary(stream_row),
-                            "output": "",
-                            "mode": "in_video_lufs_report",
-                            "lufs": json.dumps(lufs_stats, ensure_ascii=False) if lufs_stats else target_lufs,
-                        }
-                    )
-                processed += len(selected_streams)
-                context.progress(index / len(files))
-                continue
             if lufs_stats:
                 lufs_filter, _unused_suffix = _audio_lufs_filter(params, lufs_stats)
 
@@ -2719,6 +3017,12 @@ def _audio_in_video_process(
         extension = _audio_video_extension(params, source)
         _safe_audio_video_container(params, extension)
         target = _output_path(source, output_dir, f"video_copy_audio_{suffix}", extension, source_root=source_root, operation=operation)
+        target = _claim_target(context, source, target)
+        if _kept_in_place(context, target, overwrite):
+            skipped += 1
+            report_rows.append({"status": "SKIP", "source": source_label, "stream": "-", "input": "already in the Target, Overwrite is off", "output": str(target), "mode": "in_video", "lufs": "-"})
+            context.progress(index / len(files))
+            continue
         command = [
             ffmpeg,
             "-hide_banner",
@@ -2762,7 +3066,7 @@ def _audio_in_video_process(
 
     audio_report = _write_audio_report(context, report_rows)
     context.log(f"Audio report: {audio_report['audio_report_md']}")
-    return {"processed": processed, "files": len(files), "task": "audio_in_video", "dry_run": dry_run, "audio_items": report_rows, **audio_report}
+    return {"processed": processed, "skipped": skipped, "files": len(files), "task": "audio_in_video", "dry_run": dry_run, "audio_items": report_rows, **audio_report}
 
 
 def audio_process(context: JobContext) -> dict[str, object]:
@@ -2795,13 +3099,15 @@ def audio_process(context: JobContext) -> dict[str, object]:
         return _audio_in_video_process(context, params=params, files=files, ffmpeg=ffmpeg, output_dir=output_dir, operation=operation_folder, source_root=source_dir, dry_run=dry_run, overwrite=overwrite)
 
     processed = 0
+    skipped = 0
     report_rows: list[dict[str, Any]] = []
+    context.units(len(files))
 
     for index, source in enumerate(files, start=1):
         source_label = _source_display_name(source, source_dir)
         if context.cancelled():
             context.log("Audio operation cancelled by user.")
-            return {"cancelled": True, "processed": processed}
+            return {"cancelled": True, "processed": processed, "skipped": skipped}
 
         selected_streams = _selected_audio_streams(root, source, params)
         if not selected_streams:
@@ -2847,6 +3153,11 @@ def audio_process(context: JobContext) -> dict[str, object]:
             stream_suffix = _audio_stream_suffix(params, stream_row, len(selected_streams))
             target_suffix = "_".join(item for item in [suffix, stream_suffix] if item)
             target = _output_path(source, output_dir, target_suffix, extension, source_root=source_dir, operation=operation_folder)
+            target = _claim_target(context, source, target)
+            if _kept_in_place(context, target, overwrite):
+                skipped += 1
+                report_rows.append({"status": "SKIP", "source": source_label, "stream": f"a{stream_row['audio_index']}", "input": "already in the Target, Overwrite is off", "output": str(target), "mode": operation_label, "lufs": "-"})
+                continue
             command = [ffmpeg, "-hide_banner", "-stats", "-y" if overwrite else "-n", "-i", str(source), *map_args, *audio_args, str(target)]
             context.log(f"[{index}/{len(files)}] {source_label} a{stream_row['audio_index']} -> {operation_label}")
             if dry_run:
@@ -2870,7 +3181,7 @@ def audio_process(context: JobContext) -> dict[str, object]:
 
     audio_report = _write_audio_report(context, report_rows)
     context.log(f"Audio report: {audio_report['audio_report_md']}")
-    return {"processed": processed, "files": len(files), "task": operation_label, "dry_run": dry_run, "audio_items": report_rows, **audio_report}
+    return {"processed": processed, "skipped": skipped, "files": len(files), "task": operation_label, "dry_run": dry_run, "audio_items": report_rows, **audio_report}
 
 
 VIDEO_REMUX_COMPATIBILITY = {
@@ -3190,6 +3501,65 @@ def _remux_orientation_args(params: dict[str, Any]) -> list[str]:
     return list(REMUX_ORIENTATIONS[orientation][0]) if orientation != "none" else []
 
 
+def extract_subtitles(context: JobContext) -> dict[str, object]:
+    """Every subtitle stream of a video, copied as it is into an MKS file of its name.
+
+    Matroska holds every kind of subtitle a camera or a download carries - text, mov_text, pictures - so
+    nothing is converted. A video with no subtitle stream is passed over and said so: the wrapper
+    ff-extract-subs used to write an empty file for it.
+    """
+    params = dict(context.operation.parameters)
+    root = context.paths.root
+    source_dir = cached_source_path(root)
+    output_dir = cached_output_path(root)
+    files = _media_files(source_dir, VIDEO_CONTAINER_EXTENSIONS)
+    if not files:
+        context.log(f"No matching files in {source_dir}")
+        return {"files": 0}
+    ffmpeg, ffprobe = _ffmpeg(root), _ffprobe(root)
+    dry_run = _as_bool(params.get("dry_run"), False)
+    overwrite = _as_bool(params.get("overwrite"), False)
+    processed = skipped = failed = 0
+    context.units(len(files))
+    for index, source in enumerate(files, start=1):
+        label = _source_display_name(source, source_dir)
+        if context.cancelled():
+            context.log("Subtitles: cancelled by user.")
+            return {"cancelled": True, "processed": processed}
+        has_subtitles = _probe_first_line(context, [ffprobe, "-v", "error", "-select_streams", "s", "-show_entries", "stream=index",
+                                                    "-of", "csv=p=0", str(source)])
+        if not has_subtitles:
+            skipped += 1
+            context.log(f"[SKIP] {label}: no subtitle stream")
+            context.progress(index / len(files))
+            continue
+        target = _output_path(source, output_dir, "", "mks", source_root=source_dir, operation=_operation_output_folder(context, "Subtitles"))
+        target = _claim_target(context, source, target)
+        if _kept_in_place(context, target, overwrite):
+            skipped += 1
+            context.progress(index / len(files))
+            continue
+        command = [ffmpeg, "-hide_banner", "-stats", "-y" if overwrite else "-n", "-nostdin", "-i", str(source),
+                   "-map", "0:s", "-c", "copy", "-f", "matroska", str(target)]
+        context.log(f"[{index}/{len(files)}] {label} -> {target.name}")
+        if dry_run:
+            context.log("[DRY RUN] Command was not executed.")
+            context.log(" ".join(f'"{part}"' if " " in part else part for part in command))
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            result = run_process(context, command, check=False, progress_seconds=120)
+            if result.exit_code != 0:
+                failed += 1
+                context.progress(index / len(files))
+                continue
+        processed += 1
+        if _as_bool(params.get("limit_first_file"), False):
+            break
+        context.progress(index / len(files))
+    return {"processed": processed, "skipped": skipped, "failed": failed, "files": len(files), "dry_run": dry_run,
+            "ok": failed == 0}
+
+
 def remux_media(context: JobContext) -> dict[str, object]:
     params = dict(context.operation.parameters)
     root = context.paths.root
@@ -3253,6 +3623,7 @@ def remux_media(context: JobContext) -> dict[str, object]:
         return {"files": 0, "scanned": len(files), "skipped": skipped, "target": target_format, "streams": stream_mode, "dry_run": dry_run}
 
     total = len(jobs)
+    context.units(total)
     for index, (source, extension, suffix, remux_args) in enumerate(jobs, start=1):
         source_format = _remux_normalized_source_format(source)
         source_label = _source_display_name(source, source_dir)
@@ -3260,6 +3631,11 @@ def remux_media(context: JobContext) -> dict[str, object]:
             context.log("Remux cancelled by user.")
             return {"cancelled": True, "processed": processed}
         target = _output_path(source, output_dir, suffix, extension, source_root=source_dir, operation=_operation_output_folder(context, "Remux"))
+        target = _claim_target(context, source, target)
+        if _kept_in_place(context, target, overwrite):
+            skipped += 1
+            context.progress(index / total)
+            continue
         command = [
             ffmpeg,
             "-hide_banner",
@@ -3308,22 +3684,12 @@ def _parse_fps(value: str) -> Fraction:
 
 
 def _video_fps(context: JobContext, source: Path) -> Fraction:
-    raw = _probe_first_line(
-        context,
-        [
-            _ffprobe(context.paths.root),
-            "-v",
-            "error",
-            "-select_streams",
-            "v:0",
-            "-show_entries",
-            "stream=avg_frame_rate",
-            "-of",
-            "default=nokey=1:noprint_wrappers=1",
-            str(source),
-        ],
-    )
-    return _parse_fps(raw)
+    command = [_ffprobe(context.paths.root), "-v", "error", "-select_streams", "v:0", "-show_entries",
+               "stream=r_frame_rate,avg_frame_rate", "-of", "default=noprint_wrappers=1", str(source)]
+    result = run_process(context, command, extra_env=_tool_env(context.paths.root), check=False, progress_seconds=30)
+    fields = dict(line.strip().split("=", 1) for line in result.lines if "=" in line)
+    # A conform from a rate the file does not have moves a 23.976 source by the error of its average.
+    return _parse_fps(stream_rate(fields.get("r_frame_rate"), fields.get("avg_frame_rate"), variable="average"))
 
 
 def _has_audio_stream(context: JobContext, source: Path) -> bool:
@@ -3539,11 +3905,13 @@ def fps_convert(context: JobContext) -> dict[str, object]:
     decode = _decode_args(params, context, has_video_filters=True)
 
     processed = 0
+    skipped = 0
+    context.units(len(files))
     for index, source in enumerate(files, start=1):
         source_label = _source_display_name(source, source_dir)
         if context.cancelled():
             context.log("FPS conversion cancelled by user.")
-            return {"cancelled": True, "processed": processed}
+            return {"cancelled": True, "processed": processed, "skipped": skipped}
 
         source_fps = _video_fps(context, source)
         k = float(source_fps / target_fps)
@@ -3553,6 +3921,11 @@ def fps_convert(context: JobContext) -> dict[str, object]:
         audio_output_rate = _fps_audio_output_rate(output_profile, audio_work_rate) if has_audio else 0
         suffix = f"fps_{str(source_fps).replace('/', '_')}_to_{target_label}_{mode}_{profile_label}"
         target = _output_path(source, output_dir, suffix, extension, source_root=source_dir, operation=_operation_output_folder(context, "FPS"))
+        target = _claim_target(context, source, target)
+        if _kept_in_place(context, target, overwrite):
+            skipped += 1
+            context.progress(index / len(files))
+            continue
 
         if has_audio and audio_output_rate != audio_work_rate:
             context.log(f"Audio oversampling work rate: {audio_work_rate} Hz; final container rate: {audio_output_rate} Hz")
@@ -3575,6 +3948,11 @@ def fps_convert(context: JobContext) -> dict[str, object]:
         )
 
         context.log(f"[{index}/{len(files)}] {source_label}: {float(source_fps):.6g} -> {target_arg} {mode}")
+        if has_audio and mode == "conform" and _fps_audio_mode(mode, speed) == "varispeed":
+            if abs(speed - 1.0) < 1e-9:
+                context.log("Sound: the rate is the file's own - the picture is laid on its exact grid, the sound keeps its samples")
+            else:
+                context.log(f"Sound: the speed changes by {abs(speed - 1.0) * 100:.3g} %, within 1 % - it keeps its samples, its pitch follows")
         if dry_run:
             context.log("[DRY RUN] Command was not executed.")
             context.log(" ".join(f'"{part}"' if " " in part else part for part in command))
@@ -3583,7 +3961,7 @@ def fps_convert(context: JobContext) -> dict[str, object]:
         processed += 1
         context.progress(index / len(files))
 
-    return {"processed": processed, "files": len(files), "target": target_arg, "mode": mode, "dry_run": dry_run}
+    return {"processed": processed, "skipped": skipped, "files": len(files), "target": target_arg, "mode": mode, "dry_run": dry_run}
 
 
 def _color_default_target(script: str, profile: dict[str, Any] | None = None) -> str:
@@ -3676,39 +4054,49 @@ def run_color_grade(context: JobContext) -> dict[str, object]:
     overwrite = _as_bool(params.get("overwrite"), True)
 
     processed = 0
+    skipped = 0
     total = len(files) * len(targets)
+    context.units(total)
     for source in files:
         source_label = _source_display_name(source, source_dir)
         for target_codec in targets:
             target_codec = {"hevc10": "hevc_x265", "prores422": "prores_422"}.get(target_codec, target_codec)
             if context.cancelled():
                 context.log("Color operation cancelled by user.")
-                return {"cancelled": True, "processed": processed}
+                return {"cancelled": True, "processed": processed, "skipped": skipped}
 
             video, extension, video_suffix, family = _target_video_args(target_codec, params)
+            video, deinterlace, scan_tag = _scan_plan(context, source, params, video)
+            if scan_tag:
+                video_suffix = f"{video_suffix}_{scan_tag}"
             target_audio_mode = _container_audio_mode(extension, audio_mode)
             target_path = _output_path(source, output_dir, f"{color_suffix}_{video_suffix}", extension, source_root=source_dir, operation=_operation_output_folder(context, "Color"))
+            target_path = _claim_target(context, source, target_path)
+            if _kept_in_place(context, target_path, overwrite):
+                skipped += 1
+                context.progress((processed + skipped) / max(1, total))
+                continue
             command = [ffmpeg, "-hide_banner", "-stats", "-y" if overwrite else "-n", *decode, "-i", str(source)]
             command.extend(["-map", "0:v:0"])
             if target_audio_mode != "none":
                 command.extend(["-map", "0:a?"])
-            command.extend(["-sn", "-dn", "-vf", filter_expr, *video, *_audio_args(target_audio_mode, audio_bitrate, _mp3_lame_preset(params)), *_encode_audio_filter_args(params, target_audio_mode), "-map_metadata", "0"])
+            command.extend(["-sn", "-dn", *_video_filters(deinterlace, filter_expr), *video, *_audio_args(target_audio_mode, audio_bitrate, _mp3_lame_preset(params)), *_encode_audio_filter_args(params, target_audio_mode), "-map_metadata", "0"])
             if extension in {"mp4", "mov"}:
                 command.extend(["-movflags", "+faststart"])
             if extension == "mxf":
                 command.extend(["-f", "mxf"])
             command.append(str(target_path))
 
-            context.log(f"[{processed + 1}/{total}] {source_label} -> {color_suffix} / {target_codec}")
+            context.log(f"[{processed + skipped + 1}/{total}] {source_label} -> {color_suffix} / {target_codec}")
             if dry_run:
                 context.log("[DRY RUN] Command was not executed.")
                 context.log(" ".join(f'"{part}"' if " " in part else part for part in command))
             else:
                 _run_ffmpeg_media_process(context, command, source, check=True, progress_seconds=900, label=f"{source_label} grade")
             processed += 1
-            context.progress(processed / max(1, total))
+            context.progress((processed + skipped) / max(1, total))
 
-    return {"processed": processed, "files": len(files), "targets": targets, "dry_run": dry_run}
+    return {"processed": processed, "skipped": skipped, "files": len(files), "targets": targets, "dry_run": dry_run}
 
 
 def _youtube_profile_args(profile: str, parallel: int) -> list[str]:
@@ -3764,7 +4152,9 @@ def _youtube_format_args(params: dict[str, Any], profile: str, parallel: int) ->
         if resolution != "best":
             sort_parts.append(f"res:{resolution}")
         if video_codec in {"avc", "h264"}:
-            sort_parts.append("codec:avc")
+            # H.264 in MP4 is asked for where Opus is not taken (editors, upload forms): AAC with it. "codec:avc" alone
+            # leaves the sound to yt-dlp's own order, which puts Opus first.
+            sort_parts.append("codec:avc:m4a" if container == "mp4" else "codec:avc")
         elif video_codec in {"av1", "av01"}:
             sort_parts.append("codec:av01")
         elif video_codec == "vp9":
@@ -3782,17 +4172,200 @@ def _youtube_format_args(params: dict[str, Any], profile: str, parallel: int) ->
         elif audio_format == "opus":
             args.extend(["--audio-format", "opus"])
         elif audio_format == "m4a":
-            args.extend(["--audio-format", "m4a"])
+            # AAC as the site keeps it, when it has one: an Opus made into AAC would be a lossy copy of a lossy copy.
+            args = ["-N", str(max(1, parallel)), "-f", "bestaudio[acodec^=mp4a]/bestaudio", "-x", "--audio-format", "m4a"]
         else:
             args = ["-N", str(max(1, parallel)), "-f", "bestaudio/best"]
 
     return args
 
 
+DEFAULT_LINK_LIST = "input\\urls.txt"
+
+
+DOWNLOAD_ENV = ("AUDION_DOWNLOAD", "AUDION_DOWNLOAD_DIR")
+
+
+def youtube_download_dir(root: Path) -> Path:
+    """Where a download goes: a result like any other, to the Target under a folder of its own - or to the folder the
+    wrappers of Scripts\\ have always taken from AUDION_DOWNLOAD."""
+    given = next((os.environ[name].strip().strip('"') for name in DOWNLOAD_ENV if os.environ.get(name, "").strip()), "")
+    if given:
+        path = Path(given)
+        return path if path.is_absolute() else root / path
+    return cached_output_path(root) / "Download"
+
+
+def youtube_list_path(root: Path, params: dict[str, Any]) -> Path:
+    """The list of links of a batch download. The default one is urls.txt of the Source, wherever the Source is."""
+    given = str(params.get("batch_file", DEFAULT_LINK_LIST) or DEFAULT_LINK_LIST).strip().strip('"')
+    if given.replace("/", "\\").lower() == DEFAULT_LINK_LIST:
+        source = cached_source_path(root)
+        return (source.parent if source.is_file() else source) / "urls.txt"
+    path = Path(given)
+    return path if path.is_absolute() else root / path
+
+
+def _ytdlp_runtime_args(context: JobContext, root: Path) -> list[str]:
+    """What every call of yt-dlp starts with. --ignore-config: the personal yt-dlp.conf of the user (%APPDATA%\\yt-dlp\\config)
+    must not change a call of the program in silence - Media Downloader 5.6.6 passes it always; then the JS runtime deno,
+    without which YouTube gives fewer formats."""
+    told = ["--ignore-config"]
+    deno = _deno(root)
+    if deno:
+        told.extend(["--js-runtimes", f"deno:{deno}"])
+    else:
+        js_override = os.environ.get("AUDION_YTDLP_JS_RUNTIMES") or os.environ.get("YTDLP_JS_RUNTIMES")
+        if js_override:
+            told.extend(["--js-runtimes", js_override])
+        else:
+            context.log("[WARN] No Deno JS runtime found. YouTube formats may be limited.")
+    return told
+
+
+# Browsers yt-dlp reads the cookies of at the call (--cookies-from-browser): the program keeps nothing of them.
+COOKIE_BROWSERS = ("chrome", "edge", "firefox", "brave")
+# The cookies file taken by the program, sealed with DPAPI for the account of Windows (core\secret_store.py).
+SEALED_COOKIES = Path("config") / "cookies.dpapi"
+
+
+def _cookies_file_of(root: Path, params: dict[str, Any]) -> Path | None:
+    """The file of the field Cookies, from the program folder when it is named relative; None - none named."""
+    named = str(params.get("cookies_path", "")).strip().strip('"')
+    if not named:
+        return None
+    path = Path(named)
+    return path if path.is_absolute() else root / path
+
+
+def _ytdlp_cookies(context: JobContext, root: Path, params: dict[str, Any], opened: bool = True) -> tuple[list[str], Callable[[], None]]:
+    """The cookies of a call of yt-dlp, and what is done after the call.
+
+    The environment first, as it always was (AUDION_YTDLP_COOKIES_BROWSER, AUDION_YTDLP_COOKIES). Then the choice of the
+    form, cookies_source: a browser - yt-dlp reads its profile at the call, the program keeps nothing; the file - the copy
+    sealed with DPAPI (config\\cookies.dpapi), opened into a file of its own for the call and sealed again after it, with
+    what yt-dlp renewed in it, the open file then gone; without that copy, the file of the field Cookies when it is there,
+    as before; none - no cookies. A dry run (`opened` False) opens nothing and names the copy.
+    """
+    nothing: Callable[[], None] = lambda: None
+    cookies_browser = os.environ.get("AUDION_YTDLP_COOKIES_BROWSER") or os.environ.get("YTDLP_COOKIES_BROWSER")
+    cookies_env = os.environ.get("AUDION_YTDLP_COOKIES") or os.environ.get("YTDLP_COOKIES") or os.environ.get("COOKIES")
+    if cookies_browser:
+        return ["--cookies-from-browser", cookies_browser], nothing
+    if cookies_env:
+        return ["--cookies", cookies_env], nothing
+    source = str(params.get("cookies_source", "file") or "file").strip().lower()
+    if source in COOKIE_BROWSERS:
+        return ["--cookies-from-browser", source], nothing
+    if source == "none":
+        return [], nothing
+    sealed = root / SEALED_COOKIES
+    if sealed.is_file():
+        if not opened:
+            return ["--cookies", f"<{SEALED_COOKIES}, opened for the call>"], nothing
+        from system_core.core.secret_store import open_sealed, seal
+
+        plain = open_sealed(sealed.read_bytes())
+        handle, name = tempfile.mkstemp(prefix="audion-cookies-", suffix=".txt")
+        with os.fdopen(handle, "wb") as file:
+            file.write(plain)
+        context.log(f"[COOKIES] The copy sealed with DPAPI: {SEALED_COOKIES}")
+
+        def done() -> None:
+            opened_file = Path(name)
+            try:
+                renewed = opened_file.read_bytes()
+                if renewed and renewed != plain:
+                    sealed.write_bytes(seal(renewed))
+            except OSError:
+                pass
+            finally:
+                opened_file.unlink(missing_ok=True)
+
+        return ["--cookies", name], done
+    candidate = _cookies_file_of(root, params)
+    if candidate is not None and candidate.exists():
+        return ["--cookies", str(candidate)], nothing
+    return [], nothing
+
+
+def seal_cookies_file(root: Path, path: Path) -> int:
+    """A cookies file of a browser (Netscape format) sealed with DPAPI into config\\cookies.dpapi; the number of its
+    cookies. Nothing of what it holds is written anywhere else, nor said."""
+    from system_core.core.secret_store import seal
+
+    if not path.is_file():
+        raise RuntimeError(f"There is no cookies file at {path}: export the cookies of the site from the browser "
+                           "(Netscape format, cookies.txt) and name the file in the field Cookies.")
+    data = path.read_bytes()
+    lines = data.decode("utf-8", errors="replace").splitlines()
+    # A line of a cookie: seven fields parted by tabs; "#HttpOnly_" opens one too, any other "#" a comment.
+    entries = [line for line in lines if line.strip() and (not line.startswith("#") or line.startswith("#HttpOnly_"))]
+    cookies = [line for line in entries if len(line.split("\t")) >= 7]
+    headed = any(line.lstrip().startswith(("# Netscape HTTP Cookie File", "# HTTP Cookie File")) for line in lines[:5])
+    if not cookies or (not headed and len(cookies) != len(entries)):
+        raise RuntimeError(f"{path.name} is not a cookies file of the Netscape format: a line of a cookie has seven fields "
+                           "parted by tabs.")
+    sealed = root / SEALED_COOKIES
+    sealed.parent.mkdir(parents=True, exist_ok=True)
+    sealed.write_bytes(seal(data))
+    return len(cookies)
+
+
+def import_youtube_cookies(context: JobContext) -> dict[str, object]:
+    """The cookies file of the field Cookies sealed with DPAPI for this account of Windows (seal_cookies_file): downloads
+    with Cookies - File take this copy, and the open file is no longer needed. The window runs it beside the field."""
+    params = dict(context.operation.parameters)
+    root = context.paths.root
+    path = _cookies_file_of(root, params)
+    if path is None:
+        raise RuntimeError("The field Cookies names no file.")
+    if _as_bool(params.get("youtube_dry_run"), False):
+        context.log(f"[DRY RUN] Nothing sealed: {path} would be sealed with DPAPI into {SEALED_COOKIES}.")
+        context.progress(1.0)
+        return {"dry_run": True}
+    count = seal_cookies_file(root, path)
+    context.log(f"[OK] {count} cookies sealed with DPAPI for this account of Windows: {SEALED_COOKIES}")
+    context.log(f"[NOTE] The open file is still at {path}; downloads take the sealed copy now.")
+    context.progress(1.0)
+    return {"cookies": count}
+
+
+def list_youtube_formats(context: JobContext) -> dict[str, object]:
+    """The formats a link offers - resolution, codecs, size, the id each is taken by - as yt-dlp lists them (-F), into the
+    journal; nothing is downloaded. Of a link to a video in a playlist, the video alone. The window runs it beside the URL
+    of a download page with the values of that page (config\\window_layout.yaml, buttons)."""
+    params = dict(context.operation.parameters)
+    root = context.paths.root
+    url = str(params.get("youtube_url", "")).strip()
+    if not url:
+        raise RuntimeError("YouTube URL is empty.")
+    command = [_yt_dlp(root), *_ytdlp_runtime_args(context, root), "--no-playlist"]
+    client = str(params.get("youtube_client", "default")).strip()
+    if client == "safari":
+        command.extend(["--extractor-args", "youtube:player-client=web_safari,default"])
+    elif client == "android":
+        command.extend(["--extractor-args", "youtube:player-client=android,web"])
+    dry_run = _as_bool(params.get("youtube_dry_run"), False)
+    cookie_args, cookies_done = _ytdlp_cookies(context, root, params, opened=not dry_run)
+    command.extend([*cookie_args, "-F", url])
+    if dry_run:
+        context.log("[DRY RUN] yt-dlp command was not executed.")
+        context.log(" ".join(f'"{part}"' if " " in part else part for part in command))
+        context.progress(1.0)
+        return {"dry_run": True}
+    try:
+        result = run_process(context, command, extra_env=_tool_env(root), check=True, progress_seconds=120)
+    finally:
+        cookies_done()
+    context.progress(1.0)
+    return {"lines": len(result.lines)}
+
+
 def download_youtube(context: JobContext) -> dict[str, object]:
     params = dict(context.operation.parameters)
     root = context.paths.root
-    download_dir = root / "Download"
+    download_dir = youtube_download_dir(root)
     download_dir.mkdir(parents=True, exist_ok=True)
 
     profile = str(params.get("youtube_profile", "best_mp4")).strip() or "best_mp4"
@@ -3803,23 +4376,22 @@ def download_youtube(context: JobContext) -> dict[str, object]:
     client = str(params.get("youtube_client", "default")).strip()
     dry_run = _as_bool(params.get("youtube_dry_run"), False)
 
-    command = [_yt_dlp(root)]
-    deno = _deno(root)
-    if deno:
-        command.extend(["--js-runtimes", f"deno:{deno}"])
-    else:
-        js_override = os.environ.get("AUDION_YTDLP_JS_RUNTIMES") or os.environ.get("YTDLP_JS_RUNTIMES")
-        if js_override:
-            command.extend(["--js-runtimes", js_override])
-        else:
-            context.log("[WARN] No Deno JS runtime found. YouTube formats may be limited.")
-    command.extend([
-        "-P",
-        str(download_dir),
-        "-o",
-        "%(uploader)s/%(upload_date>%Y-%m-%d)s - %(title).180B [%(id)s].%(ext)s",
-        *_youtube_format_args(params, profile, parallel),
-    ])
+    command = [_yt_dlp(root), *_ytdlp_runtime_args(context, root)]
+    playlist = source_mode == "playlist"
+    # A playlist is kept whole and in its order: every file numbered, a video that fails passed over.
+    template = ("%(playlist_index)03d - %(title).200B [%(id)s].%(ext)s" if playlist
+                else "%(uploader)s/%(upload_date>%Y-%m-%d)s - %(title).180B [%(id)s].%(ext)s")
+    command.extend(["-P", str(download_dir), "-o", template, *_youtube_format_args(params, profile, parallel)])
+    if playlist:
+        command.extend(["--ignore-errors", "--continue"])
+        # Which videos of the playlist, by their numbers in it: 1-10,15 or -5: for the last five.
+        items = str(params.get("youtube_playlist_items", "") or "").strip()
+        if items:
+            command.extend(["--playlist-items", items])
+    sections = str(params.get("youtube_sections", "") or "").strip()
+    if sections:
+        # A part of the video only: *00:01:00-00:02:00, as yt-dlp writes it.
+        command.extend(["--download-sections", sections])
 
     ffmpeg_bin = root / "Tools" / "ffmpeg" / "bin"
     if ffmpeg_bin.exists():
@@ -3831,7 +4403,9 @@ def download_youtube(context: JobContext) -> dict[str, object]:
         command.append("--force-ipv4")
     if "embed_metadata" in options and profile != "subs_only":
         command.extend(["--embed-metadata", "--embed-thumbnail"])
-    if "no_playlist" in options:
+    # One link is one video: a link to a video in a playlist (watch?v=...&list=...) must not bring the playlist along -
+    # Media Downloader 5.6.6 passes --no-playlist unless asked otherwise. The tick is for the links of input\urls.txt.
+    if source_mode == "single" or ("no_playlist" in options and not playlist):
         command.append("--no-playlist")
 
     if client == "safari" or profile == "safe_mp4":
@@ -3839,9 +4413,10 @@ def download_youtube(context: JobContext) -> dict[str, object]:
     elif client == "android":
         command.extend(["--extractor-args", "youtube:player-client=android,web"])
 
-    if "write_subs" in subtitles:
+    # SUBTITLES writes them by itself; a tick of the same asks once.
+    if "write_subs" in subtitles and "--write-subs" not in command:
         command.append("--write-subs")
-    if "write_auto_subs" in subtitles:
+    if "write_auto_subs" in subtitles and "--write-auto-subs" not in command:
         command.append("--write-auto-subs")
     if "embed_subs" in subtitles and profile != "subs_only":
         command.append("--embed-subs")
@@ -3850,31 +4425,18 @@ def download_youtube(context: JobContext) -> dict[str, object]:
         command.extend(["--sub-langs", sub_langs])
 
     if _as_bool(params.get("download_archive"), False):
-        command.extend(["--download-archive", str(download_dir / "download-archive.txt")])
+        # The list of what was downloaded is the program's state, not a result: clearing the Target keeps it.
+        command.extend(["--download-archive", str(root / "config" / "download-archive.txt")])
 
-    cookies_browser = os.environ.get("AUDION_YTDLP_COOKIES_BROWSER") or os.environ.get("YTDLP_COOKIES_BROWSER")
-    cookies_env = os.environ.get("AUDION_YTDLP_COOKIES") or os.environ.get("YTDLP_COOKIES") or os.environ.get("COOKIES")
-    cookies_path = str(params.get("cookies_path", "")).strip().strip('"')
-    if cookies_browser:
-        command.extend(["--cookies-from-browser", cookies_browser])
-    elif cookies_env:
-        command.extend(["--cookies", cookies_env])
-    elif cookies_path:
-        candidate = Path(cookies_path)
-        if not candidate.is_absolute():
-            candidate = root / candidate
-        if candidate.exists():
-            command.extend(["--cookies", str(candidate)])
+    # The cookies stand here; a sealed copy is opened only when the call is near (below).
+    cookies_at = len(command)
 
     sponsorblock = os.environ.get("AUDION_YTDLP_SPONSORBLOCK") or os.environ.get("YTDLP_SPONSORBLOCK")
     if sponsorblock and profile not in {"audio_m4a", "audio_opus", "audio_mp3", "audio_custom", "subs_only"}:
         command.extend(["--sponsorblock-remove", sponsorblock])
 
     if source_mode == "batch":
-        batch_file = str(params.get("batch_file", "Download\\urls.txt")).strip().strip('"')
-        batch_path = Path(batch_file)
-        if not batch_path.is_absolute():
-            batch_path = root / batch_path
+        batch_path = youtube_list_path(root, params)
         if not batch_path.exists():
             raise RuntimeError(f"Batch file was not found: {batch_path}")
         command.extend(["--batch-file", str(batch_path)])
@@ -3884,15 +4446,51 @@ def download_youtube(context: JobContext) -> dict[str, object]:
             raise RuntimeError("YouTube URL is empty.")
         command.append(url)
 
+    cookie_args, cookies_done = _ytdlp_cookies(context, root, params, opened=not dry_run)
+    command[cookies_at:cookies_at] = cookie_args
     if dry_run:
         context.log("[DRY RUN] yt-dlp command was not executed.")
         context.log(" ".join(f'"{part}"' if " " in part else part for part in command))
         context.progress(1.0)
         return {"dry_run": True, "profile": profile}
 
-    result = run_process(context, command, extra_env=_tool_env(root), check=True, progress_seconds=1800)
+    started = time.time()
+    try:
+        result = run_process(context, command, extra_env=_tool_env(root), check=True, progress_seconds=1800)
+    finally:
+        cookies_done()
     context.progress(1.0)
-    return {"profile": profile, "lines": len(result.lines), "download_dir": str(download_dir)}
+    # yt-dlp says which files it found already there; a file of this run came into being after the run began.
+    existing = sorted({match.group(1).strip() for line in result.lines for match in [DOWNLOAD_ALREADY.search(line)] if match})
+    known = {os.path.normcase(os.path.abspath(path)) for path in existing}
+    downloaded = [path for path in _files_born_since(download_dir, started)
+                  if os.path.normcase(os.path.abspath(str(path))) not in known]
+    for path in downloaded:
+        context.log(f"[OK] {path}")
+    return {"profile": profile, "lines": len(result.lines), "download_dir": str(download_dir), "processed": len(downloaded),
+            "downloaded": [str(path) for path in downloaded], "existing": existing}
+
+
+# What yt-dlp leaves while it works and takes away when a file is whole.
+DOWNLOAD_LEFTOVERS = {".part", ".ytdl", ".tmp", ".temp"}
+# What yt-dlp says of a file that is there already: "[download] PATH has already been downloaded".
+DOWNLOAD_ALREADY = re.compile(r"^\[download\] (.+?) has already been downloaded")
+
+
+def _files_born_since(folder: Path, started: float) -> list[Path]:
+    """The files of a folder, its subfolders too, that came into being since `started` (seconds of the epoch): what a
+    download wrote. By the time of birth, not of change - yt-dlp may set a file's time of change to its upload date. No
+    slack: a file of the run before, born a moment earlier, is not this run's."""
+    if not folder.is_dir():
+        return []
+    born: list[Path] = []
+    for path in folder.rglob("*"):
+        if not path.is_file() or path.suffix.lower() in DOWNLOAD_LEFTOVERS:
+            continue
+        stat = path.stat()
+        if getattr(stat, "st_birthtime", stat.st_ctime) >= started:
+            born.append(path)
+    return sorted(born)
 
 
 def _path_is_inside(path: Path, parent: Path) -> bool:
@@ -3955,30 +4553,30 @@ def _clear_folder(context: JobContext, folder: Path, label: str, *, allow_extern
 
 def cleanup_transcoded(context: JobContext) -> dict[str, object]:
     output = cached_output_path(context.paths.root)
-    context.log("Cleaning selected destination/output folder. Source and Download are preserved.")
-    result = _clear_folder(context, output, "Transcoded", allow_external=True)
+    context.log("Cleaning the selected output folder. The input is preserved.")
+    result = _clear_folder(context, output, "output", allow_external=True)
     context.progress(1.0)
     return result
 
 
 def cleanup_source(context: JobContext) -> dict[str, object]:
     source = cached_source_path(context.paths.root)
-    context.log("Cleaning selected Source folder. Transcoded and Download are preserved.")
-    target, external = _assert_clear_target(context, source, "Source", allow_external=True)
+    context.log("Cleaning the selected input folder. The output is preserved.")
+    target, external = _assert_clear_target(context, source, "input", allow_external=True)
     if target.is_file():
         if external:
-            context.log(f"[WARNING] Deleting external Source file: {target}")
+            context.log(f"[WARNING] Deleting an external input file: {target}")
         target.unlink()
-        context.log(f"Removed Source file: {target.name}")
-        result = {"folder": "Source", "path": str(target), "external": external, "removed_items": 1, "kind": "file"}
+        context.log(f"Removed the input file: {target.name}")
+        result = {"folder": "input", "path": str(target), "external": external, "removed_items": 1, "kind": "file"}
     else:
-        result = _clear_folder(context, source, "Source", allow_external=True)
+        result = _clear_folder(context, source, "input", allow_external=True)
     context.progress(1.0)
     return result
 
 
 def cleanup_workspace(context: JobContext) -> dict[str, object]:
-    context.log("Cleaning managed GUI workspace folders. Source, Download and Transcoded are preserved.")
+    context.log("Cleaning managed GUI workspace folders. The input and the output are preserved.")
     results = [
         _clear_folder(context, context.paths.workspace, "workspace"),
         _clear_folder(context, context.paths.report, "report"),
@@ -4001,20 +4599,17 @@ TRIM_VIDEO_EXTENSIONS = {"mp4", "m4v", "mov", "mkv", "mxf", "avi", "mts", "m2ts"
 TRIM_KEYFRAME_WINDOW = 15.0
 
 
-def trim_source_files(root: Path | str | None = None) -> list[dict[str, str]]:
-    """Dynamic manifest option provider: video files staged in the Source folder."""
-    project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
-    source_dir = cached_source_path(project_root)
-    if not source_dir.exists():
-        return [{"value": "", "label": "Source is missing", "label_ru": "Source не найден"}]
-    files = _media_files(source_dir, TRIM_VIDEO_EXTENSIONS)
-    if not files:
-        return [{"value": "", "label": "Source holds no video", "label_ru": "В Source нет видео"}]
-    options = []
-    for path in files[:200]:
-        name = _source_display_name(path, source_dir)
-        options.append({"value": name, "label": name, "label_ru": name})
-    return options
+def _take_in(source: Path, name: str) -> Path | None:
+    """The take a name chooses in a Source: the Source itself when it is one file - named by its own name, or not named;
+    a file of the Source folder by its name there. None - no such take. The cut, the player, the details and the length
+    of a take all ask this one, so a Source of one file is a Source like any other."""
+    chosen = str(name or "").strip()
+    if source.is_file():
+        return source if not chosen or Path(chosen).name.lower() == source.name.lower() else None
+    if not chosen:
+        return None
+    candidate = source / chosen
+    return candidate if candidate.is_file() else None
 
 
 def trim_source_path(name: str, root: Path | str | None = None) -> Path | None:
@@ -4027,8 +4622,7 @@ def trim_source_path(name: str, root: Path | str | None = None) -> Path | None:
     if not chosen:
         return None
     project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
-    candidate = cached_source_path(project_root) / chosen
-    return candidate if candidate.is_file() else None
+    return _take_in(cached_source_path(project_root), chosen)
 
 
 _TRIM_LENGTHS: dict[tuple[str, int, int], float] = {}
@@ -4074,7 +4668,7 @@ def trim_file_frame_seconds(name: str, root: Path | str | None = None) -> float 
     try:
         facts = _trim_stream_facts(project_root, source)
         variable_rate = is_variable_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate"))
-        rate = parse_rate((facts.get("r_frame_rate") if variable_rate else facts.get("avg_frame_rate")) or "")
+        rate = parse_rate(stream_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate")) or "")
     except (OSError, RuntimeError, ValueError, KeyError):
         return None
     return float(1 / rate) if rate > 0 else None
@@ -4098,31 +4692,6 @@ def trim_media_kind(name: str) -> str:
     """
     suffix = Path(str(name or "")).suffix.lower().lstrip(".")
     return "audio" if suffix in PURE_AUDIO_EXTENSIONS else "video"
-
-
-def trim_file_key(path: Path | str) -> str:
-    """A cheap content fingerprint: size plus the first and last megabyte.
-
-    Hashing an hour of video to remember two numbers would be absurd, and the
-    name alone is not an identity - takes get renamed. Two megabytes of reads
-    tell one camera file from another reliably enough for a session cache.
-    """
-    target = Path(path)
-    try:
-        size = target.stat().st_size
-    except OSError:
-        return ""
-    digest = hashlib.sha1(str(size).encode("ascii"))
-    window = 1024 * 1024
-    try:
-        with open(target, "rb") as handle:
-            digest.update(handle.read(window))
-            if size > window * 2:
-                handle.seek(-window, os.SEEK_END)
-                digest.update(handle.read(window))
-    except OSError:
-        return ""
-    return digest.hexdigest()
 
 
 def _trim_marked_jobs(params: dict[str, Any], source_dir: Path) -> list[tuple[Path, dict[str, Any]]]:
@@ -4334,39 +4903,6 @@ TRIM_UNREADABLE_VIDEO = (
     "decoder here, so there is no stream to copy. Such material is trimmed in the camera vendor's "
     "own software (Sony Catalyst, ARRI Reference Tool) or transcoded first."
 )
-
-
-# Codecs the GPU vendors actually decode, read off this build's own decoder list
-# (`ffmpeg -decoders`, the qsv / cuvid / amf entries). Anything else gets
-# software, which it would fall back to anyway - only later, and after paying
-# for the refusal. The editing codecs are absent on purpose: no vendor decodes
-# ProRes, DNxHR, FFV1 or v210 in hardware.
-TRIM_HARDWARE_DECODED = {
-    "h264",
-    "hevc",
-    "av1",
-    "vp9",
-    "vp8",
-    "vvc",
-    "vc1",
-    "mpeg2video",
-    "mpeg1video",
-    "mpeg4",
-    "mjpeg",
-}
-
-
-def _decodes_as_gbr(video: dict[str, Any]) -> bool:
-    """True for a codec whose decoder hands back GBR whatever the tags claim.
-
-    ProRes 4444 (`ap4h`, `ap4x`) is the one that matters here: ffprobe reports
-    bt709 on the stream, the decoder produces `csp:gbr prim:reserved`, and
-    swscale refuses it with "Unsupported input". Knowing in advance saves the
-    preview a failed attempt on every move of the fader.
-    """
-    codec = str(video.get("codec_name") or "").strip().lower()
-    pixel = str(video.get("pix_fmt") or "").strip().lower()
-    return codec == "prores" and "444" in pixel
 
 
 def _video_stream_is_unreadable(video: dict[str, Any]) -> bool:
@@ -4610,7 +5146,7 @@ def _trim_split_plans(
     if duration <= 0:
         raise RuntimeError("duration could not be read")
     variable_rate = is_variable_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate"))
-    rate = parse_rate((facts.get("r_frame_rate") if variable_rate else facts.get("avg_frame_rate")) or "")
+    rate = parse_rate(stream_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate")) or "")
     origin = float(facts.get("origin") or 0.0)
 
     points = _trim_split_points(params)
@@ -4704,7 +5240,7 @@ def _trim_plan(
     variable_rate = is_variable_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate"))
     # On a variable-rate source the average is not the rate of any given second,
     # so the nominal one is the honest basis for timecode and for display.
-    rate_source = facts.get("r_frame_rate") if variable_rate else facts.get("avg_frame_rate")
+    rate_source = stream_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate"))
     # Exactly what the file states: ffprobe reports 24000/1001 for 23.976 and
     # 24/1 for a true 24.000, so there is nothing left to infer.
     rate = parse_rate(rate_source or video.get("avg_frame_rate"))
@@ -4856,7 +5392,9 @@ def _trim_plan(
         source=str(source),
         target=str(target),
         overwrite=_as_bool(params.get("overwrite"), True),
+        # The keyframe as the video stream of the file counts it: its timestamp, the start of the file included.
         start_seconds=start + origin,
+        seek_timestamp=True,
         frame_count=cut.frames,
         duration_seconds=cut.tail_seconds,
         # A piece headed for a join carries its own length as well, so its sound
@@ -4990,7 +5528,7 @@ def _trim_gap_plan(
     if duration <= 0:
         raise RuntimeError("duration could not be read")
     variable_rate = is_variable_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate"))
-    rate_source = facts.get("r_frame_rate") if variable_rate else facts.get("avg_frame_rate")
+    rate_source = stream_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate"))
     rate = parse_rate(rate_source or "")
     origin = float(facts.get("origin") or 0.0)
 
@@ -5353,7 +5891,8 @@ def _top_up_short_tail(context: JobContext, plan: dict[str, Any]) -> None:
         shortfall = _undecodable_tail(root, plan, int(planned))
     if shortfall <= 0 or shortfall > TRIM_TOP_UP_LIMIT:
         return
-    command = list(plan["command"])
+    # The piece of the first pass is this run's own: the retry writes over it, Overwrite or not.
+    command = ["-y" if part == "-n" else part for part in plan["command"]]
     try:
         position = command.index("-frames:v")
     except ValueError:
@@ -5589,7 +6128,8 @@ def _trim_audio_plans(
         "broadcast_wav": "bext" in chunks or any(str(key).lower() == "time_reference" for key in tags),
         "warnings": warnings,
     }
-    exact = _as_bool(params.get("trim_exact"), True)
+    # Lossless unless asked otherwise, as the form: a compressed sound cut exactly is encoded once more.
+    exact = _as_bool(params.get("trim_exact"), False)
     if exact or audio_codec_is_lossless(codec):
         return _trim_sound_exact_plans(context, source, params, trim, facts, exact=exact, source_dir=source_dir, output_dir=output_dir)
     return _trim_sound_packet_plans(context, source, params, trim, facts, source_dir=source_dir, output_dir=output_dir)
@@ -5984,8 +6524,8 @@ def _trim_media_run(context: JobContext) -> dict[str, object]:
     else:
         selected = str(params.get("trim_file") or "").strip()
         if selected:
-            candidate = source_dir / selected
-            files = [candidate] if candidate.is_file() else []
+            candidate = _take_in(source_dir, selected)
+            files = [candidate] if candidate is not None else []
             if not files:
                 context.log(f"[ERROR] Selected file is not in Source: {selected}")
                 return {"ok": False, "files": 0, "failed": 1}
@@ -6068,6 +6608,7 @@ def _trim_media_run(context: JobContext) -> dict[str, object]:
     processed = 0
     failed = 0
     total = len(plans)
+    context.units(total)
     for index, plan in enumerate(plans, start=1):
         if context.cancelled():
             # Nothing of this plan has been written yet, so nothing is cleaned:
@@ -6153,290 +6694,18 @@ def _trim_media_run(context: JobContext) -> dict[str, object]:
     }
 
 
-# --- Trim preview -------------------------------------------------------------
+# --- Trim file details --------------------------------------------------------
 #
-# The preview answers one question: what is at the point the cut will really
-# land on. A frame and four seconds of waveform are enough for that, and both
-# are cheap — 90 ms and 60 ms on a five-minute clip — so they can be redrawn
-# every time a slider is released. A player with a scrub bar is a different
-# product; this is a still and an oscilloscope.
-
-TRIM_PREVIEW_WIDTH = 320
-TRIM_PREVIEW_WAVE_SECONDS = 4.0
-
-
-def _capture_bytes(root: Path, command: list[str]) -> bytes:
-    completed = subprocess.run(
-        command,
-        cwd=str(root),
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        env=utf8_subprocess_env(_tool_env(root)),
-        **hidden_subprocess_kwargs(),
-    )
-    return completed.stdout if completed.returncode == 0 else b""
-
-
-def _data_uri(payload: bytes, mime: str) -> str:
-    return f"data:{mime};base64,{base64.b64encode(payload).decode('ascii')}" if payload else ""
+# What ffprobe knows of the take chosen in CUT, asked by the button beside its
+# name. The points themselves are found in mpv, which the window drives.
 
 
 def _trim_preview_source(root: Path, file_name: str) -> Path | None:
     source_dir = cached_source_path(root)
     if file_name:
-        candidate = source_dir / file_name
-        return candidate if candidate.is_file() else None
+        return _take_in(source_dir, file_name)
     files = _media_files(source_dir, TRIM_VIDEO_EXTENSIONS)
     return files[0] if files else None
-
-
-def trim_media_info(file_name: str = "", root: Path | str | None = None) -> dict[str, Any]:
-    """Duration, frame rate and timecode of the file the sliders will drive."""
-    project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
-    source = _trim_preview_source(project_root, str(file_name or ""))
-    if source is None:
-        return {"ok": False, "error": "No video file is staged in Source."}
-    try:
-        data = _probe_media_json(project_root, source)
-        # Asked before anything is decoded: a still of a stream FFmpeg cannot
-        # parse produces its own complaint, which is no answer for the panel.
-        video = _stream(data, "video")
-        if _video_stream_is_unreadable(video):
-            return {"ok": False, "error": TRIM_UNREADABLE_VIDEO}
-        facts = _trim_stream_facts(project_root, source)
-        duration = facts["duration"]
-        variable_rate = is_variable_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate"))
-        rate_source = facts.get("r_frame_rate") if variable_rate else facts.get("avg_frame_rate")
-        rate = parse_rate(rate_source)
-    except Exception as exc:
-        return {"ok": False, "error": str(exc)}
-    if duration <= 0:
-        return {"ok": False, "error": "Duration could not be read."}
-    return {
-        "ok": True,
-        "file": _source_display_name(source, cached_source_path(project_root)),
-        "path": str(source),
-        "duration": duration,
-        "duration_label": format_seconds(duration, decimals=1, separator=","),
-        "rate": rate_label(rate),
-        "rate_exact": f"{rate.numerator}/{rate.denominator}",
-        "frame_seconds": float(1 / rate),
-        "origin": float(facts.get("origin") or 0.0),
-        "variable_rate": variable_rate,
-        "timecode": _trim_source_timecode(project_root, source),
-        "has_audio": bool(_stream(data, "audio")),
-        "decodes_as_gbr": _decodes_as_gbr(video),
-        "codec": str(video.get("codec_name") or "").strip().lower(),
-    }
-
-
-# The strip is rendered wide enough to cover a 4K display at the default
-# 1600x900 window; stretching it further only interpolates, which is fine for a
-# waveform. Peaks a few seconds apart are all this view has to show.
-TRIM_WAVE_WIDTH = 2560
-# Drawn taller than the strip is shown so the shape stays crisp when the pane
-# stretches it - the fine strip is 72 px and can be resized by the window.
-TRIM_WAVE_HEIGHT = 128
-# The section's orange, shared with the fader handle: one warm colour against
-# the cold ground, so the strip and the control it drives read as one instrument.
-TRIM_WAVE_COLOR = "#cc5500"
-# Cube root: compared on the same ten seconds of speech, `lin` draws a hairline,
-# `sqrt` a thin form, `log` a solid block, `cbrt` a body where the phrase reads.
-TRIM_WAVE_SCALE = "cbrt"
-# Pixels of transparent air kept above and below the drawn shape, in the
-# rendered picture. At 128 px rendered into a 56 px strip, 8 px reads as the
-# 3-4 px of air a peak at 0 dB should keep from the border.
-TRIM_WAVE_AIR = 8
-
-
-def _trim_wave_cache_dir(root: Path) -> Path:
-    folder = root / "workspace" / "trim_waves"
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
-
-
-def _trim_wave_cache_name(source: Path, start: float, end: float, width: int, height: int, gain: float = 1.0) -> str:
-    try:
-        stat = source.stat()
-        stamp = f"{int(stat.st_mtime)}-{stat.st_size}"
-    except OSError:
-        stamp = "0-0"
-    # The drawing rules belong in the key: a change of scale, colour or air
-    # produces a different picture from the same audio, and without them the
-    # strip cached before the change is served forever.
-    style = f"{TRIM_WAVE_SCALE}|{TRIM_WAVE_COLOR}|{TRIM_WAVE_AIR}"
-    key = f"{source.resolve()}|{stamp}|{start:.3f}|{end:.3f}|{width}x{height}|{gain:.2f}|{style}"
-    return hashlib.sha1(key.encode("utf-8")).hexdigest() + ".png"
-
-
-# One peak per file, so the strip keeps a fixed scale: loud passages stay tall
-# and quiet ones stay small, and nothing rescales under a standing cursor.
-_TRIM_TRACK_PEAKS: dict[tuple[str, int, int], float] = {}
-
-
-def _trim_track_peak(root: Path, source: Path) -> float:
-    """Loudest sample of the whole track, 0..1, or 0 when it is not in memory.
-
-    Peak, not RMS: RMS draws a fuller body but flattens transients, and a cut is
-    aimed at exactly those - the attack of a word, the click of a door.
-
-    Read from the track already held for scrubbing, so this is a scan of memory
-    rather than another pass of ffmpeg. If the track has not arrived yet the
-    answer is 0 and the strip is drawn as recorded, then redrawn once it has.
-    """
-    key = _trim_scrub_key(source)
-    if key is None:
-        return 0.0
-    held = _TRIM_TRACK_PEAKS.get(key)
-    if held is not None:
-        return held
-    with _TRIM_SCRUB_LOCK:
-        track = _TRIM_SCRUB_TRACKS.get(key)
-    if not track:
-        return 0.0
-    even = track[: len(track) // 2 * 2]
-    if not even:
-        return 0.0
-    if _audioop is not None:
-        # 0.06 s over an hour of audio against 9.8 s for the loop below, and the
-        # loop runs before the first strip can be drawn.
-        loudest = _audioop.max(even, 2)
-    else:
-        samples = array.array("h")
-        samples.frombytes(even)
-        # Every eighth sample: a thinned scan can miss a lone peak by a little,
-        # which for a drawing scale costs nothing and keeps an hour usable.
-        loudest = max((abs(int(value)) for value in samples[::8]), default=0)
-    peak = min(1.0, loudest / 32768.0)
-    if len(_TRIM_TRACK_PEAKS) >= TRIM_SCRUB_TRACK_LIMIT * 4:
-        _TRIM_TRACK_PEAKS.clear()
-    _TRIM_TRACK_PEAKS[key] = peak
-    return peak
-
-
-def _wave_gain(peak: float) -> float:
-    """How much to lift the window so its loudest peak reaches the edge.
-
-    Capped at 32× so a near-silent stretch turns into a readable shape rather
-    than into amplified noise, and never below 1: nothing is ever drawn quieter
-    than it was recorded.
-    """
-    if peak <= 0.0:
-        return 1.0
-    return max(1.0, min(32.0, 0.98 / peak))
-
-
-def _render_waveform(
-    root: Path,
-    source: Path,
-    start: float,
-    end: float,
-    width: int,
-    height: int,
-    gain: float = 1.0,
-) -> bytes:
-    """`showwavespic` over one span, on a transparent background.
-
-    The audio is resampled down to 8 kHz first: the strip shows peaks, not
-    spectra, and the lower rate takes a fifth off the decode of a long file.
-    `gain` lifts a quiet window so the shape fills the strip.
-    """
-    span = max(0.05, float(end) - float(start))
-    command = [_ffmpeg(root), "-v", "error"]
-    if start > 0:
-        command.extend(["-ss", f"{float(start):.3f}"])
-    command.extend(
-        [
-            "-t",
-            f"{span:.3f}",
-            "-i",
-            str(source),
-            "-filter_complex",
-            # The scale decides whether the strip can be read at all. Compared
-            # on the same ten seconds of speech: `lin` draws a hairline with
-            # occasional spikes, `sqrt` is thin, `log` fills solid and loses the
-            # shape, `cbrt` gives a body where the structure of a phrase still
-            # shows. `draw=full` keeps quiet passages visible too.
-            f"aresample=8000,volume={max(1.0, float(gain)):.4f},"
-            f"showwavespic=s={int(width)}x{max(8, int(height) - 2 * TRIM_WAVE_AIR)}"
-            f":colors={TRIM_WAVE_COLOR}:draw=full:scale={TRIM_WAVE_SCALE},"
-            # Transparent air above and below, so the loudest peak stops short
-            # of the border rather than being cut off by it.
-            f"pad={int(width)}:{int(height)}:0:{TRIM_WAVE_AIR}:color=0x00000000",
-            "-frames:v",
-            "1",
-            "-update",
-            "1",
-            "-f",
-            "image2",
-            "-c:v",
-            "png",
-            "pipe:1",
-        ]
-    )
-    return _capture_bytes(root, command)
-
-
-def trim_waveform(
-    file_name: str = "",
-    start: float = 0.0,
-    end: float = 0.0,
-    root: Path | str | None = None,
-    *,
-    width: int = TRIM_WAVE_WIDTH,
-    height: int = TRIM_WAVE_HEIGHT,
-    use_cache: bool = True,
-) -> dict[str, Any]:
-    """One waveform strip as a data URI, plus the span it covers.
-
-    `use_cache` is on for the whole-file strip, which is expensive and never
-    changes, and off for the moving window, which is cheap and always different.
-    """
-    project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
-    source = _trim_preview_source(project_root, str(file_name or ""))
-    if source is None:
-        return {"ok": False, "error": "No video file is staged in Source."}
-    facts = _trim_stream_facts(project_root, source)
-    origin = float(facts.get("origin") or 0.0)
-    span_end = float(end) if end and end > start else None
-    if span_end is None:
-        duration = facts["duration"] or (_media_duration_seconds(project_root, source) or 0.0)
-        if duration <= 0:
-            return {"ok": False, "error": "Duration could not be read."}
-        span_end = duration
-    span_start = max(0.0, float(start))
-
-    cache_file = None
-    if use_cache:
-        cache_file = _trim_wave_cache_dir(project_root) / _trim_wave_cache_name(
-            source, span_start, span_end, width, height, _wave_gain(_trim_track_peak(project_root, source))
-        )
-        if cache_file.is_file():
-            try:
-                return {
-                    "ok": True,
-                    "start": span_start,
-                    "end": span_end,
-                    "image": _data_uri(cache_file.read_bytes(), "image/png"),
-                    "cached": True,
-                }
-            except OSError:
-                pass
-
-    # The whole track's peak, so every window of this file is drawn to the same
-    # scale. Zero while the track is still arriving - the strip is then drawn as
-    # recorded and redrawn at its proper level on the next pass.
-    gain = _wave_gain(_trim_track_peak(project_root, source))
-    payload = _render_waveform(project_root, source, span_start + origin, span_end + origin, width, height, gain)
-    if not payload:
-        return {"ok": False, "error": "This file carries no audio to draw.", "start": span_start, "end": span_end}
-    if cache_file is not None:
-        try:
-            cache_file.write_bytes(payload)
-        except OSError:
-            pass
-    return {"ok": True, "start": span_start, "end": span_end, "image": _data_uri(payload, "image/png"), "cached": False}
 
 
 def trim_probe_table(file_name: str = "", root: Path | str | None = None) -> dict[str, Any]:
@@ -6461,7 +6730,7 @@ def trim_probe_table(file_name: str = "", root: Path | str | None = None) -> dic
     fmt = data.get("format", {}) if isinstance(data.get("format"), dict) else {}
     variable = is_variable_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate"))
     try:
-        rate = parse_rate(facts.get("r_frame_rate") if variable else facts.get("avg_frame_rate"))
+        rate = parse_rate(stream_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate")))
     except Exception:
         rate = None
     duration = float(facts.get("duration") or 0.0)
@@ -6498,533 +6767,16 @@ def trim_probe_table(file_name: str = "", root: Path | str | None = None) -> dic
         ("Timeline starts", format_seconds(float(facts.get("origin") or 0.0))),
         ("Bit rate", f"{int(fmt.get('bit_rate')) // 1000} kb/s" if str(fmt.get("bit_rate") or "").isdigit() else "-"),
     ]
-    return {"ok": True, "file": source.name, "rows": [{"field": name, "value": value} for name, value in rows]}
+    return {"ok": True, "file": source.name,
+            "rows": [{"field": name, "field_ru": TRIM_PROBE_FIELDS_RU.get(name, name), "value": value} for name, value in rows]}
 
 
+# The names of the rows of the table above in a Russian window.
+TRIM_PROBE_FIELDS_RU = {
+    "File": "Файл", "Container": "Контейнер", "Size": "Размер", "Duration": "Длительность", "Frames": "Кадров",
+    "Video": "Видео", "Resolution": "Разрешение", "Frame rate": "Частота кадров", "Exact rate": "Точная частота",
+    "Pixel format": "Формат пикселей", "Colour": "Цвет", "Audio": "Звук", "Channels": "Каналы", "Sample rate": "Частота дискретизации",
+    "Sample format": "Формат сэмпла", "Timecode": "Таймкод", "Timeline starts": "Начало шкалы", "Bit rate": "Битрейт",
+}
 
 
-# One frame, the way an editor scrubs: the chunk begins on the frame boundary
-# and lasts exactly as long as the frame does. `frames` raises that for a caller
-# that wants more; the fallback is used only when a file states no usable rate.
-TRIM_SCRUB_SECONDS = 0.04
-# Mono at 24 kHz: this is for recognising speech under the cursor, not judging a
-# mix, and a quarter of the bytes arrive four times sooner.
-TRIM_SCRUB_RATE = 24000
-TRIM_SCRUB_BLOCK_SECONDS = 120.0
-# Six blocks is twenty minutes of sound, about 33 MB. Blocks are the answer
-# until the whole track arrives, and the only answer for a file too big to hold.
-TRIM_SCRUB_BLOCK_LIMIT = 6
-_TRIM_SCRUB_BLOCKS: dict[tuple[str, int, int, int], bytes] = {}
-
-# Three hours at 24 kHz mono is about 500 MB. Below that the whole track is
-# held, because there is no telling whether the work is at the start, the middle
-# or the end - and the material this is for is small: a Zoom call is nothing, a
-# twenty-minute project reel is 55 MB, half an hour is 82 MB. Past three hours
-# the blocks remain the answer.
-TRIM_SCRUB_TRACK_CEILING = 3 * 60 * 60 * TRIM_SCRUB_RATE * 2
-# Two tracks: the one in hand and the one just left.
-TRIM_SCRUB_TRACK_LIMIT = 2
-_TRIM_SCRUB_TRACKS: dict[tuple[str, int, int], bytes] = {}
-_TRIM_SCRUB_LOADING: set[tuple[str, int, int]] = set()
-_TRIM_SCRUB_LOCK = threading.Lock()
-
-
-def _trim_scrub_key(source: Path) -> tuple[str, int, int] | None:
-    try:
-        stat = source.stat()
-    except OSError:
-        return None
-    return (str(source), int(stat.st_size), int(stat.st_mtime))
-
-
-def _trim_scrub_load_track(root: Path, source: Path, key: tuple[str, int, int]) -> None:
-    """Decode the whole track and keep it. Runs off the caller's thread."""
-    track = _capture_bytes(
-        root,
-        [
-            _ffmpeg(root),
-            "-v",
-            "error",
-            "-i",
-            str(source),
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            str(TRIM_SCRUB_RATE),
-            "-c:a",
-            "pcm_s16le",
-            "-f",
-            "s16le",
-            "pipe:1",
-        ],
-    )
-    with _TRIM_SCRUB_LOCK:
-        _TRIM_SCRUB_LOADING.discard(key)
-        if not track:
-            return
-        if len(_TRIM_SCRUB_TRACKS) >= TRIM_SCRUB_TRACK_LIMIT:
-            _TRIM_SCRUB_TRACKS.clear()
-        _TRIM_SCRUB_TRACKS[key] = track
-
-
-def _trim_scrub_track(root: Path, source: Path) -> bytes:
-    """The whole track if it is held; otherwise start holding it and say so.
-
-    Never blocks: the first slices come from a block while this arrives. The
-    duration is only consulted when a decision has to be made - a track already
-    in hand needs no probe, and probing per slice would cost more than the slice.
-    """
-    key = _trim_scrub_key(source)
-    if key is None:
-        return b""
-    with _TRIM_SCRUB_LOCK:
-        held = _TRIM_SCRUB_TRACKS.get(key)
-        if held is not None:
-            return held
-        if key in _TRIM_SCRUB_LOADING:
-            return b""
-    duration = float(_trim_stream_facts(root, source).get("duration") or 0.0)
-    with _TRIM_SCRUB_LOCK:
-        if key in _TRIM_SCRUB_LOADING or _TRIM_SCRUB_TRACKS.get(key) is not None:
-            return _TRIM_SCRUB_TRACKS.get(key) or b""
-        if duration <= 0 or duration * TRIM_SCRUB_RATE * 2 > TRIM_SCRUB_TRACK_CEILING:
-            return b""
-        _TRIM_SCRUB_LOADING.add(key)
-    thread = threading.Thread(
-        target=_trim_scrub_load_track,
-        args=(root, source, key),
-        name="trim-scrub-track",
-        daemon=True,
-    )
-    thread.start()
-    return b""
-
-
-def _trim_scrub_block(root: Path, source: Path, index: int) -> bytes:
-    """Two minutes of raw mono PCM, decoded once and kept.
-
-    Holding the sound is what makes the fader audible without a process per
-    move: the whole track of a 55-second 4K file decodes in 0.16 s, and after
-    that a slice is a memory copy.
-    """
-    try:
-        stat = source.stat()
-        key = (str(source), int(stat.st_size), int(stat.st_mtime), int(index))
-    except OSError:
-        key = None
-    if key is not None:
-        held = _TRIM_SCRUB_BLOCKS.get(key)
-        if held is not None:
-            return held
-    start = max(0.0, index * TRIM_SCRUB_BLOCK_SECONDS)
-    block = _capture_bytes(
-        root,
-        [
-            _ffmpeg(root),
-            "-v",
-            "error",
-            "-ss",
-            f"{start:.3f}",
-            "-t",
-            f"{TRIM_SCRUB_BLOCK_SECONDS:.3f}",
-            "-i",
-            str(source),
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            str(TRIM_SCRUB_RATE),
-            "-c:a",
-            "pcm_s16le",
-            "-f",
-            "s16le",
-            "pipe:1",
-        ],
-    )
-    if key is not None and block:
-        if len(_TRIM_SCRUB_BLOCKS) >= TRIM_SCRUB_BLOCK_LIMIT:
-            _TRIM_SCRUB_BLOCKS.clear()
-        _TRIM_SCRUB_BLOCKS[key] = block
-    return block
-
-
-def _reversed_pcm(pcm: bytes) -> bytes:
-    """Same samples, last first. 16-bit mono, so the frame is two bytes."""
-    if len(pcm) < 4:
-        return pcm
-    samples = array.array("h")
-    samples.frombytes(pcm[: len(pcm) // 2 * 2])
-    samples.reverse()
-    return samples.tobytes()
-
-
-def _wav_from_pcm(pcm: bytes, rate: int = TRIM_SCRUB_RATE) -> bytes:
-    """Wrap raw mono 16-bit PCM in the 44-byte header a browser expects."""
-    header = bytearray()
-    header += b"RIFF"
-    header += (36 + len(pcm)).to_bytes(4, "little")
-    header += b"WAVEfmt "
-    header += (16).to_bytes(4, "little")
-    header += (1).to_bytes(2, "little")            # PCM, uncompressed
-    header += (1).to_bytes(2, "little")            # one channel
-    header += int(rate).to_bytes(4, "little")
-    header += int(rate * 2).to_bytes(4, "little")  # bytes per second
-    header += (2).to_bytes(2, "little")            # block align
-    header += (16).to_bytes(2, "little")           # bits per sample
-    header += b"data"
-    header += len(pcm).to_bytes(4, "little")
-    return bytes(header) + pcm
-
-
-# A track longer than this is not handed to the browser whole: decoded, it costs
-# four bytes a sample there, and twenty-five minutes is already 140 MB.
-TRIM_TRACK_DOWNLOAD_CEILING = 25 * 60 * TRIM_SCRUB_RATE * 2
-
-
-def trim_audio_track(file_name: str = "", root: Path | str | None = None) -> dict[str, Any]:
-    """The whole scrub track as one WAV, for the panel to decode and keep.
-
-    Returns `too_long` rather than a wall of bytes when the file is big enough
-    that holding it decoded in a browser would cost more than it is worth.
-    """
-    project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
-    source = _trim_preview_source(project_root, str(file_name or ""))
-    if source is None:
-        return {"ok": False, "error": "No video file is staged in Source."}
-    track = _trim_scrub_track(project_root, source)
-    if not track:
-        # Not held yet - the loader was started by the call above, and the panel
-        # asks again in a moment.
-        return {"ok": False, "pending": True}
-    if len(track) > TRIM_TRACK_DOWNLOAD_CEILING:
-        return {"ok": False, "too_long": True, "seconds": len(track) / (TRIM_SCRUB_RATE * 2)}
-    return {
-        "ok": True,
-        "wav": _wav_from_pcm(track),
-        "rate": TRIM_SCRUB_RATE,
-        "seconds": len(track) / (TRIM_SCRUB_RATE * 2),
-    }
-
-
-def trim_audio_slice(
-    file_name: str = "",
-    position: float = 0.0,
-    root: Path | str | None = None,
-    *,
-    frames: int = 1,
-    seconds: float = 0.0,
-    reverse: bool = False,
-) -> dict[str, Any]:
-    """The sound of the frame at `position`, as a WAV the page can play.
-
-    `reverse` plays it backwards, which is what a jog wheel does when it is
-    turned back: the direction of travel is heard rather than guessed.
-
-    Frame-sized by default and aligned to the frame boundary, which is what an
-    editor gives you when you scrub: you hear the frame you are standing on, not
-    the second that follows it. `seconds` overrides the length for a caller that
-    wants a longer listen.
-
-    Cut out of the track held in memory, so a move of the fader costs a copy
-    rather than a seek and a decode.
-    """
-    project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
-    source = _trim_preview_source(project_root, str(file_name or ""))
-    if source is None:
-        return {"ok": False, "error": "No video file is staged in Source."}
-    where = max(0.0, float(position))
-    frame_seconds = 0.0
-    try:
-        facts = _trim_stream_facts(project_root, source)
-        rate = parse_rate(facts.get("avg_frame_rate") or facts.get("r_frame_rate"))
-        frame_seconds = 1.0 / float(rate)
-    except Exception:
-        rate = None
-    if seconds and float(seconds) > 0:
-        span = float(seconds)
-    elif frame_seconds > 0:
-        span = frame_seconds * max(1, int(frames))
-        # Start where the frame starts: half a frame of drift is audible as the
-        # wrong syllable when the point is at the head of a word.
-        where = math.floor(where / frame_seconds) * frame_seconds
-    else:
-        span = TRIM_SCRUB_SECONDS * max(1, int(frames))
-    length = int(span * TRIM_SCRUB_RATE) * 2
-
-    # The whole track, once it has arrived: no block boundaries to stitch, and
-    # nothing to guess about which part of the file the work is in.
-    track = _trim_scrub_track(project_root, source)
-    if track:
-        first = int(where * TRIM_SCRUB_RATE) * 2
-        pcm = track[first : first + length]
-        if not pcm:
-            return {"ok": False, "error": "No audio at this point."}
-        if reverse:
-            pcm = _reversed_pcm(pcm)
-        return {
-            "ok": True,
-            "audio": "data:audio/wav;base64," + base64.b64encode(_wav_from_pcm(pcm)).decode("ascii"),
-            "seconds": len(pcm) / (TRIM_SCRUB_RATE * 2),
-            "at": where,
-            "reversed": bool(reverse),
-            "source": "track",
-        }
-
-    index = int(where // TRIM_SCRUB_BLOCK_SECONDS)
-    block = _trim_scrub_block(project_root, source, index)
-    if not block:
-        return {"ok": False, "error": "No audio at this point."}
-    offset = where - index * TRIM_SCRUB_BLOCK_SECONDS
-    first = int(offset * TRIM_SCRUB_RATE) * 2
-    pcm = block[first : first + length]
-    if len(pcm) < length:
-        # The slice runs past the end of this block; the next one carries the
-        # rest, and at the end of the file there simply is no rest.
-        pcm += _trim_scrub_block(project_root, source, index + 1)[: length - len(pcm)]
-    if not pcm:
-        return {"ok": False, "error": "No audio at this point."}
-    if reverse:
-        pcm = _reversed_pcm(pcm)
-    return {
-        "ok": True,
-        "audio": "data:audio/wav;base64," + base64.b64encode(_wav_from_pcm(pcm)).decode("ascii"),
-        "seconds": len(pcm) / (TRIM_SCRUB_RATE * 2),
-        "at": where,
-        "reversed": bool(reverse),
-        "source": "block",
-    }
-
-
-
-
-
-
-
-
-
-
-
-
-def trim_save_still(
-    file_name: str = "",
-    position: float = 0.0,
-    image_format: str = "png",
-    root: Path | str | None = None,
-) -> dict[str, Any]:
-    """Write the frame at a position to disk, full resolution.
-
-    The preview is 320 px wide because it only has to identify a moment. A
-    still that leaves the tool is worth its actual size.
-    """
-    project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
-    source = _trim_preview_source(project_root, str(file_name or ""))
-    if source is None:
-        return {"ok": False, "error": "No video file is staged in Source."}
-    fmt = str(image_format or "png").strip().lower()
-    if fmt not in {"png", "jpg", "jpeg"}:
-        fmt = "png"
-    extension = "jpg" if fmt in {"jpg", "jpeg"} else "png"
-
-    facts = _trim_stream_facts(project_root, source)
-    origin = float(facts.get("origin") or 0.0)
-    folder = cached_output_path(project_root) / "Stills"
-    folder.mkdir(parents=True, exist_ok=True)
-    stamp = format_seconds(float(position), decimals=3, separator="-").replace(":", "-")
-    target = folder / f"{source.stem}_{stamp}.{extension}"
-
-    command = [
-        _ffmpeg(project_root),
-        "-v",
-        "error",
-        "-y",
-        "-ss",
-        f"{max(0.0, float(position)) + origin:.6f}",
-        "-i",
-        str(source),
-        "-frames:v",
-        "1",
-    ]
-    if extension == "jpg":
-        command.extend(["-q:v", "2"])
-    command.append(str(target))
-    result = _capture_tool(project_root, command)
-    if result.returncode != 0 or not target.is_file():
-        return {"ok": False, "error": (result.stdout or "ffmpeg wrote nothing").strip()[:200]}
-    return {"ok": True, "path": str(target), "name": target.name}
-
-
-def trim_keyframe_neighbours(
-    file_name: str = "",
-    position: float = 0.0,
-    root: Path | str | None = None,
-) -> dict[str, Any]:
-    """The keyframe before and after a point, for step-by-keyframe navigation.
-
-    A copied stream can only be cut on a keyframe, so these are the places the
-    head of a piece can actually land.
-    """
-    project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
-    source = _trim_preview_source(project_root, str(file_name or ""))
-    if source is None:
-        return {"ok": False, "error": "No video file is staged in Source."}
-    times = _trim_keyframes(project_root, source, float(position))
-    if not times:
-        return {"ok": False, "error": "No keyframes were found."}
-    earlier = [item for item in times if item < float(position) - 0.001]
-    later = [item for item in times if item > float(position) + 0.001]
-    return {
-        "ok": True,
-        "previous": earlier[-1] if earlier else None,
-        "next": later[0] if later else None,
-    }
-
-
-def trim_preview(
-    file_name: str = "",
-    position: float = 0.0,
-    root: Path | str | None = None,
-    *,
-    snap: bool = True,
-    width: int = TRIM_PREVIEW_WIDTH,
-    with_wave: bool = True,
-) -> dict[str, Any]:
-    """A still from the real cut point, plus the waveform around it.
-
-    `snap` moves the point to the nearest keyframe, which is where a copied
-    stream can actually be cut. The offset comes back with it so the interface
-    can say how far the cut moved instead of correcting it in silence.
-    """
-    project_root = Path(root).resolve() if root else Path(__file__).resolve().parents[2]
-    info = trim_media_info(file_name, project_root)
-    if not info.get("ok"):
-        return info
-    source = Path(str(info["path"]))
-    duration = float(info["duration"])
-    requested = max(0.0, min(float(position), duration))
-
-    # Everything the operator sees is counted from the first picture; the
-    # container's own clock may start elsewhere, and only FFmpeg needs that.
-    origin = float(info.get("origin") or 0.0)
-    # Two different questions. The still answers "what is here", so it is taken
-    # at the point itself - a picture that lags the hand cannot be searched
-    # with. `keyframe` answers "where would the cut begin", which is a caption,
-    # not a picture.
-    point = requested
-    offset = 0.0
-    keyframe_at = None
-    if requested > 0:
-        candidates = [item - origin for item in _trim_keyframes(project_root, source, requested + origin)]
-        snapped = nearest_keyframe(candidates, requested)
-        if snapped is not None:
-            keyframe_at = snapped
-            offset = snapped - requested
-
-    ffmpeg = _ffmpeg(project_root)
-    height = max(2, int(round(width * 9 / 16)) // 2 * 2)
-    # A seek to the very end lands past the last frame and returns nothing, so
-    # the still for an end point is taken one frame back.
-    frame_seconds = float(info.get("frame_seconds") or 0.04)
-    seek = min(point, max(0.0, duration - frame_seconds)) + origin
-    def still(decode_args: list[str], extra_filters: list[str]) -> bytes:
-        return _capture_bytes(
-            project_root,
-            [
-                ffmpeg,
-                "-v",
-                "error",
-                *decode_args,
-                "-ss",
-                f"{seek:.3f}",
-                "-i",
-                str(source),
-                "-frames:v",
-                "1",
-                *extra_filters,
-                "-s",
-                f"{width}x{height}",
-                "-q:v",
-                "4",
-                "-f",
-                "mjpeg",
-                "pipe:1",
-            ],
-        )
-
-    # Two independent quirks decide the order here.
-    #
-    # Colour: ARRI ProRes 4444 XQ decodes to GBR with reserved primaries, and
-    # swscale refuses a picture described that way - "Unsupported input", no
-    # still at all. Naming a working colour space fixes it.
-    #
-    # Speed: a 4K H.264 still costs 0.85 s on the CPU and 0.48 s with
-    # `-hwaccel auto`, which is felt on every move of the fader. It is offered
-    # to the codecs QSV, NVDEC and AMF decode (see TRIM_HARDWARE_DECODED) and to
-    # no others: asking for a hardware path that does not exist costs a refusal,
-    # and for ProRes it also breaks the colour route its still depends on.
-    # Whatever happens, the list ends on plain software decoding.
-    colour_hint = ["-vf", "setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709"]
-    hardware = ["-hwaccel", "auto"]
-    if info.get("decodes_as_gbr"):
-        attempts = [([], colour_hint), ([], [])]
-    elif str(info.get("codec") or "") in TRIM_HARDWARE_DECODED:
-        attempts = [(hardware, []), ([], []), ([], colour_hint)]
-    else:
-        attempts = [([], []), ([], colour_hint)]
-    frame = b""
-    for decode_args, filters in attempts:
-        frame = still(decode_args, filters)
-        if frame:
-            break
-    wave = b""
-    if with_wave and info.get("has_audio"):
-        window = TRIM_PREVIEW_WAVE_SECONDS
-        wave = _capture_bytes(
-            project_root,
-            [
-                ffmpeg,
-                "-v",
-                "error",
-                "-ss",
-                f"{max(0.0, point - window / 2) + origin:.3f}",
-                "-t",
-                f"{window:.3f}",
-                "-i",
-                str(source),
-                "-filter_complex",
-                f"showwavespic=s={width}x64:colors=#e08a63",
-                "-frames:v",
-                "1",
-                "-update",
-                "1",
-                "-f",
-                "image2",
-                "-c:v",
-                "png",
-                "pipe:1",
-            ],
-        )
-
-    source_timecode = str(info.get("timecode") or "")
-    point_timecode = ""
-    if source_timecode:
-        try:
-            facts = _trim_stream_facts(project_root, source)
-            rate_source = facts.get("r_frame_rate") if info.get("variable_rate") else facts.get("avg_frame_rate")
-            point_timecode = shift_timecode(source_timecode, point, parse_rate(rate_source))
-        except Exception:
-            point_timecode = ""
-
-    return {
-        **info,
-        "keyframe": keyframe_at,
-        "keyframe_label": format_seconds(keyframe_at, decimals=1, separator=",") if keyframe_at is not None else "",
-        "requested": requested,
-        "point": point,
-        "offset": offset,
-        "point_label": format_seconds(point, decimals=1, separator=","),
-        "offset_label": format_offset(offset, separator=",") if offset else "",
-        "point_timecode": point_timecode,
-        "frame": _data_uri(frame, "image/jpeg"),
-        "wave": _data_uri(wave, "image/png"),
-    }

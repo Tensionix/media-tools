@@ -2,18 +2,18 @@
 setlocal EnableExtensions
 chcp 65001 >nul
 
-set "COMMON_DIR=%~dp0"
-for %%A in ("%COMMON_DIR%..\..") do set "ROOT=%%~fA"
+rem The door of every wrapper of Scripts\: Scripts\<name>.cmd calls it with its own name, and it hands the
+rem name and the arguments to the console command - media_cli.cmd wrapper <name> [arguments]. What a
+rem wrapper runs is written in config\wrappers.yaml; the work is the engine's, the same a button of the
+rem window does. The environment the wrappers have always read (AUDION_SOURCE, AUDION_OUTPUT,
+rem AUDION_DRY_RUN, AUDION_CRF and the rest) is read by the console command.
 
-set "PYTHON_EXE=%ROOT%\runtime\python.exe"
-if not exist "%PYTHON_EXE%" set "PYTHON_EXE=%ROOT%\.runtime\python.exe"
-if not exist "%PYTHON_EXE%" set "PYTHON_EXE=python"
-
-set "RUNNER=%COMMON_DIR%script_runner.py"
-if not exist "%RUNNER%" (
-  echo [ERROR] Script runner was not found: "%RUNNER%"
-  exit /b 1
-)
-
-"%PYTHON_EXE%" "%RUNNER%" %*
+for %%A in ("%~dp0..\..") do set "ROOT=%%~fA"
+rem Not a block in brackets: a path with a bracket in it - "Program Files (x86)" - would close it.
+if not exist "%ROOT%\media_cli.cmd" goto NO_CLI
+call "%ROOT%\media_cli.cmd" wrapper %*
 exit /b %ERRORLEVEL%
+
+:NO_CLI
+echo [ERROR] The console command was not found: "%ROOT%\media_cli.cmd"
+exit /b 2

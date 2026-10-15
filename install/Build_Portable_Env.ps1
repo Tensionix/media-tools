@@ -13,7 +13,6 @@ $runtimeDir = Join-Path $rootDir "runtime"
 $wheelhouseDir = Join-Path $rootDir "wheelhouse"
 $requirementsFile = Join-Path $installDir "requirements_full.in"
 $doctorScript = Join-Path $rootDir "system_core\doctor.py"
-$guiSmokeScript = Join-Path $rootDir "system_core\ui_nicegui\app.py"
 $cmdEncodingScript = Join-Path $installDir "Repair-CmdEncoding.ps1"
 
 $pythonMinor = 12
@@ -53,7 +52,7 @@ function Invoke-Checked {
 }
 
 Write-Host "======================================================================"
-Write-Host "AUDION PYTHON PORTABLE TEMPLATE - BUILD PORTABLE ENV (PS)"
+Write-Host "AUDION MEDIA TOOLS - BUILD PORTABLE ENV (PS)"
 Write-Host "======================================================================"
 Write-Host "Root:        $rootDir"
 Write-Host "Install:     $installDir"
@@ -131,9 +130,6 @@ Invoke-Checked -Label "Installing packages" -Command {
 
 Write-Host "[7/7] Verifying environment..."
 Invoke-Checked -Label "Verifying environment" -Command { & $pythonExe $doctorScript --project-root $rootDir }
-if (Test-Path $guiSmokeScript) {
-    Invoke-Checked -Label "Verifying NiceGUI smoke" -Command { & $pythonExe $guiSmokeScript --smoke }
-}
 
 Write-Host ""
 Write-Host "[SUCCESS] Portable environment is ready."

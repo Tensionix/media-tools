@@ -2,7 +2,7 @@
 chcp 65001 >nul
 setlocal EnableExtensions
 
-title Audion Python Portable Template - Offline Install
+title Audion Media Tools - Offline Install
 
 set "SCRIPT_DIR=%~dp0"
 if "%SCRIPT_DIR:~-1%"=="\" set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
@@ -24,10 +24,13 @@ echo.
 
 if not exist "%RUNTIME_DIR%\python.exe" goto ERR_PYTHON
 if not exist "%REQ_FILE%" goto ERR_REQ
+if not exist "%WHEELHOUSE_DIR%\*.whl" goto ERR_WHEELHOUSE
 
-echo [0/3] Normalizing project CMD files...
-call "%CMD_ENCODING%" -Fix
-if errorlevel 1 goto ERR_CMD_ENCODING
+if exist "%CMD_ENCODING%" (
+  echo [0/3] Normalizing project CMD files...
+  call "%CMD_ENCODING%" -Fix
+  if errorlevel 1 goto ERR_CMD_ENCODING
+)
 
 "%RUNTIME_DIR%\python.exe" -m pip --version >nul 2>nul
 if errorlevel 1 goto NEED_PIP
@@ -64,6 +67,12 @@ exit /b 1
 
 :ERR_GETPIP
 echo [ERROR] Cached get-pip.py was not found.
+echo [INFO] Run Build_Portable_Env_Build.cmd once on an online machine.
+if not defined AUDION_NO_PAUSE pause
+exit /b 1
+
+:ERR_WHEELHOUSE
+echo [ERROR] wheelhouse does not contain installable .whl files.
 echo [INFO] Run Build_Portable_Env_Build.cmd once on an online machine.
 if not defined AUDION_NO_PAUSE pause
 exit /b 1

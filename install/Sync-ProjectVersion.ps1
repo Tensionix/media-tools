@@ -40,7 +40,6 @@ $version = ([string]((Get-Content -LiteralPath $versionFile -Raw | ConvertFrom-J
 if (-not $version) { throw "Empty version in $versionFile" }
 
 $targets = @(
-    @{ Path = Join-Path $root 'config\project.yaml'; Pattern = '^(?<indent>\s*)version:\s*".*"\s*$' },
     @{ Path = Join-Path $root 'config\tool_manifest.yaml'; Pattern = '^(?<indent>\s*)version:\s*".*"\s*$' }
 )
 

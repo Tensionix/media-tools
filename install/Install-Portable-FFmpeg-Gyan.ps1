@@ -252,6 +252,12 @@ if (-not $expectedHash) {
         Write-Warning "Gyan GitHub digest fallback unavailable: $($_.Exception.Message)"
     }
 }
+if ($env:AUDION_INSTALL_PLAN -eq '1') {
+    # Say what would be downloaded (install\Plan-Download.ps1) and stop; a verified archive in the cache is no download.
+    if (Test-VerifiedCache) { Write-Host "[PLAN] FFmpeg|$directName|cache|0" }
+    else { & (Join-Path $PSScriptRoot 'Plan-Download.ps1') -Url $githubUrl -Name $directName -What 'FFmpeg' }
+    exit 0
+}
 if (Test-VerifiedCache) {
     Write-Host "[CACHE] Using verified Gyan $ReleaseVersion $Variant archive: $ArchivePath"
     exit 0

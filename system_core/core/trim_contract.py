@@ -250,11 +250,6 @@ def shift_timecode(text: str, offset_seconds: float, rate: Fraction) -> str:
     return format_timecode(frames + seconds_to_frames(offset_seconds, rate), base, drop=drop)
 
 
-def timecode_at(text: str, seconds: float, rate: Fraction) -> str:
-    """The source timecode standing at a wall-clock position, for display."""
-    return shift_timecode(text, seconds, rate)
-
-
 def zero_timecode(rate: Fraction, *, drop: bool = False) -> str:
     return format_timecode(0, timecode_base(rate), drop=drop)
 
@@ -347,6 +342,31 @@ def is_variable_rate(r_frame_rate: Any, avg_frame_rate: Any, *, tolerance: float
     if nominal <= 0 or average <= 0:
         return False
     return abs(nominal - average) / nominal > float(tolerance)
+
+
+def stream_rate(r_frame_rate: Any, avg_frame_rate: Any, *, variable: str = "nominal") -> str:
+    """The rate a stream is counted and cut by, as ffprobe wrote it: a fraction such as 24000/1001.
+
+    Where the two fields agree - a constant rate - the nominal one: the container states it as an exact
+    fraction, while the average is frames over duration and only close to it. A ProRes LT of 599 frames in
+    24.94 s gave 7188000/299299 (24.016) for its 24000/1001, 0.17 % off and under the line of a variable
+    rate: a frame grid on the average drifted by nearly a frame in 20 seconds, and a conform to 23.976 slowed
+    a 23.976 file down by 0.17 %.
+
+    Where they disagree by more than that line, `variable` says which one the caller has always taken:
+    "nominal" (a trim cuts a variable-rate source by time on the nominal grid) or "average". Where the
+    nominal one is missing or nought, the average.
+    """
+    nominal, average = str(r_frame_rate or "").strip(), str(avg_frame_rate or "").strip()
+    try:
+        usable = float(parse_rate(nominal)) > 0
+    except (ValueError, ZeroDivisionError):
+        usable = False
+    if not usable:
+        return average
+    if is_variable_rate(nominal, average) and variable == "average":
+        return average or nominal
+    return nominal
 
 
 @dataclass(frozen=True)
@@ -957,6 +977,9 @@ def build_trim_command(
     target: str,
     overwrite: bool,
     start_seconds: float,
+    # The start is a timestamp of the file, its own start included, not a distance from that start: FFmpeg adds the
+    # start of the file to a plain `-ss`, and a file whose timeline starts at 10 s would be cut 10 s late.
+    seek_timestamp: bool = False,
     frame_count: int | None = None,
     duration_seconds: float | None = None,
     # Only for a piece that will be joined to another: see below.
@@ -986,6 +1009,8 @@ def build_trim_command(
     """
     command = [ffmpeg, "-hide_banner", "-stats", "-y" if overwrite else "-n", "-nostdin"]
     if start_seconds > 0:
+        if seek_timestamp:
+            command.extend(["-seek_timestamp", "1"])
         command.extend(["-ss", f"{float(start_seconds):.6f}"])
     command.extend(["-i", source])
     # Right after the source: an option placed before an `-i` belongs to that

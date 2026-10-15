@@ -2,30 +2,53 @@ from __future__ import annotations
 
 from pathlib import Path
 import importlib
+import os
 import platform
-import shutil
 import sys
 
+# What the engine imports (3.0.0): PyYAML reads the manifest and the layout. The window on NiceGUI and the packages it
+# lived on (nicegui, pywebview, rich, pydantic, markdown-it-py) are gone; tqdm drew the bar of a template service.
 REQUIRED_MODULES = [
-    ("tqdm", "tqdm"),
-    ("rich", "rich"),
-    ("pydantic", "pydantic"),
-    ("nicegui", "nicegui"),
-    ("webview", "pywebview"),
-    ("yaml", "pyyaml"),
-    ("markdown_it", "markdown-it-py"),
+    ("yaml", "PyYAML"),
 ]
 
+# The tests of the program: without pytest the program runs, its checks do not.
 OPTIONAL_MODULES = [
-    ("requests", "requests"),
-    ("docx", "python-docx"),
-    ("openai", "openai"),
-    ("google.genai", "google-genai"),
-    ("pandas", "pandas"),
-    ("openpyxl", "openpyxl"),
-    ("fitz", "pymupdf"),
-    ("pptx", "python-pptx"),
+    ("pytest", "pytest"),
 ]
+
+# The tools the program calls, as the builder installs them (steps 10-14): without FFmpeg nothing is converted; the
+# others are wanted by one section each - the player of CUT, DOWNLOAD, the release archive.
+TOOLS = [
+    ("FFmpeg", ("Tools", "ffmpeg", "bin", "ffmpeg.exe"), True),
+    ("FFprobe", ("Tools", "ffmpeg", "bin", "ffprobe.exe"), True),
+    ("mpv", ("Tools", "mpv", "bin", "mpv.exe"), False),
+    ("yt-dlp", ("Tools", "yt-dlp", "bin", "yt-dlp.exe"), False),
+    ("Deno", ("Tools", "deno", "deno.exe"), False),
+    ("7-Zip", ("Tools", "7zip", "bin", "7za.exe"), False),
+]
+
+
+def ansi_enabled() -> bool:
+    return (
+        'NO_COLOR' not in os.environ
+        and (
+            os.environ.get('AUDION_GUI_TERMINAL') == '1'
+            or os.environ.get('FORCE_COLOR') == '1'
+            or os.environ.get('CLICOLOR_FORCE') == '1'
+            or sys.stdout.isatty()
+        )
+    )
+
+
+def color(text: str, code: str) -> str:
+    if not ansi_enabled():
+        return text
+    return f'\033[{code}m{text}\033[0m'
+
+
+def info(label: str, value: object) -> None:
+    print(f"{color('[INFO]', '36;1')} {label:<12}: {value}")
 
 
 def check_module(import_name: str) -> tuple[bool, str]:
@@ -34,7 +57,7 @@ def check_module(import_name: str) -> tuple[bool, str]:
         version = getattr(mod, "__version__", "unknown")
         return True, str(version)
     except Exception as exc:
-        return False, exc.__class__.__name__
+        return False, f"{exc.__class__.__name__}: {exc}"
 
 
 def detect_python_mode(root: Path) -> str:
@@ -43,27 +66,6 @@ def detect_python_mode(root: Path) -> str:
     if (root / "runtime" / "python" / "python.exe").exists():
         return "portable-runtime"
     return "system-python"
-
-
-def check_picker_powershell(root: Path) -> tuple[bool, list[tuple[str, bool, str]]]:
-    candidates = [
-        ("portable pwsh", root / "system_core" / "powershell" / "pwsh.exe"),
-        ("PATH pwsh", "pwsh.exe"),
-        ("Windows PowerShell", "powershell.exe"),
-    ]
-    rows: list[tuple[str, bool, str]] = []
-    any_ok = False
-    for label, candidate in candidates:
-        if isinstance(candidate, Path):
-            ok = candidate.exists()
-            detail = str(candidate)
-        else:
-            resolved = shutil.which(candidate)
-            ok = bool(resolved)
-            detail = resolved or "not found"
-        rows.append((label, ok, detail))
-        any_ok = any_ok or ok
-    return any_ok, rows
 
 
 def check_manifest_operations(root: Path) -> tuple[bool, list[tuple[str, str, str]]]:
@@ -102,7 +104,11 @@ def check_manifest_operations(root: Path) -> tuple[bool, list[tuple[str, str, st
     rows: list[tuple[str, str, str]] = []
     all_ok = True
 
-    every_operation = [*manifest.operations, *manifest.maintenance_operations]
+    from system_core.core import operation_model as model  # noqa: WPS433
+
+    # Every operation that runs: the leaves of the tree of the sections and the service operations.
+    every_operation = [node for node in model.all_nodes(manifest) if node.service and not node.children]
+    every_operation += [*manifest.operations, *manifest.maintenance_operations]
     for op in every_operation:
         if ":" not in op.service:
             rows.append((op.id, "BAD_SYNTAX", op.service))
@@ -159,112 +165,75 @@ def check_cmd_encoding(root: Path) -> tuple[bool, list[tuple[str, bool, str]]]:
     return all_ok, rows
 
 
-def check_gui_theme_catalog(root: Path) -> tuple[bool, list[tuple[str, bool, str]]]:
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
-
-    try:
-        from system_core.core.config import load_yaml_or_json  # noqa: WPS433
-        from system_core.core.ui_theme_catalog import validate_theme_catalog  # noqa: WPS433
-    except Exception as exc:
-        return False, [("(loader)", False, f"{exc.__class__.__name__}: {exc}")]
-
-    try:
-        data = load_yaml_or_json(root / "config" / "ui_colors.yaml")
-    except Exception as exc:
-        return False, [("catalog", False, f"{exc.__class__.__name__}: {exc}")]
-
-    result = validate_theme_catalog(data)
-    if not result.ok:
-        return False, [("catalog", False, error) for error in result.errors]
-
-    rows = [
-        ("theme order", True, f"core prefix OK; {len(result.theme_ids)} theme(s)"),
-        ("extension themes", True, ", ".join(result.extra_theme_ids) or "none"),
-    ]
-    return True, rows
-
-
 def main() -> int:
     root = Path(__file__).resolve().parents[1]
 
-    print("======================================================================")
-    print("AUDION PYTHON GUI PORTABLE TEMPLATE - DOCTOR")
-    print("======================================================================")
-    print(f"Project root : {root}")
-    print(f"Executable   : {sys.executable}")
-    print(f"Python       : {sys.version.split()[0]}")
-    print(f"Python mode  : {detect_python_mode(root)}")
-    print(f"Platform     : {platform.platform()}")
+    print(color("======================================================================", "36;1"))
+    print(color("AUDION MEDIA TOOLS - DOCTOR", "36;1"))
+    print(color("======================================================================", "36;1"))
+    info("Project root", root)
+    info("Executable", sys.executable)
+    info("Python", sys.version.split()[0])
+    info("Python mode", detect_python_mode(root))
+    info("Platform", platform.platform())
     print()
 
     failed = False
 
-    print("[Required modules]")
+    print(color("[Required modules]", "35;1"))
     for import_name, package_name in REQUIRED_MODULES:
         ok, detail = check_module(import_name)
-        status = "OK" if ok else "FAIL"
-        print(f"  - {package_name:<18} : {status:<4} {detail}")
+        status = color("[OK]", "32;1") if ok else color("[FAIL]", "31;1")
+        print(f"  - {package_name:<18} : {status} {detail}")
         if not ok:
             failed = True
 
     print()
-    print("[GUI portability]")
-    picker_ok, picker_rows = check_picker_powershell(root)
-    for label, ok, detail in picker_rows:
-        status = "OK" if ok else "MISS"
-        print(f"  - {label:<18} : {status:<4} {detail}")
-    if not picker_ok:
-        print("  - picker dialogs     : FAIL PowerShell was not found")
-        failed = True
-    else:
-        print("  - picker dialogs     : OK   PowerShell-backed Windows dialogs available")
-
-    print()
-    print("[GUI themes]")
-    themes_ok, theme_rows = check_gui_theme_catalog(root)
-    for label, ok, detail in theme_rows:
-        status = "OK" if ok else "FAIL"
-        print(f"  - {label:<18} : {status:<4} {detail}")
-    if not themes_ok:
-        failed = True
-
-    print()
-    print("[Optional modules]")
+    print(color("[Optional modules]", "35;1"))
     for import_name, package_name in OPTIONAL_MODULES:
         ok, detail = check_module(import_name)
-        status = "OK" if ok else "MISS"
-        print(f"  - {package_name:<18} : {status:<4} {detail}")
+        status = color("[OK]", "32;1") if ok else color("[MISS]", "33;1")
+        print(f"  - {package_name:<18} : {status} {detail}")
 
     print()
-    print("[Manifest operations]")
+    print(color("[Tools]", "35;1"))
+    for name, parts, needed in TOOLS:
+        path = root.joinpath(*parts)
+        ok = path.is_file()
+        status = color("[OK]", "32;1") if ok else color("[MISS]", "33;1")
+        print(f"  - {name:<18} : {status} {path.relative_to(root) if ok else 'not installed: builder_main.cmd, steps 10-14'}")
+    # The tools are installed by steps of their own, not by a build of the environment: a missing one is said, not failed.
+
+    print()
+    print(color("[Manifest operations]", "35;1"))
     manifest_ok, rows = check_manifest_operations(root)
     if not rows:
         print("  (no operations found)")
     else:
         for op_id, status, detail in rows:
-            print(f"  - {op_id:<22} : {status:<13} {detail}")
+            mark = color(status, "32;1") if status == "OK" else color(status, "31;1")
+            print(f"  - {op_id:<22} : {mark:<13} {detail}")
     if not manifest_ok:
         failed = True
 
     print()
-    print("[CMD encoding]")
+    print(color("[CMD encoding]", "35;1"))
     cmd_ok, cmd_rows = check_cmd_encoding(root)
     if not cmd_rows:
         print("  (no CMD files found)")
     else:
         for relative, result_ok, detail in cmd_rows:
-            status = "OK" if result_ok else "FAIL"
-            print(f"  - {relative:<58} : {status:<4} {detail}")
+            status = color("[OK]", "32;1") if result_ok else color("[FAIL]", "31;1")
+            print(f"  - {relative:<58} : {status} {detail}")
     if not cmd_ok:
         failed = True
 
     print()
     if failed:
-        print("[RESULT] One or more checks failed.")
+        print(color("[RESULT] One or more checks failed.", "31;1"))
         return 1
 
-    print("[RESULT] Required environment looks good.")
+    print(color("[RESULT] Required environment looks good.", "32;1"))
     return 0
 
 

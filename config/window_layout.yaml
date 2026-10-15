@@ -1,0 +1,149 @@
+# Where every operation stands in the window on Avalonia.
+#
+# config\tool_manifest.yaml says what an operation is: its service, its fields, its texts.
+# This file says where it stands: a section - a large button of the ribbon under the header - and,
+# inside the section, the ribbon of its modes. The console command hands it to the window with
+# `describe`; the window draws what it is told and knows no operation by its name.
+#
+# A section answers "what to do with the material"; a mode - "how exactly". A mode is either an
+# operation of its own (ENCODE: four operations of one service) or a choice of one field of the
+# operation (AUDIO: the field audio_workflow). That field is the ribbon and is not drawn in the form.
+#
+#   op:          the operation of the section, when its modes are choices of one field
+#   mode_field:  that field; a mode names its value
+#   modes:       the ribbon; a mode without a title takes the label of its choice from the manifest
+#   about:       what a section is for - the second line of its button
+#   icon:        a name of Lucide (E:\TOOLS\Lucide-Icons); the window carries the ones named here
+#   blocks_last: blocks of the form drawn at its very end, under the rare fields - a block seldom wanted
+#                that would push the ones in use out of sight (AUDIO: the filter of the Source, 42 kinds)
+#
+# service:  the operations of the button SERVICE in the header.
+# details:  what the panel DETAILS under the paths runs - ffprobe of the Source.
+# buttons:  operations a page runs with its own values, as a button beside one of its fields: op, beside, icon;
+#           words: false - the sign alone, the name of the operation in its tooltip.
+# paste:    fields of a link or a path with PASTE at their right: the clipboard into the field.
+# own:      operations of the manifest the window does by itself, another way: it clears the
+#           working folders through the Recycle Bin, as Image Tools does.
+#
+# An operation of the manifest that stands nowhere here fails a test (tests\test_window_layout.py),
+# and so does one that stands twice, a mode field without a mode for each of its choices, and a
+# section without its texts.
+
+sections:
+  - id: audio
+    title: "AUDIO"
+    title_ru: "АУДИО"
+    about: "Extract, put back, convert"
+    about_ru: "Извлечь, вернуть, конвертировать"
+    icon: audio-lines
+    op: audio_run
+    mode_field: audio_workflow
+    blocks_last: [source]
+    modes:
+      - {value: extract, title: "EXTRACT", title_ru: "ИЗВЛЕЧЬ"}
+      - {value: in_video, title: "SOUND IN VIDEO", title_ru: "ЗВУК В ВИДЕО"}
+      - {value: audio_files, title: "CONVERT", title_ru: "КОНВЕРТИРОВАТЬ"}
+
+  - id: encode
+    title: "ENCODE"
+    title_ru: "КОДИРОВАНИЕ"
+    about: "Archive, editing, storage, delivery"
+    about_ru: "Архив, монтаж, хранение, доставка"
+    icon: film
+    modes:
+      - {op: archive_run, title: "ARCHIVE", title_ru: "АРХИВ"}
+      - {op: editing_run, title: "EDITING", title_ru: "МОНТАЖ"}
+      - {op: storage_run, title: "STORAGE", title_ru: "ХРАНЕНИЕ"}
+      - {op: delivery_run, title: "DELIVERY", title_ru: "ДОСТАВКА"}
+
+  - id: package
+    title: "PACKAGE"
+    title_ru: "УПАКОВКА"
+    about: "Another container, no re-encoding"
+    about_ru: "Другой контейнер без перекодирования"
+    icon: package
+    op: remux_run
+    mode_field: remux_stream_mode
+    modes:
+      - {value: video, title: "VIDEO", title_ru: "ВИДЕО"}
+      - {value: audio, title: "AUDIO", title_ru: "АУДИО"}
+      - {value: video_audio, title: "VIDEO AND AUDIO", title_ru: "ВИДЕО И АУДИО"}
+      - {op: subtitles_extract, title: "SUBTITLES", title_ru: "СУБТИТРЫ"}
+
+  - id: cut
+    title: "CUT"
+    title_ru: "НАРЕЗКА"
+    about: "Keep, cut out, split"
+    about_ru: "Оставить, вырезать, разделить"
+    icon: scissors
+    op: trim_run
+    mode_field: trim_action
+    modes:
+      - {value: keep, title: "KEEP", title_ru: "ОСТАВИТЬ"}
+      - {value: cut, title: "CUT OUT", title_ru: "ВЫРЕЗАТЬ"}
+      - {value: split, title: "SPLIT", title_ru: "РАЗДЕЛИТЬ"}
+
+  - id: rate
+    title: "FRAME RATE"
+    title_ru: "ЧАСТОТА"
+    about: "Varispeed and conform to 23.976"
+    about_ru: "Varispeed и conform в 23,976"
+    icon: gauge
+    op: fps_run
+    mode_field: fps_mode
+    modes:
+      - {value: varispeed, title: "VARISPEED", title_ru: "VARISPEED"}
+      - {value: conform, title: "CONFORM", title_ru: "CONFORM"}
+
+  - id: color
+    title: "COLOR"
+    title_ru: "ЦВЕТ"
+    about: "LUT, gamma before it, HDR to SDR"
+    about_ru: "LUT, гамма до него, HDR в SDR"
+    icon: palette
+    # One mode for now: the families (LUT, pre-expose, pregamma, HDR to SDR) with the codec as a row of
+    # the form are stage 3 of the plan - a colour script is a family and a codec together.
+    modes:
+      - {op: grading_run, title: "LUT", title_ru: "LUT"}
+
+  - id: download
+    title: "DOWNLOAD"
+    title_ru: "СКАЧАТЬ"
+    about: "A video or its sound by a link"
+    about_ru: "Видео или звук по ссылке"
+    icon: monitor-down
+    op: youtube_run
+    mode_field: youtube_profile
+    modes:
+      - {value: best_mp4, title: "BEST MP4", title_ru: "ЛУЧШЕЕ MP4"}
+      - {value: safe_mp4, title: "SAFE MP4", title_ru: "НАДЁЖНОЕ MP4"}
+      - {value: video_custom, title: "OWN VIDEO", title_ru: "СВОЁ ВИДЕО"}
+      - {value: upload_ready, title: "FOR UPLOAD", title_ru: "ДЛЯ ЗАГРУЗКИ"}
+      - {value: audio_custom, title: "OWN AUDIO", title_ru: "СВОЁ АУДИО"}
+      - {value: subs_only, title: "SUBTITLES", title_ru: "СУБТИТРЫ"}
+
+service:
+  - inventory
+  - selftest
+  - profile_doctor
+  - hardware_capabilities
+  - preset_test_matrix
+  - install_7zip
+  - install_ffmpeg
+  - install_ytdlp
+  - install_mpv
+
+details:
+  - probe_source
+  - source_info
+
+buttons:
+  - {op: youtube_formats, beside: youtube_url, icon: info, words: false}
+  - {op: youtube_cookies_import, beside: cookies_path, icon: shield-check, words: false}
+
+paste: [youtube_url, batch_file, cookies_path]
+
+own:
+  - cleanup_source
+  - cleanup_transcoded
+  - cleanup_workspace

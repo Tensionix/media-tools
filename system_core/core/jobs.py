@@ -6,12 +6,14 @@ from pathlib import Path
 from typing import Any, Callable
 import importlib
 import json
-import locale
 import os
+import queue
+import re
+import secrets
 import subprocess
+import threading
 import time
 import traceback
-import unicodedata
 
 from .logging_utils import append_log, timestamp
 from .manifest import Operation
@@ -36,6 +38,12 @@ class JobContext:
     progress_callback: ProgressCallback | None = None
     cancel_callback: CancelCallback | None = None
     commands: list[dict[str, Any]] = field(default_factory=list)
+    # The share the service told last, and the share of one unit of its work once it said how many there are: the
+    # runner of a process then moves the share inside the unit at work by FFmpeg's own progress, not by the clock.
+    told_share: float = 0.0
+    unit_share: float | None = None
+    # The targets of this run and the source each was claimed for: two sources never share one file.
+    claimed: dict[str, str] = field(default_factory=dict)
 
     def log(self, message: str) -> None:
         append_log(self.log_file, message)
@@ -43,6 +51,23 @@ class JobContext:
             self.log_callback(message)
 
     def progress(self, value: float) -> None:
+        """The share of the operation done, as the service tells it: the base of the unit that comes next."""
+        self.told_share = max(0.0, min(1.0, float(value)))
+        if self.progress_callback:
+            self.progress_callback(self.told_share)
+
+    def units(self, count: int) -> None:
+        """How many units of work the operation has - files, or files times targets; the service tells the share
+        after each."""
+        self.unit_share = 1.0 / count if count > 0 else None
+
+    def progress_inside(self, ratio: float) -> None:
+        """How far the unit at work is, 0..1, moved into the share of the operation; the service's word stays the base."""
+        if self.unit_share is not None and self.progress_callback:
+            self.progress_callback(min(1.0, self.told_share + self.unit_share * max(0.0, min(1.0, float(ratio)))))
+
+    def progress_guess(self, value: float) -> None:
+        """A share guessed by the clock while a process runs: told, but no base for the next unit."""
         if self.progress_callback:
             self.progress_callback(max(0.0, min(1.0, float(value))))
 
@@ -96,104 +121,6 @@ def _is_python_executable(executable_stem: str) -> bool:
 
 def _is_python_command(command: list[str]) -> bool:
     return bool(command and _is_python_executable(Path(str(command[0])).stem.lower()))
-
-
-def _windows_codepage(name: str) -> str | None:
-    if os.name != "nt":
-        return None
-    try:
-        import ctypes
-
-        getter = getattr(ctypes.windll.kernel32, name)
-        codepage = int(getter())
-    except Exception:
-        return None
-    return f"cp{codepage}" if codepage > 0 else None
-
-
-def _looks_utf16_le(data: bytes) -> bool:
-    if len(data) < 4:
-        return False
-    odd = data[1::2]
-    return bool(odd) and odd.count(0) / len(odd) >= 0.35
-
-
-def _looks_utf16_be(data: bytes) -> bool:
-    if len(data) < 4:
-        return False
-    even = data[0::2]
-    return bool(even) and even.count(0) / len(even) >= 0.35
-
-
-def _decode_candidates(data: bytes) -> list[str]:
-    candidates: list[str] = []
-
-    def add(encoding: str | None) -> None:
-        if not encoding:
-            return
-        normalized = encoding.lower().replace("_", "-")
-        if normalized not in candidates:
-            candidates.append(normalized)
-
-    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
-        add("utf-16")
-    elif _looks_utf16_le(data):
-        add("utf-16-le")
-    elif _looks_utf16_be(data):
-        add("utf-16-be")
-
-    add("utf-8")
-    add(_windows_codepage("GetOEMCP"))
-    add("cp866")
-    add(locale.getpreferredencoding(False))
-    add("mbcs")
-    add(_windows_codepage("GetACP"))
-    add("cp1251")
-    return candidates
-
-
-_MOJIBAKE_MARKERS = (
-    "\ufffd",
-    "����",
-    "㤠",
-    "䠩",
-    "Рћ",
-    "Р°",
-    "Рµ",
-    "Рё",
-    "Ð",
-    "Ñ",
-)
-
-_RARE_CYRILLIC = set("ЃѓЄЅѕІЇЈЉЊЋЌЎЏҐґєіїјљњћќўџ")
-
-
-def _decode_score(text: str) -> int:
-    score = 0
-    for marker in _MOJIBAKE_MARKERS:
-        score += text.count(marker) * 120
-    for char in text:
-        codepoint = ord(char)
-        if char in "\r\n\t":
-            continue
-        if char == "\x00":
-            score += 200
-            continue
-        category = unicodedata.category(char)
-        if category.startswith("C"):
-            score += 80
-        if char in _RARE_CYRILLIC:
-            score += 12
-        if char in {"\xa0", "¤", "©", "®", "�"}:
-            score += 20
-        if 0x2E80 <= codepoint <= 0x9FFF or 0xAC00 <= codepoint <= 0xD7AF:
-            score += 40
-    return score
-
-
-def decode_subprocess_line(data: bytes) -> str:
-    """Decode non-Python subprocess output without committing to lossy UTF-8 first."""
-    return decode_process_bytes(data)
 
 
 SPINNER_FRAME_CHARS = set("-\\|/ \t")
@@ -276,14 +203,21 @@ def _parse_ffmpeg_out_time(value: str) -> float | None:
     return hours * 3600 + minutes * 60 + seconds
 
 
+# FFmpeg's own line of its work, as it prints it every half second: "frame=  250 fps= 98 q=28.0 size=    1024KiB
+# time=00:00:10.00 bitrate= 838.9kbits/s speed=3.93x"; of a sound file "size= ... time= ..."; the last one "Lsize=".
+FFMPEG_STATS = re.compile(r"^(?:frame=\s*\d+\s+fps=|L?size=\s*\S+\s+time=)")
+
+
 def _ffmpeg_progress_command(command: list[str], enabled: bool) -> list[str]:
+    """The run reads how far FFmpeg is (-progress pipe:1) and FFmpeg keeps its own line of its work (-stats): the line is
+    said beside the bar of the run (the owner, 15.10.2026: the native line of FFmpeg beside the bar)."""
     if not enabled or not command:
         return command
     executable = Path(str(command[0])).name.lower()
     if "ffmpeg" not in executable or any(str(item).lower() == "-progress" for item in command):
         return command
-    tail = [item for item in command[1:] if str(item).lower() != "-stats"]
-    return [command[0], "-progress", "pipe:1", "-nostats", *tail]
+    tail = [item for item in command[1:] if str(item).lower() not in {"-stats", "-nostats"}]
+    return [command[0], "-progress", "pipe:1", "-stats", *tail]
 
 
 def _ffmpeg_progress_bar(label: str, current: float, total: float, speed: str) -> str:
@@ -400,6 +334,89 @@ def _write_batch_report(
     return {"batch_report_json": str(report_json), "batch_report_md": str(report_md), "report_dir": str(context.report_dir), "log_file": str(context.log_file)}
 
 
+class OperationCancelled(RuntimeError):
+    """STOP was pressed: the child process was ended. Not a failure of the program - the run says one line, no trace."""
+
+
+class PreflightRefused(RuntimeError):
+    """The preflight found the run cannot begin - no file of its kind in the Source, no FFmpeg, a Target that cannot be
+    written. Its [PREFLIGHT] lines say why: the run is refused in one line, no trace."""
+
+
+# Muxers that read a number pattern ("%03d") in the name of their output: a sequence of pictures, of segments.
+PATTERN_MUXERS = {"image2", "segment", "stream_segment", "ssegment", "hls", "dash"}
+PICTURE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".dpx", ".exr", ".webp", ".tga", ".jxl"}
+NUMBER_PATTERN = re.compile(r"%0?\d*d")
+
+
+def _is_ffmpeg(command: list[str]) -> bool:
+    return bool(command) and "ffmpeg" in Path(str(command[0])).name.lower()
+
+
+def _writes_a_pattern(command: list[str], output: str) -> bool:
+    """The output names many files by a number: a muxer of sequences, or pictures, and a "%d" in the name itself. A "%"
+    anywhere else - "take%percent.mp4", "50% grey" - is a letter of an ordinary name."""
+    if not NUMBER_PATTERN.search(Path(output).name):
+        return False
+    muxers = {str(command[index + 1]).lower() for index, item in enumerate(command[:-1]) if item == "-f"}
+    return bool(muxers & PATTERN_MUXERS) or Path(output).suffix.lower() in PICTURE_EXTENSIONS
+
+
+def _output_of(command: list[str], working_dir: Path) -> Path | None:
+    """The one file an FFmpeg command writes, from the working folder; None - a pipe, a device, a pattern, nothing."""
+    if not _is_ffmpeg(command):
+        return None
+    last = str(command[-1])
+    if (not last or last.startswith("-") or last.lower() in {"nul", "-", os.devnull.lower()} or "://" in last
+            or last.lower().startswith("pipe:") or _writes_a_pattern(command, last)):
+        return None
+    return Path(last) if Path(last).is_absolute() else Path(working_dir) / last
+
+
+def _same_place(first: Path, second: Path) -> bool:
+    """One file under two names: the same path, a junction or a symbolic link to it, a hard link."""
+    try:
+        if first.exists() and second.exists():
+            return os.path.samefile(first, second)
+    except OSError:
+        pass
+    return os.path.normcase(os.path.realpath(first)) == os.path.normcase(os.path.realpath(second))
+
+
+def _output_over_input(command: list[str], working_dir: Path) -> Path | None:
+    """The output of an FFmpeg command when it is one of its inputs: FFmpeg itself refuses that, but it would not see it
+    through a draft or a link - and the source would be written over."""
+    output = _output_of(command, working_dir)
+    if output is None:
+        return None
+    for index, item in enumerate(command[:-1]):
+        if item != "-i":
+            continue
+        given = Path(str(command[index + 1]))
+        source = given if given.is_absolute() else Path(working_dir) / given
+        if source.is_file() and _same_place(source, output):
+            return output
+    return None
+
+
+def _writing_output(command: list[str], working_dir: Path) -> tuple[list[str], Path | None, Path | None]:
+    """An FFmpeg command writes its file under a name of its own first - "name.writing-<run>.ext", the extension kept
+    for the muxer - and the file takes its own name only whole (as Audion Image Tools writes): STOP, a failure or a
+    window that fell leave no half-written file where a finished one is looked for. The draft is a name no file has: a
+    file that only looks like a draft is not this run's and is never touched, and two runs into one Target never share
+    one. Not for a pattern of many files, a pipe or a device; nor for a file already there that FFmpeg is not told to
+    overwrite (-y) - it refuses or asks about that itself, as it always did. The command, the file it is for and its
+    name while it is written, both from the working folder; None, None - the command stays as it is."""
+    final = _output_of(command, working_dir)
+    if final is None or not final.suffix or (final.exists() and "-y" not in command):
+        return command, None, None
+    while True:
+        writing = final.with_name(f"{final.stem}.writing-{os.getpid()}-{secrets.token_hex(3)}{final.suffix}")
+        if not writing.exists():
+            break
+    return [*command[:-1], str(writing)], final, writing
+
+
 def run_process(
     context: JobContext,
     command: list[str],
@@ -421,6 +438,46 @@ def run_process(
     ffmpeg_progress = bool(ffmpeg_progress and progress_total > 0)
     command = _ffmpeg_progress_command(command, ffmpeg_progress)
     working_dir = cwd or context.paths.root
+    over = _output_over_input(command, Path(working_dir))
+    if over is not None:
+        context.log(f"[ERR] {over} is a source of this command: it is not written over.")
+        raise RuntimeError(f"Refused: the result would be written over its own source, {over.name}.")
+    command, final_output, writing_output = _writing_output(command, Path(working_dir))
+    try:
+        result = _run_process(context, command, working_dir, extra_env, check, progress_seconds, ffmpeg_progress,
+                              progress_total, progress_label)
+    except BaseException:
+        if writing_output is not None:
+            writing_output.unlink(missing_ok=True)
+        raise
+    if writing_output is not None and final_output is not None:
+        if result.exit_code == 0 and writing_output.exists():
+            try:
+                os.replace(writing_output, final_output)
+            except OSError as exc:
+                # A folder or a locked file in the place of the result: the write failed, as when FFmpeg could not
+                # open the file itself - a failed command, not an error of the program.
+                writing_output.unlink(missing_ok=True)
+                context.log(f"[ERR] {final_output} could not take its place: {exc}")
+                if check:
+                    raise RuntimeError(f"Command failed: {final_output.name} could not be written.") from exc
+                return ProcessResult(exit_code=1, lines=result.lines)
+        else:
+            writing_output.unlink(missing_ok=True)
+    return result
+
+
+def _run_process(
+    context: JobContext,
+    command: list[str],
+    working_dir: Path,
+    extra_env: dict[str, str] | None,
+    check: bool,
+    progress_seconds: float,
+    ffmpeg_progress: bool,
+    progress_total: float,
+    progress_label: str,
+) -> ProcessResult:
     context.log(f"[CWD] {working_dir}")
     display_command = format_command(command)
     context.log(f"[CMD] {display_command}")
@@ -458,6 +515,18 @@ def run_process(
     ffmpeg_progress_state: dict[str, str] = {}
     last_bar_time = 0.0
     last_bar_ratio = -1.0
+    # FFmpeg's own line: the last one it printed, and the last one said. It comes every half second and is said beside
+    # the bar, not every time; the final one at the end of the file.
+    native = {"last": "", "said": ""}
+    # A context of a test or of another caller may know only progress(): the share by the clock, as before.
+    inside = getattr(context, "progress_inside", None)
+    guess = getattr(context, "progress_guess", context.progress)
+
+    def say_native() -> None:
+        if native["last"] and native["last"] != native["said"]:
+            lines.append(native["last"])
+            context.log(native["last"])
+            native["said"] = native["last"]
 
     def consume_ffmpeg_progress(line: str) -> bool:
         nonlocal last_bar_time, last_bar_ratio
@@ -481,41 +550,74 @@ def run_process(
         if status == "end":
             current = max(current, progress_total)
         ratio = max(0.0, min(1.0, current / max(progress_total, 0.001)))
+        if inside is not None:
+            inside(ratio)
         now = time.monotonic()
         should_log = status == "end" or ratio >= last_bar_ratio + 0.05 or now - last_bar_time >= 5.0
         if should_log:
             bar_line = _ffmpeg_progress_bar(progress_label, current, progress_total, ffmpeg_progress_state.get("speed", ""))
             lines.append(bar_line)
             context.log(bar_line)
+            # The bar of the end has FFmpeg's final line under it, said once FFmpeg is done (below).
+            if status != "end":
+                say_native()
             last_bar_time = now
             last_bar_ratio = ratio
         return True
 
     assert process.stdout is not None
-    for raw_line in process.stdout:
+    # The output is read by a thread of its own, and the run looks at STOP every fifth of a second: a child that says
+    # nothing - a long pass of FFmpeg without progress, a quiet helper - is stopped as soon as one that talks.
+    feed: queue.Queue = queue.Queue()
+
+    def read_output() -> None:
+        try:
+            for raw in process.stdout:
+                feed.put(raw)
+        finally:
+            feed.put(None)
+
+    reader = threading.Thread(target=read_output, name="process-output", daemon=True)
+    reader.start()
+    while True:
+        try:
+            raw_line = feed.get(timeout=0.2)
+        except queue.Empty:
+            raw_line = b""
         if context.cancelled():
             context.log("[CANCEL] Terminating child process...")
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-            raise RuntimeError("Operation cancelled by user.")
-
-        output_lines = decoded_process_lines(raw_line) if isinstance(raw_line, bytes) else [str(raw_line).rstrip("\r\n")]
+            _end_process_tree(process)
+            raise OperationCancelled("Operation cancelled by user.")
+        if raw_line is None:
+            break
+        if raw_line in (b"", ""):
+            output_lines: list[str] = []
+        else:
+            output_lines = decoded_process_lines(raw_line) if isinstance(raw_line, bytes) else [str(raw_line).rstrip("\r\n")]
         for line in output_lines:
-            if not line or consume_ffmpeg_progress(line):
+            if not line:
+                continue
+            # Before the keys of -progress: "frame=  250 fps=..." would read as the key frame.
+            if ffmpeg_progress and FFMPEG_STATS.match(line):
+                native["last"] = line.strip()
+                continue
+            if consume_ffmpeg_progress(line):
                 continue
             lines.append(line)
             context.log(line)
 
         now = time.monotonic()
-        if now - last_progress >= 0.5:
+        # The clock guesses only for an operation that did not say its units: with them, the share moves by the
+        # service's word between units and by FFmpeg's progress inside one.
+        if now - last_progress >= 0.5 and getattr(context, "unit_share", None) is None:
             elapsed = max(0.0, now - start)
-            context.progress(min(0.95, 0.08 + elapsed / max(1.0, float(progress_seconds))))
+            guess(min(0.95, 0.08 + elapsed / max(1.0, float(progress_seconds))))
             last_progress = now
 
     exit_code = process.wait()
+    reader.join(timeout=5)
+    # FFmpeg's final line ("Lsize=") comes after its last progress, or it was not said with a bar yet.
+    say_native()
     command_record["exit_code"] = exit_code
     command_record["duration_seconds"] = round(time.monotonic() - process_started, 3)
     command_record["line_count"] = len(lines)
@@ -523,6 +625,21 @@ def run_process(
     if check and exit_code != 0:
         raise RuntimeError(f"Command failed with exit code {exit_code}.")
     return ProcessResult(exit_code=exit_code, lines=tuple(lines))
+
+
+def _end_process_tree(process: subprocess.Popen) -> None:
+    """Stop a child and what it started itself - yt-dlp runs FFmpeg - and wait for the end, five seconds at most."""
+    if process.poll() is None:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, **hidden_subprocess_kwargs())
+        else:
+            process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
 
 
 def resolve_project_path(context: JobContext, raw_path: str) -> Path:
@@ -548,6 +665,45 @@ def run_cmd_script(
         raise RuntimeError(f"Script was not found: {script_path}")
     command = ["cmd.exe", "/d", "/c", "call", str(script_path), *(args or [])]
     return run_process(context, command, cwd=context.paths.root, check=check, extra_env=extra_env)
+
+
+# A Target of more folders than this - a whole drive - is not walked: the time would be the run's, not the cleanup's.
+FOLDER_WALK_LIMIT = 20000
+
+
+def _folders_under(roots: list[Path]) -> set[Path] | None:
+    """Every folder under the Target and the workspace, before a run; None when there are too many to walk."""
+    found: set[Path] = set()
+    for root in roots:
+        stack = [Path(root)]
+        while stack:
+            folder = stack.pop()
+            try:
+                with os.scandir(folder) as entries:
+                    for entry in entries:
+                        if entry.is_dir(follow_symlinks=False):
+                            found.add(Path(entry.path))
+                            stack.append(Path(entry.path))
+            except OSError:
+                continue
+            if len(found) > FOLDER_WALK_LIMIT:
+                return None
+    return found
+
+
+def _prune_new_empty_folders(roots: list[Path], before: set[Path] | None) -> None:
+    """The folders a run made and left empty go: a command only said (dry run), the stage of a trim whose pieces were
+    joined and taken away, a download that wrote nothing. A folder that was there before the run stays, empty or not."""
+    if before is None:
+        return
+    after = _folders_under(roots)
+    if after is None:
+        return
+    for folder in sorted(after - before, key=lambda path: len(path.parts), reverse=True):
+        try:
+            folder.rmdir()  # only an empty one goes
+        except OSError:
+            pass
 
 
 def _load_callable(service: str) -> Callable[[JobContext], Any]:
@@ -583,17 +739,38 @@ def execute_operation(
         context.progress(0.0)
         preflight = run_preflight(context)
         if not bool(preflight.get("ok", True)):
-            raise RuntimeError("Preflight failed. See operation log and batch report.")
-        result = _load_callable(operation.service)(context)
-        context.progress(1.0)
-        context.log(f"Finished operation: {operation.id}")
+            raise PreflightRefused("Preflight failed: the [PREFLIGHT] lines above say why.")
+        folders_before = _folders_under([paths.output, paths.workspace])
+        try:
+            result = _load_callable(operation.service)(context)
+        finally:
+            _prune_new_empty_folders([paths.output, paths.workspace], folders_before)
+        # One rule for every service, whatever it leaves out: a run it says was cancelled is a stop, a file that failed
+        # is a failure. A service returning `cancelled` and no `ok` read as done with a green status and exit code 0.
+        data = dict(result) if isinstance(result, dict) else None
+        cancelled = bool(data and data.get("cancelled")) or context.cancelled()
+        failed = data.get("failed") if data else 0
+        failed = int(failed) if isinstance(failed, (int, float)) and not isinstance(failed, bool) else 0
+        if cancelled:
+            context.log("[STOPPED] Operation stopped by the user.")
+        else:
+            context.progress(1.0)
+            context.log(f"Finished operation: {operation.id}")
 
         finished_at = timestamp()
         duration = time.monotonic() - started
-        if isinstance(result, dict):
-            data = dict(result)
-            reported_ok = bool(data.get("ok", True))
-            result_message = "Operation finished." if reported_ok else "Operation reported failure."
+        if data is not None:
+            if cancelled:
+                data["cancelled"] = True
+            reported_ok = bool(data.get("ok", True)) and failed == 0 and not cancelled
+            if cancelled:
+                result_message = "Operation stopped by the user."
+            elif failed:
+                result_message = f"Operation finished with {failed} failed file(s)."
+            elif not reported_ok and isinstance(data.get("refused"), int) and data["refused"]:
+                result_message = f"Operation refused {data['refused']} file(s): the journal says why."
+            else:
+                result_message = "Operation finished." if reported_ok else "Operation reported failure."
             report_files = _write_batch_report(
                 context,
                 started_at=started_at,
@@ -622,11 +799,21 @@ def execute_operation(
         return JobResult(True, message, report_files)
 
     except Exception as exc:
-        error_text = traceback.format_exc()
-        context.log(error_text)
         finished_at = timestamp()
         duration = time.monotonic() - started
-        message = f"{exc.__class__.__name__}: {exc}"
+        if isinstance(exc, OperationCancelled) or context.cancelled():
+            # STOP is no failure of the program: one line, the trace stays out of the journal and the report.
+            error_text = ""
+            message = "Operation stopped by the user."
+            context.log(f"[STOPPED] {message}")
+        elif isinstance(exc, PreflightRefused):
+            error_text = ""
+            message = str(exc)
+            context.log(f"[REFUSED] {message}")
+        else:
+            error_text = traceback.format_exc()
+            context.log(error_text)
+            message = f"{exc.__class__.__name__}: {exc}"
         report_files: dict[str, str] = {}
         try:
             report_files = _write_batch_report(
@@ -643,4 +830,7 @@ def execute_operation(
             context.log(f"Batch report: {report_files['batch_report_md']}")
         except Exception as report_exc:
             context.log(f"Could not write batch report: {report_exc.__class__.__name__}: {report_exc}")
+        if isinstance(exc, PreflightRefused):
+            # A name of its own: "refused" of a trim is the number of pieces it could not cut.
+            return JobResult(False, message, {**report_files, "preflight_refused": True})
         return JobResult(False, message, report_files)

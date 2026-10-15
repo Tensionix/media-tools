@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from hashlib import sha256
-from fractions import Fraction
 import os
 from pathlib import Path
 import re
@@ -24,7 +23,7 @@ from system_core.core.encoder_backends import (
     hardware_pix_fmt,
     target_for_backend,
 )
-from system_core.core.fps_contract import build_fps_command, fps_audio_output_rate, fps_audio_target_rate
+from system_core.core.fps_contract import fps_audio_output_rate, fps_audio_target_rate
 from system_core.core.path_cache import cached_output_path, cached_source_path, update_path_cache
 from system_core.core.preflight import HARDWARE_DECODERS, HARDWARE_ENCODERS, _required_encoders
 from system_core.core.script_profiles import load_script_profiles
@@ -43,7 +42,20 @@ from system_core.services.media_service import (
     _target_video_args,
     hardware_smoke_labels,
 )
-from Scripts.Common.script_runner import Runner
+from system_core import cli as media_cli
+from system_core.core import operation_model as model
+from system_core.core.config import load_yaml_or_json
+
+
+def wrapper_values(name: str, environment: dict[str, str]) -> dict[str, object]:
+    """What the wrapper Scripts\\<name>.cmd hands its operation, with these variables in the environment: the
+    launchers of cli\\ choose by them (since 3.0.0 the wrappers are doors of `media_cli.cmd wrapper`)."""
+    entry = load_yaml_or_json(ROOT / "config" / "wrappers.yaml")["wrappers"][name]
+    run = media_cli.wrapper_runs(entry)[0]
+    node = model.find_node(load_manifest(ROOT / "config" / "tool_manifest.yaml"), str(run["op"]))
+    fields = {model.field_id(field) for field in model.form_fields(node)}
+    with patch.dict(os.environ, environment, clear=False):
+        return media_cli.wrapper_values(run, fields)
 
 
 def _leaf_nodes(manifest):
@@ -57,7 +69,6 @@ def _leaf_nodes(manifest):
     return walk(manifest.operation_groups)
 
 
-CANONICAL_WORKBENCH_SHA256 = "81695288ae6c85c53faadce72bd056f4f4f974fe68e0fa561ffcf396e4a31730"
 INTERACTIVE_FPS_SOURCES = {"25", "2997", "50", "5994", "100", "11988", "17982"}
 BACKENDS = ("cpu", "cuda", "qsv", "amd")
 ENCODE_TARGETS = ("x264", "hevc_x265", "svt_av1")
@@ -94,10 +105,6 @@ def encoder_pixel_formats(encoder: str) -> set[str]:
 
 
 class MediaContractsTest(unittest.TestCase):
-    def test_workbench_module_is_canonical(self) -> None:
-        payload = (ROOT / "system_core" / "ui_nicegui" / "workbench.py").read_bytes()
-        self.assertEqual(sha256(payload).hexdigest(), CANONICAL_WORKBENCH_SHA256)
-
     def test_authoritative_path_cache_drives_backend_routes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -139,7 +146,7 @@ class MediaContractsTest(unittest.TestCase):
     def test_interactive_fps_master_is_only_a_shared_profile_frontend(self) -> None:
         launcher = (ROOT / "cli" / "launcher-select-fps-speed.cmd").read_text(encoding="utf-8")
         self.assertNotRegex(launcher, re.compile(r"(?im)^\s*ffmpeg(?:\.exe)?\b"))
-        self.assertIn("Scripts\\Common\\script_runner.py", launcher)
+        self.assertIn("media_cli.cmd wrapper", launcher)
         self.assertIn("call \"%TARGET%\"", launcher)
         for profile in ("h264", "hevc", "prores", "prores_mxf", "dnxhr", "dnxhr_mxf"):
             self.assertIn(f"AUDION_FPS_OUTPUT_PROFILE={profile}", launcher)
@@ -149,94 +156,48 @@ class MediaContractsTest(unittest.TestCase):
             self.assertIn(f"AUDION_FPS_AUDIO_OVERSAMPLE={rate}", launcher)
 
         profiles = load_script_profiles(ROOT)["profiles"]
+        wrappers = load_yaml_or_json(ROOT / "config" / "wrappers.yaml")["wrappers"]
         for source in INTERACTIVE_FPS_SOURCES:
             for mode in ("varispeed", "conform"):
                 profile_id = f"ff-{source}to23976-{mode}"
                 with self.subTest(profile=profile_id):
                     self.assertIn(profile_id, profiles)
                     self.assertEqual(profiles[profile_id]["kind"], "fps")
+                    self.assertEqual(wrappers[profile_id]["op"], "fps_run")
                     wrapper = ROOT / "Scripts" / f"{profile_id}.cmd"
                     self.assertTrue(wrapper.is_file())
                     self.assertIn("Common\\run-profile.cmd", wrapper.read_text(encoding="utf-8"))
 
-    def test_cli_fps_runner_builds_the_same_commands_as_gui_contract(self) -> None:
+    def test_the_fps_launcher_choices_reach_the_form_of_the_window(self) -> None:
+        """The launcher chooses by the environment; the wrapper hands it to the fields of fps_run, the window's own."""
         cases = [
             ("prores_mxf", "s24", "x4", "mxf", 192000, 48000),
             ("dnxhr", "f32", "x2", "mov", 96000, 96000),
         ]
         for output_profile, depth, oversample, extension, work_rate, output_rate in cases:
             with self.subTest(profile=output_profile, depth=depth, oversample=oversample):
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    root = Path(temp_dir)
-                    source_dir = root / "Source"
-                    output_dir = root / "OUT"
-                    source_dir.mkdir()
-                    output_dir.mkdir()
-                    source = source_dir / "clip.mov"
-                    source.touch()
-                    target = output_dir / f"result.{extension}"
-                    env = {
-                        "AUDION_SOURCE": str(source_dir),
-                        "AUDION_OUTPUT": str(output_dir),
-                        "AUDION_FPS_OUTPUT_PROFILE": output_profile,
-                        "AUDION_FPS_AUDIO_PCM_DEPTH": depth,
-                        "AUDION_FPS_AUDIO_OVERSAMPLE": oversample,
-                        "AUDION_OVERWRITE": "0",
-                    }
-                    captured: list[list[str]] = []
-                    with patch.dict(os.environ, env, clear=False):
-                        runner = Runner("ff-25to23976-conform", [])
-                        runner.files = lambda *_args, **_kwargs: [source]  # type: ignore[method-assign]
-                        runner.has_audio = lambda _source: True  # type: ignore[method-assign]
-                        runner.sample_rate = lambda _source: "48000"  # type: ignore[method-assign]
-                        runner.output_path = lambda *_args, **_kwargs: target  # type: ignore[method-assign]
-                        runner.run = lambda command, cwd=None: captured.append(command)  # type: ignore[method-assign]
-                        runner.run_configured_fps()
-
-                    params = {
-                        "fps_audio_pcm_depth": depth,
-                        "fps_audio_oversample": oversample,
-                        "audio_bitrate": "384k",
-                        "encode_backend": "cpu",
-                        "cpu_encoder_preset": "medium",
-                        "nvenc_preset": "p6",
-                        "qsv_encoder_preset": "medium",
-                        "amf_quality": "quality",
-                        "crf": "14",
-                        "cq": "14",
-                    }
-                    video_args, audio_args, actual_extension, _label = _fps_output_args(output_profile, params)
-                    self.assertEqual(actual_extension, extension)
-                    self.assertEqual(fps_audio_target_rate(48000, params), work_rate)
-                    self.assertEqual(fps_audio_output_rate(output_profile, work_rate), output_rate)
-                    source_fps = Fraction(25, 1)
-                    target_fps = Fraction(24000, 1001)
-                    expected = build_fps_command(
-                        ffmpeg=runner.ffmpeg,
-                        source=str(source),
-                        overwrite=False,
-                        mode="conform",
-                        k=float(source_fps / target_fps),
-                        speed=float(target_fps / source_fps),
-                        target_arg="24000/1001",
-                        video_args=video_args,
-                        audio_args=audio_args,
-                        extension=extension,
-                        target=str(target),
-                        has_audio=True,
-                        audio_work_rate=work_rate,
-                        audio_output_rate=output_rate,
-                    )
-                    self.assertEqual(captured, [expected])
+                values = wrapper_values("ff-25to23976-conform", {
+                    "AUDION_FPS_OUTPUT_PROFILE": output_profile,
+                    "AUDION_FPS_AUDIO_PCM_DEPTH": depth,
+                    "AUDION_FPS_AUDIO_OVERSAMPLE": oversample,
+                })
+                self.assertEqual((values["fps_output_profile"], values["fps_audio_pcm_depth"], values["fps_audio_oversample"]),
+                                 (output_profile, depth, oversample))
+                params = {"fps_audio_pcm_depth": depth, "fps_audio_oversample": oversample, "audio_bitrate": "384k",
+                          "encode_backend": "cpu", "cpu_encoder_preset": "medium", "crf": "14", "cq": "14"}
+                _video_args, _audio_args, actual_extension, _label = _fps_output_args(output_profile, params)
+                self.assertEqual(actual_extension, extension)
+                self.assertEqual(fps_audio_target_rate(48000, params), work_rate)
+                self.assertEqual(fps_audio_output_rate(output_profile, work_rate), output_rate)
 
     def test_all_catalog_wrappers_delegate_to_the_shared_runner(self) -> None:
-        profiles = load_script_profiles(ROOT)["profiles"]
-        for profile_id in profiles:
-            wrapper = ROOT / "Scripts" / f"{profile_id}.cmd"
-            if not wrapper.exists():
-                continue
+        door = (ROOT / "Scripts" / "Common" / "run-profile.cmd").read_text(encoding="utf-8")
+        self.assertIn("media_cli.cmd\" wrapper %*", door)
+        wrappers = load_yaml_or_json(ROOT / "config" / "wrappers.yaml")["wrappers"]
+        for wrapper in sorted((ROOT / "Scripts").glob("*.cmd")):
             text = wrapper.read_text(encoding="utf-8")
-            with self.subTest(profile=profile_id):
+            with self.subTest(profile=wrapper.stem):
+                self.assertIn(wrapper.stem, wrappers)
                 self.assertIn("Common\\run-profile.cmd", text)
                 self.assertNotRegex(text, re.compile(r"(?im)^\s*ffmpeg(?:\.exe)?\b"))
 
@@ -292,37 +253,24 @@ class MediaContractsTest(unittest.TestCase):
                         else:
                             self.assertIn(native, encoder_pixel_formats(encoder))
 
-    def test_cli_and_gui_encode_audio_identically(self) -> None:
-        """Same audio mode and sample rate must produce the same FFmpeg arguments."""
-        modes = [("aac", "aac_320"), ("pcm_s24", "pcm_s24"), ("pcm_s16", "pcm_s16"), ("flac", "flac"), ("source", "source")]
-        rates = ["source", "44100", "48000", "96000", "192000"]
-        for cli_mode, gui_mode in modes:
-            for rate in rates:
-                with self.subTest(mode=cli_mode, rate=rate):
-                    with patch.dict(os.environ, {"AUDION_AUDIO_SAMPLE_RATE": rate}, clear=False):
-                        runner = Runner("ff-x264-crf14", [])
-                        cli_codec = runner.audio_args(cli_mode)
-                        cli_filter = runner.audio_filter_args(cli_mode)
-                    gui_codec = _audio_args(gui_mode, runner.audio_bitrate)
-                    gui_filter = _encode_audio_filter_args({"audio_sample_rate": rate}, gui_mode)
-                    self.assertEqual(cli_codec, gui_codec)
-                    self.assertEqual(cli_filter, gui_filter)
+    def test_the_audio_of_the_environment_reaches_the_form_of_the_window(self) -> None:
+        """AUDION_AUDIO_* of a launcher go into the fields of the operation, the window's own: one engine encodes both."""
+        for mode in ("aac_320", "pcm_s24", "pcm_s16", "flac", "source"):
+            for rate in ("source", "44100", "48000", "96000", "192000"):
+                with self.subTest(mode=mode, rate=rate):
+                    values = wrapper_values("ff-x264-crf14", {"AUDION_AUDIO_MODE": mode, "AUDION_AUDIO_SAMPLE_RATE": rate})
+                    self.assertEqual((values["audio_mode"], values["audio_sample_rate"]), (mode, rate))
+                    self.assertEqual(bool(_encode_audio_filter_args({"audio_sample_rate": rate}, mode)), mode != "source" and rate != "source")
 
     def test_cli_and_gui_encode_mp3_with_the_same_lame_preset(self) -> None:
-        """MP3 must mean the same LAME preset on every page and in the CLI."""
+        """MP3 means the same LAME preset on every page and in the wrappers: the preset and the bitrate reach the form."""
         for preset in MP3_PRESETS:
             for bitrate in ("192k", "256k", "320k", "384k"):
                 with self.subTest(preset=preset, bitrate=bitrate):
-                    with patch.dict(
-                        os.environ,
-                        {"AUDION_MP3_LAME_PRESET": preset, "AUDION_AUDIO_BITRATE": bitrate},
-                        clear=False,
-                    ):
-                        cli_codec = Runner("ff-x264-crf14", []).audio_args("mp3")
-                    gui_codec = _audio_args("mp3", bitrate, preset)
-                    self.assertEqual(cli_codec, gui_codec)
+                    values = wrapper_values("ff-x264-crf14", {"AUDION_MP3_LAME_PRESET": preset, "AUDION_AUDIO_BITRATE": bitrate})
+                    self.assertEqual((values["mp3_lame_preset"], values["audio_bitrate"]), (preset, bitrate))
                     # 384k is offered for AAC only; MPEG-1 Layer III stops at 320.
-                    self.assertNotIn("384k", cli_codec)
+                    self.assertNotIn("384k", _audio_args("mp3", bitrate, preset))
 
     def test_mp3_lame_preset_is_offered_wherever_mp3_is(self) -> None:
         """Every page that can encode MP3 exposes the same LAME preset scale."""
