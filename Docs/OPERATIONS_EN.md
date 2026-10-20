@@ -5,7 +5,7 @@
 **Contents**
 
 - [AUDIO - Extract, put back, convert](#audio---extract-put-back-convert)
-- [ENCODE - Archive, editing, storage, delivery](#encode---archive-editing-storage-delivery)
+- [ENCODE - Archive, editing, storage, delivery, RAW](#encode---archive-editing-storage-delivery-raw)
 - [PACKAGE - Another container, no re-encoding](#package---another-container-no-re-encoding)
 - [CUT - Keep, cut out, split](#cut---keep-cut-out-split)
 - [FRAME RATE - Varispeed and conform to 23.976](#frame-rate---varispeed-and-conform-to-23976)
@@ -81,7 +81,7 @@ Wrappers: `audio-downmix-51-to-20`, `audio-extract-audio-copy`, `audio-extract-a
 | Test on first file `limit_first_file` | tick | `false` | - | - | Process only the first matching file, useful for checking a preset before a full batch. |
 | Dry run `dry_run` | tick | `false` | - | - | Print commands without processing media. |
 
-## ENCODE - Archive, editing, storage, delivery
+## ENCODE - Archive, editing, storage, delivery, RAW
 
 ### Create archive - `archive_run`
 
@@ -242,6 +242,23 @@ Call: `media_cli.cmd run --operation delivery_run`
 | CRF `crf` | number | `14` | - | hidden when encode_backend is one of cuda, qsv, amd | Quality target for software encoders: lower means larger and cleaner. |
 | CQ/QP `cq` | number | `14` | - | shown when encode_backend is one of cuda, qsv, amd | Constant-quality value for hardware encoders. |
 | Encode tuning `encode_tuning` | ticks | - | `grain` Grain; `film` Film; `animation` Animation; `fastdecode` Fast decode; `zerolatency` Zero latency | hidden when encode_backend is one of cuda, qsv, amd | x264/x265 tune values. Hardware encoders use their own quality controls and ignore this list, so it stays CPU-only. |
+| Overwrite `overwrite` | tick | `false` | - | - | Allow FFmpeg to replace existing output files. |
+| Test on first file `limit_first_file` | tick | `false` | - | - | Process only the first matching file, useful for checking a preset before a full batch. |
+| Dry run `dry_run` | tick | `false` | - | - | Print commands without processing media. |
+
+### Develop ProRes RAW - `raw_develop_run`
+
+Develop every ProRes RAW of the Source on the video card into the chosen format.
+
+Call: `media_cli.cmd run --operation raw_develop_run`
+
+**Fields**
+
+| Field | Kind | Default | Choices | When | What it is |
+|---|---|---|---|---|---|
+| Develop into `raw_target` | choice | `prores4444` | `prores4444` ProRes 4444; `dnxhr444` DNxHR 444; `h264` H.264; `h265` H.265 10-bit | - | What the developed clip is written into. ProRes 4444 and DNxHR 444 - 10-bit 4:4:4 for an editor, with the PCM sound of the source; H.264 and H.265 10-bit - a file to look at and send, AAC sound. |
+| Encoder `raw_encoder` | choice | `cpu` | `cpu` CPU; `nvenc` NVENC | shown when raw_target is one of h264, h265 | The encoder of H.264 and H.265: the processor (x264, x265, CRF 16) or NVENC of an NVIDIA card (p6, CQ 16). |
+| Pieces at once `raw_workers` | choice | `auto` | `auto` Auto; `2` 2; `4` 4; `8` 8; `12` 12 | - | How many pieces of a clip develop side by side, each by its own cineraw: the decode of ProRes RAW takes one core a piece, the video card develops a frame in milliseconds. Auto - half the cores, eight at most. |
 | Overwrite `overwrite` | tick | `false` | - | - | Allow FFmpeg to replace existing output files. |
 | Test on first file `limit_first_file` | tick | `false` | - | - | Process only the first matching file, useful for checking a preset before a full batch. |
 | Dry run `dry_run` | tick | `false` | - | - | Print commands without processing media. |
@@ -514,7 +531,7 @@ Call: `media_cli.cmd run --operation install_7zip`
 
 ### Install FFmpeg - `install_ffmpeg`
 
-Install or refresh portable FFmpeg Gyan GPL payload into Tools/ffmpeg.
+Install or refresh the portable FFmpeg of Gyan (GPL) in Tools\ffmpeg by the NVIDIA driver: the newest stable, 9.0.2 at least, without an NVIDIA card and from the LTS driver 610.88; below it 8.0.1 (570-610.87) or 7.1 so that NVENC works, and not every operation is possible.
 
 Call: `media_cli.cmd run --operation install_ffmpeg`
 
@@ -531,6 +548,12 @@ Wrappers: `yt-update`.
 Install or refresh portable mpv into Tools/mpv: the player of the trim.
 
 Call: `media_cli.cmd run --operation install_mpv`
+
+### Install ProRes RAW development - `install_cineraw`
+
+Build cineraw of libcraw into Tools/cineraw from its sources: a portable MSYS2 for the build (about 185 MB downloaded, 5 minutes), removed afterwards; cineraw develops ProRes RAW on a video card with Vulkan 1.4 (NVIDIA RTX).
+
+Call: `media_cli.cmd run --operation install_cineraw`
 
 ## Buttons beside a field
 

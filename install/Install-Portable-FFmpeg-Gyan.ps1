@@ -31,19 +31,20 @@ $LowSpeedTimeoutSeconds = 15
 $LowSpeedLimitBytes = 65536
 $RetryCount = 1
 $LegacyStableRelease = '7.1'
-# 8.0.1 выбрана намеренно, а не по забывчивости. Её заголовки NVENC
-# (ffnvcodec n13.0.19.0) требуют драйвер 570.0, и это покрывает самый
-# населённый диапазон - примерно с 571 по 609. Ветка 610+ стоит у считанных
-# единиц, а 8.1.2 и 9.x требуют именно её.
-#
-# Поставить последнюю версию значит заявить аппаратное ускорение NVIDIA и не
-# дать его большинству тех, кому оно обещано. Обновлять эту константу имеет
-# смысл тогда, когда 610-й драйвер станет массовым, а не когда выйдет
-# следующий FFmpeg.
+# С 18.10.2026 по умолчанию - самый новый стабильный Gyan, какой бы ни был его номер (владелец: «600-я серия драйверов
+# уже окрепла и 610.88 стала LTS golden версией. Можно переходить на 9.02 во всех приложениях, но собирать на основе
+# драйвера, предупреждая, что при отсутствии минимально допустимого драйвера 610.88 для всех возможностей, будут
+# возможны не все операции»; «Закреплять не стоит. Если выйдет 9.1.0 - надо его ставить?»).
+# 9.0.2 - нижняя граница: сборка, с которой программы проверены на LTS-драйвере 610.88. Новее, не прошедшая пробу NVENC
+# на этом драйвере, откатывается к ней (Install-Portable-FFmpeg-Gyan.cmd). Ниже 610.88 ставится прежняя ветка, при
+# которой NVENC работает, - 8.0.1 (заголовки NVENC n13.0.19.0, драйвер 570.0) или 7.1 - с предупреждением, что не все
+# операции возможны. Без карты NVIDIA - тоже самая новая: машина без карты больше не повод держать узкую ветку.
+$FloorRelease = '9.0.2'
 $CurrentStableRelease = '8.0.1'
 $LegacyStableMinimumDriver = [version]'551.76'
 $CurrentStableMinimumDriver = [version]'570.0'
 $LatestStableMinimumDriver = [version]'610.0'
+$GoldenDriver = [version]'610.88'
 
 function ConvertTo-ResponseText {
     param($Content)
@@ -92,6 +93,18 @@ function Get-LatestGyanReleaseVersion {
     return [string]$release.tag_name
 }
 
+# Below the LTS driver an older branch is installed so that NVENC works, and the person is told what that costs.
+function Write-DriverWarning([string]$Driver, [string]$Release) {
+    Write-Host "[WARN] NVIDIA driver $Driver is below $GoldenDriver, the LTS driver the programs are built for: FFmpeg $Release is installed so that NVENC works, and not every operation is possible - what needs FFmpeg $FloorRelease or newer."
+}
+
+# The newest Gyan stable, never below the floor.
+function Get-NewestStableRelease {
+    $newest = Get-LatestGyanReleaseVersion
+    if ([version]$newest -lt [version]$FloorRelease) { return $FloorRelease }
+    return $newest
+}
+
 function Get-NvidiaDriverState {
     $present = $false
     try {
@@ -125,21 +138,18 @@ if ($ReleaseVersion -eq 'auto') {
         } elseif ($parsedDriver -lt $CurrentStableMinimumDriver) {
             $ReleaseVersion = $LegacyStableRelease
             Write-Host "[POLICY] NVIDIA driver $($nvidia.Driver): selecting Gyan FFmpeg $ReleaseVersion Stable (NVENC SDK 11.1)."
-        } elseif ($parsedDriver -lt $LatestStableMinimumDriver) {
+            Write-DriverWarning $nvidia.Driver $ReleaseVersion
+        } elseif ($parsedDriver -lt $GoldenDriver) {
             $ReleaseVersion = $CurrentStableRelease
             Write-Host "[POLICY] NVIDIA driver $($nvidia.Driver): selecting Gyan FFmpeg $ReleaseVersion Stable (NVENC API 13.0)."
+            Write-DriverWarning $nvidia.Driver $ReleaseVersion
         } else {
-            $ReleaseVersion = Get-LatestGyanReleaseVersion
-            Write-Host "[POLICY] NVIDIA driver $($nvidia.Driver): selecting latest Gyan Stable $ReleaseVersion (NVENC API 13.1+)."
+            $ReleaseVersion = Get-NewestStableRelease
+            Write-Host "[POLICY] NVIDIA driver $($nvidia.Driver): selecting the newest Gyan Stable $ReleaseVersion (NVENC API 13.1+, $FloorRelease at least)."
         }
     } else {
-        # No card here does not mean no card there. This machine builds a
-        # product for machines that do have one, and the newest release
-        # demands the 610 driver branch that almost nobody runs yet. Without
-        # a driver to measure, the compatible default is the only honest
-        # choice - see FFmpeg-Driver-Fallback-Policy.md.
-        $ReleaseVersion = $CurrentStableRelease
-        Write-Host "[POLICY] NVIDIA GPU not detected; selecting Gyan FFmpeg $ReleaseVersion Stable - the default that runs on driver 570 and newer."
+        $ReleaseVersion = Get-NewestStableRelease
+        Write-Host "[POLICY] NVIDIA GPU not detected; selecting the newest Gyan Stable $ReleaseVersion ($FloorRelease at least)."
     }
 }
 

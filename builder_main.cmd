@@ -50,6 +50,7 @@ goto FALLBACK_MENU
 >>"%MENU_FILE%" echo [12] FFMPEG GYAN                           ^| install_ffmpeg_gyan ^| install portable FFmpeg from Gyan
 >>"%MENU_FILE%" echo [13] YT-DLP                                ^| install_ytdlp     ^| install portable yt-dlp plus Deno
 >>"%MENU_FILE%" echo [14] MPV                                   ^| install_mpv       ^| install portable mpv with its GPL sources
+>>"%MENU_FILE%" echo [15] CINERAW                               ^| install_cineraw   ^| build cineraw: ProRes RAW developed on the GPU
 >>"%MENU_FILE%" echo.
 >>"%MENU_FILE%" echo [70] CLEAN INSTALL CACHE                   ^| clean_cache       ^| clean install cache/staging/bytecode
 >>"%MENU_FILE%" echo [71] VERIFY / DOCTOR                       ^| verify            ^| run portable environment checks
@@ -84,6 +85,7 @@ if /I "%RAW%"=="install_ffmpeg_gyan" goto INSTALL_FFMPEG_GYAN
 if /I "%RAW%"=="install_ffmpeg" goto INSTALL_FFMPEG_BTBN
 if /I "%RAW%"=="install_ytdlp" goto INSTALL_YTDLP
 if /I "%RAW%"=="install_mpv" goto INSTALL_MPV
+if /I "%RAW%"=="install_cineraw" goto INSTALL_CINERAW
 if /I "%RAW%"=="clean_cache" goto CLEAN_CACHE
 if /I "%RAW%"=="verify" goto VERIFY
 if /I "%RAW%"=="cmd_encoding" goto CMD_ENCODING
@@ -106,6 +108,7 @@ echo [11] FFMPEG BTBN AUTO-FALLBACK
 echo [12] FFMPEG GYAN
 echo [13] YT-DLP
 echo [14] MPV
+echo [15] CINERAW
 echo.
 echo [70] CLEAN INSTALL CACHE
 echo [71] VERIFY / DOCTOR
@@ -146,7 +149,9 @@ if /I "%RAW%"=="install_ffmpeg" goto INSTALL_FFMPEG_BTBN
 if /I "%RAW%"=="13" goto INSTALL_YTDLP
 if /I "%RAW%"=="install_ytdlp" goto INSTALL_YTDLP
 if /I "%RAW%"=="14" goto INSTALL_MPV
+if /I "%RAW%"=="15" goto INSTALL_CINERAW
 if /I "%RAW%"=="install_mpv" goto INSTALL_MPV
+if /I "%RAW%"=="install_cineraw" goto INSTALL_CINERAW
 if /I "%RAW%"=="70" goto CLEAN_CACHE
 if /I "%RAW%"=="clean_cache" goto CLEAN_CACHE
 if /I "%RAW%"=="71" goto VERIFY
@@ -189,6 +194,10 @@ goto MAIN
 
 :INSTALL_MPV
 call "%BASE_DIR%\install\Install-Portable-mpv.cmd"
+goto MAIN
+
+:INSTALL_CINERAW
+call "%BASE_DIR%\install\Install-Cineraw.cmd"
 goto MAIN
 
 :INSTALL_7ZIP

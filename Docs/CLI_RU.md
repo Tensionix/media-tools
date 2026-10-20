@@ -71,6 +71,7 @@
 | КОДИРОВАНИЕ | МОНТАЖ | `media_cli.cmd run --operation editing_run` |
 | КОДИРОВАНИЕ | ХРАНЕНИЕ | `media_cli.cmd run --operation storage_run` |
 | КОДИРОВАНИЕ | ДОСТАВКА | `media_cli.cmd run --operation delivery_run` |
+| КОДИРОВАНИЕ | RAW | `media_cli.cmd run --operation raw_develop_run` |
 | УПАКОВКА | ВИДЕО | `media_cli.cmd run --operation remux_run --set remux_stream_mode=video` |
 | УПАКОВКА | АУДИО | `media_cli.cmd run --operation remux_run --set remux_stream_mode=audio` |
 | УПАКОВКА | ВИДЕО И АУДИО | `media_cli.cmd run --operation remux_run --set remux_stream_mode=video_audio` |
@@ -102,9 +103,10 @@
 | `hardware_capabilities` | Возможности оборудования: Короткий FFmpeg smoke для CPU, QSV/NVENC/AMF H.264 и HEVC, SVT-AV1 и dav1d. |
 | `preset_test_matrix` | Тест матрицы пресетов: Прогнать portable smoke на 1-секундных файлах по audio, remux, FPS, LUT, архиву, монтажу, хранению и публикации. |
 | `install_7zip` | Установить 7-Zip: Установить или обновить portable 7-Zip; нужен для FFmpeg 7z payloads. |
-| `install_ffmpeg` | Установить FFmpeg: Установить или обновить portable FFmpeg Gyan GPL payload в Tools/ffmpeg. |
+| `install_ffmpeg` | Установить FFmpeg: Установить или обновить переносную FFmpeg от Gyan (GPL) в Tools\ffmpeg по драйверу NVIDIA: самая новая стабильная, не ниже 9.0.2, без карты NVIDIA и с LTS-драйвером 610.88 и новее; ниже него 8.0.1 (570-610.87) или 7.1, чтобы работал NVENC, и доступны не все операции. |
 | `install_ytdlp` | Установить yt-dlp: Установить или обновить portable yt-dlp и Deno в Tools. |
 | `install_mpv` | Установить mpv: Установить или обновить portable mpv в Tools/mpv: плеер нарезки. |
+| `install_cineraw` | Установить проявку ProRes RAW: Собрать cineraw из libcraw в Tools/cineraw из исходников: переносной MSYS2 для сборки (около 185 МБ загрузки, 5 минут), удаляется после; cineraw проявляет ProRes RAW на видеокарте с Vulkan 1.4 (NVIDIA RTX). |
 | `youtube_formats` | Форматы ссылки: Какие форматы есть у ссылки - разрешение, кодеки, размер - списком в журнале, ничего не скачивается. Взять один из них - профилем «Своё видео». |
 | `youtube_cookies_import` | Взять под DPAPI: Файл поля «Файл cookies» запечатывается DPAPI для этой учётной записи Windows в config\cookies.dpapi: загрузки с Cookies - «Файл» берут эту копию, и открытый файл больше не нужен. |
 <!-- /map -->

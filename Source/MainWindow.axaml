@@ -51,7 +51,7 @@
         </ToggleButton>
         <!-- The program itself, at the far right, as Audion Disk Tools has it: each opens its sheet in
              place of the sections (MainWindow.Sheets.cs). -->
-        <ToggleButton x:Name="SheetSettings" Classes="switch" Content="SETTINGS" Margin="8,0,4,0"
+        <ToggleButton x:Name="SheetSettings" AutomationProperties.AutomationId="sheet_settings" Classes="switch" Content="SETTINGS" Margin="8,0,4,0"
                       ToolTip.Tip="Настройки окна: цвета, шрифты и размеры."/>
         <ToggleButton x:Name="SheetAbout" Classes="switch" Content="ABOUT" Margin="0"
                       ToolTip.Tip="О программе: версия, папки, автор."/>
@@ -299,9 +299,10 @@
 
     <!-- SETTINGS or ABOUT, in place of the sections and their pages; the state below stays in sight. -->
     <Border Grid.Row="1" Grid.RowSpan="3" x:Name="SheetHost" Classes="frame" IsVisible="False">
+      <!-- The scroll bar starts below the cross (App.axaml, ScrollViewer#SheetScroll); the cards keep clear of the cross. -->
       <Panel>
         <ScrollViewer x:Name="SheetScroll" Margin="22,18" HorizontalScrollBarVisibility="Disabled">
-          <StackPanel x:Name="SheetBody" Spacing="6" MaxWidth="1120" HorizontalAlignment="Center"/>
+          <StackPanel x:Name="SheetBody" Spacing="6" MaxWidth="1120" HorizontalAlignment="Center" Margin="0,0,24,0"/>
         </ScrollViewer>
         <Button x:Name="SheetClose" Classes="tool" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,10,12,0"
                 ToolTip.Tip="Закрыть и вернуться к разделам (Esc).">

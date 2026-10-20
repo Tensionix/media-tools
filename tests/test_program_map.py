@@ -65,6 +65,15 @@ REWORDED = {
     "CRF 0 x264 как архивный вариант, когда FFV1 слишком тяжелый.":
         "CRF 0 x264 как архивный вариант, когда FFV1 слишком тяжелый. Держит YUV 8 и 10 бит; источник 12 бит, RGB или с "
         "альфой отклоняется — его сохранит FFV1.",
+    # The owner, 18.10.2026: FFmpeg by the NVIDIA driver - the newest stable, 9.0.2 at least, from the LTS driver 610.88.
+    "Install or refresh portable FFmpeg Gyan GPL payload into Tools/ffmpeg.":
+        "Install or refresh the portable FFmpeg of Gyan (GPL) in Tools\\ffmpeg by the NVIDIA driver: the newest stable, "
+        "9.0.2 at least, without an NVIDIA card and from the LTS driver 610.88; below it 8.0.1 (570-610.87) or 7.1 so that "
+        "NVENC works, and not every operation is possible.",
+    "Установить или обновить portable FFmpeg Gyan GPL payload в Tools/ffmpeg.":
+        "Установить или обновить переносную FFmpeg от Gyan (GPL) в Tools\\ffmpeg по драйверу NVIDIA: самая новая стабильная, "
+        "не ниже 9.0.2, без карты NVIDIA и с LTS-драйвером 610.88 и новее; ниже него 8.0.1 (570-610.87) или 7.1, чтобы "
+        "работал NVENC, и доступны не все операции.",
 }
 
 

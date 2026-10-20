@@ -208,6 +208,21 @@
     ]
   },
   {
+    "name": "cineraw",
+    "version": "present-in-release",
+    "license": "BSD-2-Clause (libcraw); LGPL-2.1-or-later (FFmpeg libraries, built without GPL parts); MIT and BSD-3-Clause (winpthreads)",
+    "source": "optional-tool",
+    "license_files": [
+      "licenses/THIRD_PARTY_NOTICES.txt"
+    ],
+    "license_fingerprint": "585f7fae33ed48c82512d64452ff40136c1e4630d95670c138c5ee54e3338b32",
+    "legal_document_hashes": [
+      "37cd4cd140f6c3e2d008fa8a921ce63992d12c04ade9dfcd1ca3d1bfc1b8dbe7",
+      "63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177",
+      "ce1a7fc84f7e0d01642a43e1d6a54432665f30ea1f8ed6814956165c4e3f9995"
+    ]
+  },
+  {
     "name": "click",
     "version": "8.5.0",
     "license": "BSD-3-Clause",
@@ -249,7 +264,7 @@
   },
   {
     "name": "FFmpeg",
-    "version": "8.0.1-full_build-www.gyan.dev",
+    "version": "9.0.2-full_build-www.gyan.dev",
     "license": "GPL v3",
     "source": "optional-tool",
     "license_files": [
@@ -746,7 +761,7 @@
   },
   {
     "name": "mpv",
-    "version": "mpv v0.41.0-1175-g492bae076",
+    "version": "mpv v0.41.0-1224-g6a262d11f",
     "license": "GPL v2 or later",
     "source": "optional-tool",
     "license_files": [
@@ -940,7 +955,7 @@
   },
   {
     "name": "setuptools",
-    "version": "84.0.0",
+    "version": "84.2.0",
     "license": "MIT",
     "source": "site-packages",
     "license_files": [

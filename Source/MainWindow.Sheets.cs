@@ -157,7 +157,7 @@ public partial class MainWindow
         SheetBody.Children.Add(reset);
     }
 
-    /// <summary>The families as chips, each written in itself, and "− 13 +": half a point a step.</summary>
+    /// <summary>The families as chips, each written in itself, and the size in a spinner: half a point a step.</summary>
     void FontRow(IEnumerable<string> families, string chosen, Action<string> setFamily, double size, double min, double max, Action<double> setSize)
     {
         if (chosen.Length == 0) chosen = "JetBrains Mono";
@@ -172,9 +172,8 @@ public partial class MainWindow
             chip.Click += (_, _) => { setFamily(family); FontsChanged(); };
             row.Children.Add(chip);
         }
-        var minus = new Button { Content = "−", Classes = { "small" }, Padding = new Thickness(10, 0) };
-        var value = new TextBlock { Text = size.ToString("0.#", CultureInfo.InvariantCulture), VerticalAlignment = VerticalAlignment.Center, MinWidth = 34, TextAlignment = TextAlignment.Center };
-        var plus = new Button { Content = "+", Classes = { "small" }, Padding = new Thickness(10, 0) };
+        // The size in a spinner: the number in the middle of its frame, a chevron up - larger, down - smaller.
+        var value = new TextBlock { Text = size.ToString("0.#", CultureInfo.InvariantCulture), Width = 40, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         void Step(double delta)
         {
             var next = Math.Clamp(Math.Round((size + delta) * 2) / 2, min, max);
@@ -182,10 +181,22 @@ public partial class MainWindow
             setSize(next);
             FontsChanged();
         }
-        minus.Click += (_, _) => Step(-0.5);
-        plus.Click += (_, _) => Step(0.5);
-        // One piece of the row: a line that wraps takes the three of them along, never the plus alone.
-        row.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(12, 0, 0, 0), Children = { minus, value, plus } });
+        RepeatButton Arrow(double angle, double delta, string tip)
+        {
+            // The chevron is turned in a holder of its own: the icon itself is set in its box by a transform of its own.
+            var sign = new Panel { Width = 9, Height = 9, RenderTransform = new RotateTransform(angle), RenderTransformOrigin = RelativePoint.Center, Children = { Icons.Sign("chevron-right") } };
+            var arrow = new RepeatButton { Classes = { "spin" }, Content = sign };
+            ToolTip.SetTip(arrow, Lang.T(tip));
+            arrow.Click += (_, _) => Step(delta);
+            return arrow;
+        }
+        var arrows = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { Arrow(-90, 0.5, "Крупнее"), Arrow(90, -0.5, "Мельче") } };
+        // One piece of the row: a line that wraps takes the number and its arrows along.
+        row.Children.Add(new Border
+        {
+            Classes = { "spin" }, Margin = new Thickness(12, 0, 0, 3), VerticalAlignment = VerticalAlignment.Top,
+            Child = new StackPanel { Orientation = Orientation.Horizontal, Children = { value, arrows } },
+        });
         Add(row);
     }
 

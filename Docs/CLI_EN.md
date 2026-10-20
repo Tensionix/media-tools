@@ -73,6 +73,7 @@ command is called from.
 | ENCODE | EDITING | `media_cli.cmd run --operation editing_run` |
 | ENCODE | STORAGE | `media_cli.cmd run --operation storage_run` |
 | ENCODE | DELIVERY | `media_cli.cmd run --operation delivery_run` |
+| ENCODE | RAW | `media_cli.cmd run --operation raw_develop_run` |
 | PACKAGE | VIDEO | `media_cli.cmd run --operation remux_run --set remux_stream_mode=video` |
 | PACKAGE | AUDIO | `media_cli.cmd run --operation remux_run --set remux_stream_mode=audio` |
 | PACKAGE | VIDEO AND AUDIO | `media_cli.cmd run --operation remux_run --set remux_stream_mode=video_audio` |
@@ -104,9 +105,10 @@ SOURCE INFO, SERVICE and the buttons beside a field:
 | `hardware_capabilities` | Hardware capabilities: Run short FFmpeg smoke tests for CPU, QSV/NVENC/AMF H.264 and HEVC, SVT-AV1 and dav1d. |
 | `preset_test_matrix` | Preset Test Matrix: Run portable 1-second smoke tests across audio, remux, FPS, LUT, archive, editing, storage and delivery presets. |
 | `install_7zip` | Install 7-Zip: Install or refresh portable 7-Zip; required before FFmpeg 7z payloads. |
-| `install_ffmpeg` | Install FFmpeg: Install or refresh portable FFmpeg Gyan GPL payload into Tools/ffmpeg. |
+| `install_ffmpeg` | Install FFmpeg: Install or refresh the portable FFmpeg of Gyan (GPL) in Tools\ffmpeg by the NVIDIA driver: the newest stable, 9.0.2 at least, without an NVIDIA card and from the LTS driver 610.88; below it 8.0.1 (570-610.87) or 7.1 so that NVENC works, and not every operation is possible. |
 | `install_ytdlp` | Install yt-dlp: Install or refresh portable yt-dlp and Deno into Tools. |
 | `install_mpv` | Install mpv: Install or refresh portable mpv into Tools/mpv: the player of the trim. |
+| `install_cineraw` | Install ProRes RAW development: Build cineraw of libcraw into Tools/cineraw from its sources: a portable MSYS2 for the build (about 185 MB downloaded, 5 minutes), removed afterwards; cineraw develops ProRes RAW on a video card with Vulkan 1.4 (NVIDIA RTX). |
 | `youtube_formats` | Formats of the link: What formats the link offers - resolution, codecs, size - listed in the journal, nothing downloaded. One of them is taken with the profile Own video. |
 | `youtube_cookies_import` | Take under DPAPI: The cookies file of the field Cookies file sealed with DPAPI for this account of Windows into config\cookies.dpapi: downloads with Cookies - File take this copy, and the open file is no longer needed. |
 <!-- /map -->

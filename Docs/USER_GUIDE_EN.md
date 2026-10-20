@@ -61,7 +61,7 @@ seconds on one file and an hour on a folder.
 | folder | choose the folder with the originals (or the folder for the result) |
 | file | one file as the Source: the operation goes through it alone |
 | history | paths used before, the pinned ones first |
-| pin | keep this path at the top of the history |
+| pin | keep this path at the top of the history; a pinned path is where the window opens next time, others give way to `input` and `output` |
 | open | open the folder in Explorer; one file is shown selected |
 | RESET | both paths back to the folders of the program, `input` and `output`; files are not touched |
 | LIST | the names of the files of the Source in the journal, with their subfolders |
@@ -165,6 +165,25 @@ the open file is no longer needed.
 the list add files (`.cube`, `.3dl`, `.lut`) or a whole folder — they are copied
 into `LUTs` — and open the folder.
 
+**ProRes RAW.** FFmpeg gives it as the signal of the sensor, without the white
+balance and the colour matrix of the camera, so cineraw develops it on an NVIDIA RTX
+card. cineraw comes with the program; SERVICE → "Install ProRes RAW development" builds
+it again (about 185 MB downloaded and 5 minutes of building; the window asks first).
+ENCODE → RAW develops ProRes RAW
+into ProRes 4444, DNxHR 444, H.264 or H.265, and ENCODE, FRAME RATE and COLOR take
+it by developing it first themselves. On an RTX 5070, 4.2K runs at about 5 frames a
+second. Until the development is installed, or on a card that does not suit,
+ENCODE, FRAME RATE and COLOR do not take ProRes RAW, CUT, PACKAGE and AUDIO take it
+as it is.
+
+**Other camera RAW.** The program does not develop it: FFmpeg cannot. ARRIRAW,
+Sony RAW and X-OCN, RED R3D, Nikon N-RAW, Blackmagic RAW and Canon Cinema RAW
+FFmpeg does not read at all, and no operation takes them. A
+Source of RAW alone is refused before the run with the reason; among other videos
+such a file fails by itself and the rest are made. The line of the preflight names
+what opens the file and its download page: convert it there into ProRes 4444 or
+DNxHR 444. The table of the programs is in the [README](README_EN.md).
+
 ## Hardware
 
 The program can choose between the NVIDIA, Intel, and AMD hardware paths, separate
@@ -173,6 +192,12 @@ AV1 encoder and decoder, and the plain processor.
 **Run SERVICE → Hardware capabilities before the first run on a new machine.** The
 result is cached and hardware profiles are checked against it. A missing path is a
 normal answer, not a fault: it means the driver or the hardware is absent.
+
+**FFmpeg and the NVIDIA driver.** The installer picks the build of FFmpeg for the
+driver ([the table](README_EN.md)). With an NVIDIA driver below 610.88 the dot of
+FFmpeg in the header is amber: an older build is installed so that NVENC works, and
+not every operation is possible. When the driver changes, FFmpeg installed again
+(SETTINGS → COMPONENTS → UPDATE) is picked for it.
 
 ## The Journal and Reports
 

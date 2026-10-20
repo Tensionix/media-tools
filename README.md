@@ -8,15 +8,14 @@
   <a href="https://github.com/Tensionix/media-tools/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/Tensionix/media-tools?style=flat-square&color=5fd08a&logo=apache&logoColor=white&cacheSeconds=3600"></a>
 </p>
 
-**Version 3.1.0** · 2026-10-20 · 92.7 MB
+**Version 3.1.0** · 2026-10-20 · 571.4 MB
 
-- [Direct download](https://dl.audion.dev/media-tools/3.1.0/Audion_Media_Tools_v3.1.0.zip) — unmetered, no rate limits
+- [Direct download](https://audion.dev/get/media-tools/3.1.0/Audion_Media_Tools_v3.1.0_Full.zip) — unmetered, no rate limits
 - [Project page](https://audion.dev/downloads/media-tools) — every version and how to install
-- [GitHub release](https://github.com/Tensionix/media-tools/releases/tag/v3.1.0)
 
 <p align="center"><img src="Docs/screenshot.png" alt="The program window" width="560"></p>
 
-`SHA-256: 262b62d3fb4c9c7269efbf42db2bb3ac056062c7f2a5e979541e81b2dfc19cad`
+`SHA-256: 9376e49dd9a9beb0d6ff990ebc4b31c80376401d877f6cb4db18974c9ddf9d6b`
 
 ---
 
@@ -31,7 +30,9 @@ An **Audion** tool, published by [Tensionix](https://github.com/Tensionix).
 **Contents**
 
 - [Why It Exists](#why-it-exists)
-- [The Central Decision: Newer Is Not Better](#the-central-decision-newer-is-not-better)
+- [The Central Decision: FFmpeg by the Driver](#the-central-decision-ffmpeg-by-the-driver)
+  - [Camera RAW](#camera-raw)
+    - [ProRes RAW on the video card](#prores-raw-on-the-video-card)
   - [What each path can do](#what-each-path-can-do)
 - [Why You Can Trust This](#why-you-can-trust-this)
   - [Where this started](#where-this-started)
@@ -68,33 +69,90 @@ visible command. Every button of the window is an operation of the console
 command `media_cli.cmd`, so the same work runs from a batch file or by an AI agent
 asked in plain words.
 
-## The Central Decision: Newer Is Not Better
+## The Central Decision: FFmpeg by the Driver
 
 Every FFmpeg build is compiled against a particular version of the NVIDIA
 hardware-encoding headers, and each one demands its own minimum driver. Install
 the newest build on an older driver and hardware encoding does not get faster —
-it stops working.
+it stops working. So the installer picks a build to match your driver.
 
-| FFmpeg build | NVENC headers | NVIDIA driver required |
+| NVIDIA driver | FFmpeg the program installs |
+|---|---|
+| no NVIDIA card | the newest stable Gyan build, 9.0.2 at least |
+| **610.88** (LTS) and newer | the newest stable Gyan build, 9.0.2 at least |
+| 570.0 – 610.87 | 8.0.1 (NVENC headers n13.0.19.0) — not every operation is possible |
+| 551.76 – 569.xx | 7.1 (NVENC headers n12.2.72.0) — not every operation is possible |
+| below 551.76 | none: the installer stops and says why |
+
+**610.88 is the LTS driver the programs are built for.** With it, or with no
+NVIDIA card, the newest stable FFmpeg is installed — 9.1 when it is out — and never
+one older than 9.0.2. If the newest build fails the NVENC test on the driver (a
+newer FFmpeg may ask a newer driver), the installer goes back to 9.0.2. Below
+610.88 an older branch is installed so that NVENC works, and the installer, the
+window before the download and the badge of FFmpeg in the header say that not
+every operation is possible — what needs FFmpeg 9.x. The build is picked at
+installation: when the driver changes, FFmpeg installed again (SETTINGS → COMPONENTS →
+UPDATE) is picked for it.
+
+**ProRes RAW needs 9.x.** In May 2026 the FFmpeg ProRes RAW decoder was fixed: it now reads the linearization curve
+stored in the file, which removes the distortion of tones and colours seen in the picture. The fix ships with 9.0;
+8.0.1 and earlier decode ProRes RAW with that distortion. 9.x also crops the frame to the sensor's active area and
+passes the camera's colour parameters with every frame. ProRes RAW the program develops itself, on the video card —
+of it and the other camera RAW below.
+
+7.1.1 does not help an older driver: it was built with the same headers as 8.0.1
+and needs the same 570.0 — "rolling back one version" gains nothing. Only 7.1
+helps.
+
+With no NVIDIA card the driver does not matter: the newest build is installed, and
+the processor, Intel or AMD encodes.
+
+### Camera RAW
+
+FFmpeg develops no camera RAW. ProRes RAW it reads as the signal of the sensor — 9.x too, without the white balance and
+the colour matrix of the camera, and FFmpeg has no filter that applies them. So ProRes RAW is developed by cineraw on
+the video card (below); until it is installed, ENCODE, FRAME RATE and COLOR do not take ProRes RAW, and CUT, PACKAGE and
+AUDIO take it as it is. The other camera RAW FFmpeg does not read at all — neither the picture nor a copy of the stream.
+A Source of RAW alone is refused before the run, among other videos such a file fails by itself and the rest are made;
+the line of the preflight names the program and its page. The programs are installed by the person, from their makers
+and under their terms: Media Tools neither downloads nor carries them.
+
+| RAW | files | what opens it |
 |---|---|---|
-| 9.0.1 | n13.1.15.0 | **610.0** |
-| 8.0.1 | n13.0.19.0 | **570.0** |
-| 7.1.1 | n13.0.19.0 | **570.0** |
-| 7.1 | n12.2.72.0 | 551.76 |
+| ProRes RAW, ProRes RAW HQ | `.mov` | [DaVinci Resolve](https://www.blackmagicdesign.com/products/davinciresolve), [Final Cut Pro](https://www.apple.com/final-cut-pro/) |
+| ARRIRAW, ARRIRAW HDE | `.mxf`, `.ari`, `.arx` | [ARRI Reference Tool](https://www.arri.com/en/learn/camera-systems/tools/arri-reference-tool), DaVinci Resolve |
+| RED R3D | `.r3d` | [REDCINE-X PRO](https://www.reddigitalcinema.com/download/redcine-x-pro-win), DaVinci Resolve |
+| Nikon N-RAW | `.nev` | DaVinci Resolve, REDCINE-X PRO |
+| Blackmagic RAW | `.braw` | [Blackmagic RAW Player](https://www.blackmagicdesign.com/products/blackmagicraw), DaVinci Resolve |
+| Sony RAW, X-OCN | `.mxf` | [Sony RAW Viewer](https://www.sony.jp/ls-camera/download/rawviewer/), DaVinci Resolve |
+| Canon Cinema RAW, Cinema RAW Light | `.rmf`, `.crm` | [Canon Cinema RAW Development](https://hk.canon/en/support/0200767202), DaVinci Resolve |
 
-The third row matters most: 7.1.1 was built with the same headers as 8.0.1 and
-needs the same 570.0 — "rolling back one version" on an older driver gains
-nothing. Only 7.1 helps.
+Any of them converts into ProRes 4444 or DNxHR 444, and that file goes into the program.
 
-So the installer picks a build to match your driver rather than taking the latest.
+#### ProRes RAW on the video card
 
-**8.0.1 ships by default** — a choice, not a forgotten update. Editing machines
-today mostly run drivers somewhere between 571 and 609; the 610 branch is on very
-few. Both 8.1 and 9.x require it: shipping them would mean advertising NVIDIA
-acceleration and denying it to most of the people promised it. 8.0.1 has
-everything these programs use and runs on the drivers people actually have.
+ProRes RAW the program develops itself — as it was shot: the white balance and the colour matrix of the camera from the
+file, a soft roll-off of the highlights for SDR, BT.709. It is developed by [cineraw](https://github.com/cyanreg/libcraw)
+of libcraw (BSD-2-Clause) on a video card with Vulkan 1.4 that reads storage images without a format: NVIDIA RTX does,
+Intel integrated graphics does not. libcraw publishes no builds, so cineraw is built from its sources when the program is
+built and comes with it; the build needs no video card — the program checks the card when it develops. SERVICE →
+"Install ProRes RAW development" builds it again, for another commit of libcraw for one: a portable MSYS2 for the time of
+the build only (nothing goes into Windows), FFmpeg 9.0.2 cut down to reading MOV and the ProRes RAW decoder (LGPL), and
+libcraw at a checked commit. The window names the files and their size before the download.
 
-With no NVIDIA card none of this matters: encoding runs on the processor.
+| | |
+|---|---|
+| downloaded for the build | about 185 MB: MSYS2 41 MB, the compiler and tools 127 MB, the sources of libcraw 16 MB |
+| time of the build | 5 minutes (Ryzen 9 5900X) |
+| on the disk | `Tools\cineraw` — 3.5 MB of programs and 33 MB of sources |
+| speed, 4.2K 23.976 | 5 frames a second into ProRes 4444 (RTX 5070, Ryzen 9 5900X): a minute of footage takes about 5 minutes |
+
+ENCODE → RAW develops the ProRes RAW of the Source into ProRes 4444 or DNxHR 444 for editing, H.264 or H.265 10-bit for
+viewing (the processor or NVENC encodes), with the sound and the timecode of the source and BT.709 said in the file.
+ENCODE, FRAME RATE and COLOR take ProRes RAW by developing it first into ProRes 4444 in a working folder; the result is
+named and placed as the source. A clip is cut into pieces developed by several cineraw at once: reading ProRes RAW runs
+on the processor and takes a core a piece, the video card develops a frame in 3 ms. No frame touches the disk — cineraw
+hands it to the program through a pipe of Windows — and the pieces join to the exact frame.
 
 ### What each path can do
 

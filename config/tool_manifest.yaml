@@ -2,7 +2,7 @@ tool:
   id: audion_media_tools
   name: "Audion Media Tools"
   category: "Media"
-  version: "3.0.0"
+  version: "3.1.0"
 
 paths:
   input: "input"
@@ -1898,6 +1898,66 @@ operation_groups:
         service: "system_core.services.media_service:encode_targets"
         kind: "safe"
 
+  - id: raw
+    title: "ProRes RAW development"
+    title_ru: "Проявка ProRes RAW"
+    description: "ProRes RAW developed on the video card as it was shot - the white balance and the colour matrix of the camera - by cineraw: ProRes 4444 or DNxHR 444 for editing, H.264 or H.265 for viewing, BT.709, the sound and the timecode of the source."
+    description_ru: "ProRes RAW проявляется на видеокарте, как снято, - баланс белого и цветовая матрица камеры - программой cineraw: ProRes 4444 или DNxHR 444 для монтажа, H.264 или H.265 для просмотра, BT.709, звук и таймкод источника."
+    fields:
+      - id: raw_target
+        tooltip: "What the developed clip is written into. ProRes 4444 and DNxHR 444 - 10-bit 4:4:4 for an editor, with the PCM sound of the source; H.264 and H.265 10-bit - a file to look at and send, AAC sound."
+        tooltip_ru: "Во что пишется проявленный клип. ProRes 4444 и DNxHR 444 - 10 бит 4:4:4 для монтажа, со звуком PCM источника; H.264 и H.265 10 бит - файл посмотреть и отправить, звук AAC."
+        type: "radio"
+        choice_style: "buttons"
+        layout: "four_columns"
+        label: "Develop into"
+        label_ru: "Проявить в"
+        default: "prores4444"
+        options:
+          - {value: "prores4444", label: "ProRes 4444", label_ru: "ProRes 4444"}
+          - {value: "dnxhr444", label: "DNxHR 444", label_ru: "DNxHR 444"}
+          - {value: "h264", label: "H.264", label_ru: "H.264"}
+          - {value: "h265", label: "H.265 10-bit", label_ru: "H.265 10 бит"}
+      - id: raw_encoder
+        tooltip: "The encoder of H.264 and H.265: the processor (x264, x265, CRF 16) or NVENC of an NVIDIA card (p6, CQ 16)."
+        tooltip_ru: "Кодер H.264 и H.265: процессор (x264, x265, CRF 16) или NVENC видеокарты NVIDIA (p6, CQ 16)."
+        type: "radio"
+        choice_style: "buttons"
+        layout: "two_columns"
+        label: "Encoder"
+        label_ru: "Кодер"
+        default: "cpu"
+        visible_if: {raw_target: ["h264", "h265"]}
+        options:
+          - {value: "cpu", label: "CPU", label_ru: "CPU"}
+          - {value: "nvenc", label: "NVENC", label_ru: "NVENC"}
+      - id: raw_workers
+        tooltip: "How many pieces of a clip develop side by side, each by its own cineraw: the decode of ProRes RAW takes one core a piece, the video card develops a frame in milliseconds. Auto - half the cores, eight at most."
+        tooltip_ru: "Сколько кусков клипа проявляются одновременно, каждый своим cineraw: декодирование ProRes RAW занимает по ядру на кусок, видеокарта проявляет кадр за миллисекунды. Авто - половина ядер, не больше восьми."
+        type: "radio"
+        choice_style: "buttons"
+        layout: "five_columns"
+        label: "Pieces at once"
+        label_ru: "Кусков сразу"
+        default: "auto"
+        options:
+          - {value: "auto", label: "Auto", label_ru: "Авто"}
+          - {value: "2", label: "2", label_ru: "2"}
+          - {value: "4", label: "4", label_ru: "4"}
+          - {value: "8", label: "8", label_ru: "8"}
+          - {value: "12", label: "12", label_ru: "12"}
+      - *overwrite
+      - *limit_first_file
+      - *dry_run
+    children:
+      - id: raw_develop_run
+        title: "Develop ProRes RAW"
+        title_ru: "Проявить ProRes RAW"
+        description: "Develop every ProRes RAW of the Source on the video card into the chosen format."
+        description_ru: "Проявить каждый ProRes RAW Источника на видеокарте в выбранный формат."
+        service: "system_core.services.raw_develop:develop_raw"
+        kind: "safe"
+
   - id: remux
     title: "Package / remux"
     title_ru: "Упаковка / remux"
@@ -2678,8 +2738,8 @@ operation_groups:
       - id: install_ffmpeg
         title: "Install FFmpeg"
         title_ru: "Установить FFmpeg"
-        description: "Install or refresh portable FFmpeg Gyan GPL payload into Tools/ffmpeg."
-        description_ru: "Установить или обновить portable FFmpeg Gyan GPL payload в Tools/ffmpeg."
+        description: "Install or refresh the portable FFmpeg of Gyan (GPL) in Tools\\ffmpeg by the NVIDIA driver: the newest stable, 9.0.2 at least, without an NVIDIA card and from the LTS driver 610.88; below it 8.0.1 (570-610.87) or 7.1 so that NVENC works, and not every operation is possible."
+        description_ru: "Установить или обновить переносную FFmpeg от Gyan (GPL) в Tools\\ffmpeg по драйверу NVIDIA: самая новая стабильная, не ниже 9.0.2, без карты NVIDIA и с LTS-драйвером 610.88 и новее; ниже него 8.0.1 (570-610.87) или 7.1, чтобы работал NVENC, и доступны не все операции."
         service: "system_core.services.media_service:install_portable_ffmpeg"
         kind: "safe"
       - id: install_ytdlp
@@ -2695,6 +2755,13 @@ operation_groups:
         description: "Install or refresh portable mpv into Tools/mpv: the player of the trim."
         description_ru: "Установить или обновить portable mpv в Tools/mpv: плеер нарезки."
         service: "system_core.services.media_service:install_portable_mpv"
+        kind: "safe"
+      - id: install_cineraw
+        title: "Install ProRes RAW development"
+        title_ru: "Установить проявку ProRes RAW"
+        description: "Build cineraw of libcraw into Tools/cineraw from its sources: a portable MSYS2 for the build (about 185 MB downloaded, 5 minutes), removed afterwards; cineraw develops ProRes RAW on a video card with Vulkan 1.4 (NVIDIA RTX)."
+        description_ru: "Собрать cineraw из libcraw в Tools/cineraw из исходников: переносной MSYS2 для сборки (около 185 МБ загрузки, 5 минут), удаляется после; cineraw проявляет ProRes RAW на видеокарте с Vulkan 1.4 (NVIDIA RTX)."
+        service: "system_core.services.media_service:install_cineraw"
         kind: "safe"
 
 maintenance_operations:

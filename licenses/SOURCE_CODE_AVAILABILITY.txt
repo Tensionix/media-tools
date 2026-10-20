@@ -92,6 +92,11 @@ Method: upstream_pin
 version: 12.1.4
 url: https://github.com/AvaloniaUI/Avalonia/
 
+Component: cineraw
+Version/profile: present-in-release
+Method: bundled_archive
+url: https://github.com/cyanreg/libcraw
+
 Component: Deno
 Version/profile: 2.9.7
 Method: upstream_pin
@@ -100,11 +105,11 @@ url: https://github.com/denoland/deno/releases
 winget_id: DenoLand.Deno
 
 Component: FFmpeg
-Version/profile: 8.0.1-full_build-www.gyan.dev
+Version/profile: 9.0.2-full_build-www.gyan.dev
 Method: bundled_archive
-version: 8.0.1-full_build-www.gyan.dev
-url: https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/894da5ca7d
-path: Tools\ffmpeg-8.0.1-source.tar.gz
+version: 9.0.2-full_build-www.gyan.dev
+url: https://codeload.github.com/FFmpeg/FFmpeg/tar.gz/946fcce07b
+path: Tools\ffmpeg-9.0.2-source.tar.gz
 
 Component: HarfBuzzSharp
 Version/profile: 8.3.1.3
@@ -317,11 +322,11 @@ version: 7.6.7
 url: https://github.com/PowerShell/PowerShell
 
 Component: mpv
-Version/profile: mpv v0.41.0-1175-g492bae076
+Version/profile: mpv v0.41.0-1224-g6a262d11f
 Method: bundled_archive
-version: mpv v0.41.0-1175-g492bae076
-url: https://codeload.github.com/mpv-player/mpv/tar.gz/492bae076
-path: Tools\mpv-492bae076-source.tar.gz
+version: mpv v0.41.0-1224-g6a262d11f
+url: https://codeload.github.com/mpv-player/mpv/tar.gz/6a262d11f
+path: Tools\mpv-6a262d11f-source.tar.gz
 
 Component: Newtonsoft.Json
 Version/profile: 13.0.4

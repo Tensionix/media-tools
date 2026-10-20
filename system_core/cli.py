@@ -422,8 +422,8 @@ def own_file(text: str) -> str:
 # (media_service._run_installer); a check and the source info change nothing - their run is their own preview. Any other
 # operation would run for real: the encoder tests write config\hardware_capabilities_cache.json, the preset matrix encodes for
 # an hour.
-DRY_RUN_TOO = {"install_7zip", "install_ffmpeg", "install_ytdlp", "install_mpv", "selftest", "inventory", "profile_doctor",
-               "probe_source", "source_info"}
+DRY_RUN_TOO = {"install_7zip", "install_ffmpeg", "install_ytdlp", "install_mpv", "install_cineraw", "selftest", "inventory",
+               "profile_doctor", "probe_source", "source_info"}
 
 
 def command_run(args: argparse.Namespace) -> int:

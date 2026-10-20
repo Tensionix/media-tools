@@ -1,0 +1,69 @@
+# Camera RAW the program does not develop, and the programs that open it.
+#
+# ProRes RAW is the exception once cineraw is installed (SERVICE - Install ProRes RAW development): the program develops
+# it on the video card itself (system_core\services\raw_develop.py); without it ProRes RAW is said as the rest below.
+#
+# Media Tools runs FFmpeg, and FFmpeg develops none of these: ProRes RAW it reads as the signal of the sensor, the others
+# it does not read at all. A run that meets such a file says so in a line of its preflight - the kind, why, and the
+# programs below with their download pages; they are installed by the person, from their makers, under their makers'
+# terms: the program neither downloads nor carries them.
+#
+# How a file is known (system_core\core\camera_raw.py): ProRes RAW by the codec its MOV header names ('aprn', 'aprh');
+# ARRIRAW and Sony RAW in MXF by the label of the picture its header names; the others by the kind of their files.
+#
+# The pages move: `runtime\python.exe tests\probe_raw_pages.py` asks each one whether it answers - run it now and then
+# and put the page here when it has moved.
+
+programs:
+  resolve:
+    name: "DaVinci Resolve"
+    page: "https://www.blackmagicdesign.com/products/davinciresolve"
+  final_cut:
+    name: "Final Cut Pro"
+    page: "https://www.apple.com/final-cut-pro/"
+  art:
+    name: "ARRI Reference Tool"
+    page: "https://www.arri.com/en/learn/camera-systems/tools/arri-reference-tool"
+  redcine:
+    name: "REDCINE-X PRO"
+    page: "https://www.reddigitalcinema.com/download/redcine-x-pro-win"
+  braw_player:
+    name: "Blackmagic RAW Player"
+    page: "https://www.blackmagicdesign.com/products/blackmagicraw"
+  sony_raw_viewer:
+    name: "Sony RAW Viewer"
+    page: "https://www.sony.jp/ls-camera/download/rawviewer/"
+  canon_crd:
+    name: "Canon Cinema RAW Development"
+    page: "https://hk.canon/en/support/0200767202"
+
+# A kind: its name, why FFmpeg does not develop it (without `why` - it does not decode it), the kinds of its own files
+# (`files` - files no operation takes), and what opens it, first the maker's program.
+kinds:
+  prores_raw:
+    name: "ProRes RAW"
+    why: "FFmpeg gives the signal of the sensor without the white balance and the colour matrix of the camera"
+    open: [resolve, final_cut]
+  arriraw:
+    name: "ARRIRAW"
+    files: [".ari", ".arx"]
+    open: [art, resolve]
+  r3d:
+    name: "RED R3D"
+    files: [".r3d"]
+    open: [redcine, resolve]
+  nraw:
+    name: "Nikon N-RAW"
+    files: [".nev"]
+    open: [resolve, redcine]
+  braw:
+    name: "Blackmagic RAW"
+    files: [".braw"]
+    open: [braw_player, resolve]
+  sony_raw:
+    name: "Sony RAW / X-OCN"
+    open: [sony_raw_viewer, resolve]
+  canon_raw:
+    name: "Canon Cinema RAW"
+    files: [".crm", ".rmf"]
+    open: [canon_crd, resolve]

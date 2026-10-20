@@ -17,8 +17,9 @@ namespace AudionMediaTools;
 /// <summary>
 /// The versions in the middle of the header (the plan, 6.5; the owner, 15.10.2026: yt-dlp, FFmpeg, the NVIDIA driver, mpv -
 /// "нужно обновить или иметь в виду"): a badge each, a dot of freshness - Burn Orange when a newer release is out, a bright
-/// forest green when it is the newest - the mark of the brand in its colour and the version. FFmpeg and the driver of the
-/// GPU are the user's choice (the build of FFmpeg follows the NVIDIA driver): green always, the version shown. deno is
+/// forest green when it is the newest - the mark of the brand in its colour and the version. The driver of the GPU is the
+/// user's: green always, the version shown. FFmpeg is compared with the newest Gyan stable; under an NVIDIA driver below
+/// the LTS 610.88 its dot is amber: the older branch keeps NVENC working, not every operation is possible. deno is
 /// there too: without it yt-dlp gets no formats of YouTube, and it is released often. The console command answers
 /// (media_cli.cmd components), off the window's thread, once the window is up; GitHub at most once a day.
 /// </summary>
@@ -38,7 +39,7 @@ public partial class MainWindow
     /// <summary>What updates a component: an operation of SERVICE (yt-dlp brings deno with it).</summary>
     static readonly Dictionary<string, string> Installers = new()
     {
-        ["yt-dlp"] = "install_ytdlp", ["deno"] = "install_ytdlp", ["mpv"] = "install_mpv", ["ffmpeg"] = "install_ffmpeg", ["7zip"] = "install_7zip",
+        ["yt-dlp"] = "install_ytdlp", ["deno"] = "install_ytdlp", ["mpv"] = "install_mpv", ["ffmpeg"] = "install_ffmpeg", ["7zip"] = "install_7zip", ["cineraw"] = "install_cineraw",
     };
 
     IEnumerable<JsonElement> ComponentList() =>
@@ -70,12 +71,15 @@ public partial class MainWindow
             Put(new TextBlock { Text = Text(component, "name") }, 1);
             Put(new SelectableTextBlock { Text = version.Length > 0 ? version : Lang.T("нет") }, 2);
             var dot = new Ellipse { Classes = { "dot" }, Margin = new Thickness(0, 0, 6, 0) };
-            dot.Classes.Set("ok", state is "fresh" or "own");
+            dot.Classes.Set("ok", state == "fresh");
+            dot.Classes.Set("warn", state == "limited");
             dot.Classes.Set("bad", state is "old" or "missing");
             var said = state switch
             {
-                "fresh" => Lang.T("свежая"), "old" => Lang.F("есть новее: {0}", latest), "own" => Lang.T("не сравнивается"),
-                "missing" => Lang.T("не установлен"), _ => Lang.T("не проверено"),
+                // FFmpeg under an NVIDIA driver below the LTS 610.88: the older branch that keeps NVENC working.
+                "limited" => Lang.F("драйвер NVIDIA {0} ниже 610.88: доступны не все операции", Text(component, "driver")),
+                "fresh" => Lang.T("свежая"), "old" => Lang.F("есть новее: {0}", latest),
+                "missing" => Lang.T("не установлен"), "own" => Lang.T("собран здесь из исходников"), _ => Lang.T("не проверено"),
             };
             var stateText = new TextBlock { Classes = { "caption" }, Text = said, TextTrimming = TextTrimming.CharacterEllipsis };
             ToolTip.SetTip(stateText, said);
@@ -86,7 +90,7 @@ public partial class MainWindow
                 Avalonia.Automation.AutomationProperties.SetAutomationId(update, "update_" + id);
                 var tip = TipOf(node);
                 if (id == "ffmpeg")
-                    tip += "\n\n" + Lang.T("Версию FFmpeg выбирает драйвер NVIDIA: 8.0.1 - для драйвера 570 и новее, 9.x - только для 610 и новее; без карты NVIDIA - 8.0.1. Перед скачиванием окно покажет выбранный файл, его размер и причину выбора.");
+                    tip += "\n\n" + Lang.T("Версию FFmpeg выбирает драйвер NVIDIA: самая новая стабильная, не ниже 9.0.2, - без карты NVIDIA и с драйвером 610.88 и новее; ниже 610.88 - 8.0.1 или 7.1, при которых работает NVENC, и доступны не все операции. Перед скачиванием окно покажет выбранный файл, его размер и причину выбора.");
                 ToolTip.SetTip(update, tip);
                 update.IsEnabled = !_runner.Running && !_asking && !_clearing;
                 update.Click += (_, _) => Press(node, null);
@@ -98,7 +102,7 @@ public partial class MainWindow
             ? at.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture) : "";
         var again = new Button { Classes = { "small" }, Content = Lang.T("ПРОВЕРИТЬ СЕЙЧАС"), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 6, 0, 0) };
         Avalonia.Automation.AutomationProperties.SetAutomationId(again, "components_refresh");
-        ToolTip.SetTip(again, Lang.T("Спросить GitHub о свежих выпусках yt-dlp, deno и mpv сейчас. Сам он спрашивается не чаще раза в сутки."));
+        ToolTip.SetTip(again, Lang.T("Спросить GitHub о свежих выпусках yt-dlp, deno, mpv, FFmpeg и 7-Zip сейчас. Сам он спрашивается не чаще раза в сутки."));
         again.Click += async (_, _) =>
         {
             again.IsEnabled = false;
@@ -262,14 +266,15 @@ public partial class MainWindow
             var id = Text("id");
             // 7-Zip is a tool of the builder, not of a run: it stands in SETTINGS alone.
             if (id == "7zip") continue;
-            ComponentRow.Children.Add(Badge(id, Text("name"), Text("version"), Text("detail"), Text("latest"), Text("state"), Text("source"), Text("brand"), checkedAt));
+            ComponentRow.Children.Add(Badge(id, Text("name"), Text("version"), Text("detail"), Text("latest"), Text("state"), Text("source"), Text("brand"), Text("driver"), checkedAt));
         }
     }
 
-    static Control Badge(string id, string name, string version, string detail, string latest, string state, string source, string brand, string checkedAt)
+    static Control Badge(string id, string name, string version, string detail, string latest, string state, string source, string brand, string driver, string checkedAt)
     {
         var dot = new Ellipse { Classes = { "dot" } };
         dot.Classes.Set("ok", state is "fresh" or "own");
+        dot.Classes.Set("warn", state == "limited");
         dot.Classes.Set("bad", state is "old" or "missing");
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center, Children = { dot } };
         var mark = Icons.Mark(MarkOf(id, brand));
@@ -284,9 +289,9 @@ public partial class MainWindow
         {
             "fresh" => Lang.T("Это свежий выпуск."),
             "old" => Lang.F("Вышел более новый выпуск: {0}. Обновить - в SETTINGS.", latest),
-            "own" => id == "gpu"
-                ? Lang.T("Драйвер видеокарты ставите вы: программа его не сравнивает, только показывает. От него зависит сборка FFmpeg с NVENC.")
-                : Lang.T("Сборку FFmpeg выбираете вы - под драйвер NVIDIA: программа её не сравнивает, только показывает."),
+            "limited" => Lang.F("Драйвер NVIDIA {0} ниже 610.88 - LTS-драйвера, под который собраны программы: стоит FFmpeg {1}, при которой работает NVENC, и доступны не все операции.", driver, version),
+            "own" when id == "cineraw" => Lang.T("Собран из исходников libcraw при сборке программы; СЕРВИС - Установить проявку ProRes RAW собирает его заново. Версия - коммит libcraw, свежесть не сравнивается."),
+            "own" => Lang.T("Драйвер видеокарты ставите вы: программа его не сравнивает, только показывает. От него зависит сборка FFmpeg с NVENC."),
             "missing" => Lang.T("Не установлен: установить - в меню СЕРВИС или в SETTINGS."),
             _ => Lang.T("Свежесть не проверена: GitHub не ответил."),
         });

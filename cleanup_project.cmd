@@ -66,9 +66,9 @@ echo It keeps downloaded content (output\Download), LUTs, scripts, documentation
 echo It removes generated workspace content, build/runtime payloads, downloaded tool payloads and caches:
 echo   - input, output (but output\Download), logs, report, workspace contents
 echo   - runtime, wheelhouse, install\download contents, including cached 7-Zip distributives
-echo   - Tools\ffmpeg, Tools\mpv, Tools\yt-dlp, Tools\deno, Tools\7zip contents
+echo   - Tools\ffmpeg, Tools\mpv, Tools\yt-dlp, Tools\deno, Tools\7zip, Tools\cineraw contents
 echo   - the state of the window and the machine: window settings and forms, path history, the sealed and the open
-echo     cookies, the download archive, the caches of components, LUTs and hardware
+echo     cookies, the download archive, the terminal history, the caches of components, LUTs and hardware
 echo   - root/runtime/system_core cache folders: .runtime, _runtime, ._runtime, __pycache__
 echo   - root pytest/mypy/ruff caches, root build/dist folders
 echo   - system_core\fzf.exe: step 03 of the builder brings it back
@@ -126,6 +126,7 @@ call :ClearDir "%BASE_DIR%\Tools\ffmpeg"
 call :RemoveFilesInDirByPattern "%BASE_DIR%\Tools" "ffmpeg-*-source.tar.gz"
 call :ClearDir "%BASE_DIR%\Tools\mpv"
 call :RemoveFilesInDirByPattern "%BASE_DIR%\Tools" "mpv-*-source.tar.gz"
+call :ClearDir "%BASE_DIR%\Tools\cineraw"
 call :ClearDir "%BASE_DIR%\Tools\yt-dlp"
 call :ClearDir "%BASE_DIR%\Tools\deno"
 call :ClearDir "%BASE_DIR%\Tools\7zip"
@@ -143,6 +144,7 @@ call :RemoveFile "%BASE_DIR%\system_core\fzf.exe"
 call :RemoveFile "%BASE_DIR%\config\hardware_capabilities_cache.json"
 call :RemoveFile "%BASE_DIR%\config\window_settings.json"
 call :RemoveFile "%BASE_DIR%\config\path_history.json"
+call :RemoveFile "%BASE_DIR%\config\terminal_commands.json"
 call :RemoveFile "%BASE_DIR%\config\components_cache.json"
 call :RemoveFile "%BASE_DIR%\config\gui_lut_cache.json"
 call :RemoveFile "%BASE_DIR%\config\cookies.dpapi"

@@ -10,6 +10,7 @@ import shutil
 import subprocess
 
 from .ansi_terminal import ansi_status
+from .camera_raw import Raw, develops, ffmpeg_reads, hint, raw_of, refuses, stray_raw
 from .encoder_backends import (
     AUTO_PIX_FMTS,
     HARDWARE_ENCODE_BACKENDS,
@@ -415,6 +416,44 @@ def source_files(service: str, params: dict[str, Any], source: Path) -> list[Pat
     return _media_files(source, _media_extensions_for(service_name, params))
 
 
+def _some(paths: list[Path], name=lambda path: path.name) -> str:
+    return ", ".join(name(path) for path in paths[:3]) + (f" and {len(paths) - 3} more" if len(paths) > 3 else "")
+
+
+def _append_camera_raw_checks(root: Path, service_name: str, params: dict[str, Any], source: Path, files: list[Path],
+                              checks: list[dict[str, str]]) -> None:
+    """Camera RAW the program does not develop (core\\camera_raw.py, config\\camera_raw.yaml), said with what opens it:
+    of the files the operation takes, what it refuses - all of them refused, some said here and failed one by one in the
+    run; and the files of camera RAW in the Source that no operation takes."""
+    taken = files[:1] if _as_bool(params.get("limit_first_file")) else files
+    ffprobe, ffprobe_ok = _tool(root, "Tools/ffmpeg/bin/ffprobe.exe", "ffprobe")
+    reads = ffmpeg_reads(ffprobe) if ffprobe_ok else None
+    refused: dict[str, list[tuple[Path, Raw]]] = {}
+    developed: list[Path] = []
+    for path in taken:
+        raw = raw_of(path, reads)
+        if raw and refuses(service_name, raw):
+            if develops(root, service_name, raw):
+                developed.append(path)
+            else:
+                refused.setdefault(raw.kind, []).append((path, raw))
+    if developed:
+        checks.append(_issue("OK", "camera RAW", f"ProRes RAW is developed first on the video card by cineraw: {_some(developed)}"))
+    every = sum(len(items) for items in refused.values()) == len(taken)
+    for items in refused.values():
+        raw = items[0][1]
+        named = _some([path for path, _raw in items], lambda path: f"{path.name} ({dict(items)[path].name})")
+        checks.append(_issue("ERROR" if every else "WARN", "camera RAW",
+                             f"the program does not {'develop' if raw.read else 'read'} {named}: {hint(raw)}"))
+    if not _media_extensions_for(service_name, params) & VIDEO_CONTAINER_EXTENSIONS:
+        return
+    for paths in stray_raw(source).values():
+        raw = raw_of(paths[0])
+        if raw:
+            checks.append(_issue("WARN" if taken else "ERROR", "camera RAW",
+                                 f"{len(paths)} file(s) of {raw.name} are not taken ({_some(paths)}): {hint(raw)}"))
+
+
 def _remux_pair(params: dict[str, Any]) -> tuple[str, str]:
     source_format = str(params.get("remux_source_format", "") or "").strip().lower()
     target_format = str(params.get("remux_target_format", "") or "").strip().lower()
@@ -500,6 +539,8 @@ def run_preflight(context: Any) -> dict[str, Any]:
                 checks.append(_issue("OK", "Source files", f"{len(files)} matching file(s); planned: {planned}; extensions: {', '.join(sorted(extensions))}"))
             else:
                 checks.append(_issue("ERROR", "Source files", f"No matching file(s) in {source}; extensions: {', '.join(sorted(extensions))}"))
+        if source.exists():
+            _append_camera_raw_checks(root, service_name, params, source, source_files, checks)
         _append_dav1d_source_check(root, params, source_files, checks)
         if output.exists() and not output.is_dir():
             checks.append(_issue("ERROR", "output", f"Output path is not a folder: {output}"))

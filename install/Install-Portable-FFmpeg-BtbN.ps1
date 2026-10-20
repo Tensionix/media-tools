@@ -3,8 +3,7 @@
   Audion Media Tools - install portable BtbN FFmpeg into Tools\ffmpeg.
 
 .DESCRIPTION
-  Adapted from Audion VapourSynth Engine Lite's working FFmpeg installer.
-  Pulls the latest matching win64 FFmpeg release-branch build, extracts to Tools\ffmpeg,
+  Resolves the selected win64 FFmpeg release-branch build, extracts to Tools\ffmpeg,
   exposes bin\ffmpeg.exe and bin\ffprobe.exe.
 
   Master/nightly assets are never selected. Source Auto = BtbN release branch
@@ -48,16 +47,15 @@ Write-Host "[PRECHECK] 7-Zip ready: $SevenZipPath"
 
 $LegacyReleaseSeries = '7.1'
 $CurrentReleaseSeries = '8.0'
-$LatestReleaseSeries = '8.1'
+# The newest series from the LTS driver 610.88 and without NVIDIA, an older one below it - as the Gyan installer chooses
+# (its head says why, 18.10.2026); this is the emergency path - by default the Gyan installer takes over (exit 20).
+$LatestReleaseSeries = '9.0'
 $LegacyStableMinimumDriver = [version]'471.41'
 $CurrentStableMinimumDriver = [version]'570.0'
 $LatestStableMinimumDriver = [version]'610.0'
+$GoldenDriver = [version]'610.88'
 $UnsupportedDriverExitCode = 21
-# The default is the driver-compatible series, not the newest one: 8.1+ is
-# built against NVENC headers that require driver 610, which is installed on
-# very few machines. Raise this when 610 becomes common, not when the next
-# FFmpeg ships - see FFmpeg-Driver-Fallback-Policy.md.
-$PreferredStableSeries = $CurrentReleaseSeries
+$PreferredStableSeries = $LatestReleaseSeries
 
 function Get-NvidiaDriverState {
     $present = $false
@@ -108,18 +106,16 @@ if ($nvidia.Present) {
     if ($parsedDriver -lt $CurrentStableMinimumDriver) {
         $PreferredStableSeries = $LegacyReleaseSeries
         Write-Host "[POLICY] NVIDIA driver $($nvidia.Driver): selecting BtbN $PreferredStableSeries compatible release branch."
-    } elseif ($parsedDriver -lt $LatestStableMinimumDriver) {
+    } elseif ($parsedDriver -lt $GoldenDriver) {
         $PreferredStableSeries = $CurrentReleaseSeries
         Write-Host "[POLICY] NVIDIA driver $($nvidia.Driver): selecting BtbN $PreferredStableSeries compatible release branch."
+        Write-Host "[WARN] NVIDIA driver $($nvidia.Driver) is below $GoldenDriver, the LTS driver the programs are built for: FFmpeg $PreferredStableSeries is installed so that NVENC works, and not every operation is possible."
     } else {
         $PreferredStableSeries = $LatestReleaseSeries
         Write-Host "[POLICY] NVIDIA driver $($nvidia.Driver): selecting BtbN $PreferredStableSeries compatible release branch."
     }
 } else {
-    # This machine builds a product for other people's machines, so an
-    # unmeasurable driver gets the compatible default, not the newest branch.
-    $PreferredStableSeries = $CurrentReleaseSeries
-    Write-Host "NVIDIA GPU: not detected; selecting BtbN $PreferredStableSeries release branch - the default that runs on driver 570 and newer."
+    Write-Host "NVIDIA GPU: not detected; selecting BtbN $PreferredStableSeries release branch without an NVENC driver gate."
 }
 
 if (-not (Test-Path $DLDir)) { New-Item -Path $DLDir -ItemType Directory -Force | Out-Null }

@@ -47,14 +47,15 @@ sections:
   - id: encode
     title: "ENCODE"
     title_ru: "КОДИРОВАНИЕ"
-    about: "Archive, editing, storage, delivery"
-    about_ru: "Архив, монтаж, хранение, доставка"
+    about: "Archive, editing, storage, delivery, RAW"
+    about_ru: "Архив, монтаж, хранение, доставка, RAW"
     icon: film
     modes:
       - {op: archive_run, title: "ARCHIVE", title_ru: "АРХИВ"}
       - {op: editing_run, title: "EDITING", title_ru: "МОНТАЖ"}
       - {op: storage_run, title: "STORAGE", title_ru: "ХРАНЕНИЕ"}
       - {op: delivery_run, title: "DELIVERY", title_ru: "ДОСТАВКА"}
+      - {op: raw_develop_run, title: "RAW", title_ru: "RAW"}
 
   - id: package
     title: "PACKAGE"
@@ -132,6 +133,7 @@ service:
   - install_ffmpeg
   - install_ytdlp
   - install_mpv
+  - install_cineraw
 
 details:
   - probe_source

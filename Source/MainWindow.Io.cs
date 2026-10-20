@@ -16,9 +16,9 @@ namespace AudionMediaTools;
 
 /// <summary>
 /// The working paths: what the operations read (the Source - a folder, or one file) and where they
-/// write (the Target). Every operation of every section reads these two and no other. The last
-/// choice is kept for the next start. A path inside the program is shown from its root; the window
-/// keeps the full one.
+/// write (the Target). Every operation of every section reads these two and no other. The next
+/// start opens on input and output of the program; a path chosen last comes back only when it is
+/// pinned. A path inside the program is shown from its root; the window keeps the full one.
 ///
 /// The history of paths and its pins are the file the window on NiceGUI kept
 /// (config\path_history.json): what was pinned there is pinned here. A path may be pinned, and a
@@ -168,7 +168,9 @@ public partial class MainWindow
 
     /// <summary>
     /// The folders every project has, the history of paths, and the two paths the window opens on:
-    /// the ones chosen last, when they are still there; `input` and `output` of the program otherwise.
+    /// `input` and `output` of the program; the ones chosen last only when they are pinned and still
+    /// there (the owner, 20.10.2026: «после перезагрузки расположение Input ... нужно каждый раз
+    /// сбрасывать - есть же кнопка Pin»).
     /// </summary>
     void StartIo()
     {
@@ -184,8 +186,9 @@ public partial class MainWindow
         _history = new PathHistory(file);
         _history.EnsureInitial(DefaultSource, DefaultTarget);
 
-        var source = _settings.SourceFolder.Length > 0 && (Directory.Exists(_settings.SourceFolder) || File.Exists(_settings.SourceFolder)) ? _settings.SourceFolder : DefaultSource;
-        var target = _settings.TargetFolder.Length > 0 ? _settings.TargetFolder : DefaultTarget;
+        bool Pinned(string path, bool source) => path.Length > 0 && _history.IsPinned(source, Paths.Full(path));
+        var source = Pinned(_settings.SourceFolder, true) && (Directory.Exists(_settings.SourceFolder) || File.Exists(_settings.SourceFolder)) ? _settings.SourceFolder : DefaultSource;
+        var target = Pinned(_settings.TargetFolder, false) ? _settings.TargetFolder : DefaultTarget;
         SetSource(source);
         SetTarget(target);
     }

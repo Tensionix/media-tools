@@ -682,6 +682,10 @@
         <Style Selector="ScrollViewer#SectionScroll /template/ ScrollBar#PART_VerticalScrollBar">
             <Setter Property="Margin" Value="0,34,0,0"/>
         </Style>
+        <!-- A sheet's too (SETTINGS, ABOUT, SETUP): the ✕ stands over the corner, the bar begins under it. -->
+        <Style Selector="ScrollViewer#SheetScroll /template/ ScrollBar#PART_VerticalScrollBar">
+            <Setter Property="Margin" Value="0,22,0,0"/>
+        </Style>
         <!-- Menus open in a window of their own and do not inherit the window's
              font: without this they came out in the default, larger than the rest. -->
         <Style Selector="MenuItem">

@@ -9,8 +9,9 @@ One line of JSON: {"components": [...], "checked": "<when GitHub was asked>"}. A
   id, name     yt-dlp, deno, mpv, ffmpeg, 7zip, gpu
   version      as the component says it of itself ("" - it is not there)
   latest       the tag of its newest release ("" - not compared, or not known)
-  state        fresh / old - compared; own - not compared on purpose (FFmpeg and the driver are chosen by the user: the
-               build of FFmpeg follows the NVIDIA driver); missing - not installed; unknown - GitHub did not answer
+  state        fresh / old - compared; own - not compared on purpose (the driver is the user's); limited - FFmpeg of an
+               NVIDIA driver below the LTS 610.88: the older branch that keeps NVENC working, not every operation possible
+               (`driver` says which); missing - not installed; unknown - GitHub did not answer
   source       where the newest release is read: https://github.com/<repo>/releases/latest
   brand        the maker of a GPU: nvidia, intel, amd
 
@@ -40,7 +41,21 @@ RELEASES = {
     "deno": "denoland/deno",
     "mpv": "shinchiro/mpv-winbuild-cmake",
     "7zip": "ip7z/7zip",
+    "ffmpeg": "GyanD/codexffmpeg",
 }
+
+# FFmpeg by the NVIDIA driver (install\Install-Portable-FFmpeg-Gyan.ps1 holds the same, 18.10.2026): the newest Gyan stable,
+# FFMPEG_FLOOR at least, without an NVIDIA card and from the LTS driver GOLDEN_DRIVER; below it the branch that keeps NVENC
+# working - and not every operation is possible. The owner: "600-я серия драйверов уже окрепла и 610.88 стала LTS golden
+# версией... собирать на основе драйвера, предупреждая, что при отсутствии минимально допустимого драйвера 610.88 для
+# всех возможностей, будут возможны не все операции"; "Закреплять не стоит. Если выйдет 9.1.0 - надо его ставить?"
+FFMPEG_FLOOR = "9.0.2"
+GOLDEN_DRIVER = "610.88"
+
+
+def driver_below_golden(driver: str) -> bool:
+    """An NVIDIA driver below the LTS one: its FFmpeg is an older branch, not every operation is possible."""
+    return bool(driver) and _plain(driver) < _plain(GOLDEN_DRIVER)
 
 
 def _quiet(command: list[str], timeout: float = 15) -> str:
@@ -86,6 +101,19 @@ def own_versions(root: Path) -> list[dict[str, Any]]:
 
     seven = next((path for path in (tools / "7zip" / "bin" / "7za.exe", tools / "7zip" / "bin" / "7z.exe", tools / "7zip" / "7z.exe") if path.exists()), None)
     found.append({"id": "7zip", "name": "7-Zip", "version": _first(r"7-Zip(?: \(\w\))? (\d+\.\d+)", _quiet([str(seven)])) if seven else ""})
+
+    # cineraw comes with the program: step 15 of the builder builds it from libcraw (install\Install-Cineraw.ps1), no video
+    # card needed for that; SERVICE - Install ProRes RAW development builds it again, for another commit of libcraw. Said
+    # when it is there - a machine without a card for it has no use of a red dot. Its version is the commit of libcraw.
+    cineraw = tools / "cineraw"
+    if (cineraw / "cineraw.exe").exists():
+        try:
+            told = json.loads((cineraw / "cineraw-source.json").read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            told = {}
+        commit = str(told.get("upstream_commit") or "")[:7]
+        found.append({"id": "cineraw", "name": "cineraw", "version": commit or "built",
+                      "detail": f"libcraw {commit}, FFmpeg {told.get('ffmpeg_version') or '?'}: ProRes RAW developed on the video card"})
 
     found.extend(gpus())
     return found
@@ -167,6 +195,7 @@ def report(root: Path, latest: bool = False, refresh: bool = False, now: datetim
             (root / CACHE).write_text(json.dumps({"checked": checked, "latest": known}, ensure_ascii=False, indent=2), encoding="utf-8")
 
     components = own_versions(root)
+    nvidia = next((card.get("version", "") for card in components if card["id"] == "gpu" and card.get("brand") == "nvidia"), "")
     for component in components:
         name = component["id"]
         component["latest"] = known.get(name, "")
@@ -175,6 +204,8 @@ def report(root: Path, latest: bool = False, refresh: bool = False, now: datetim
             component["state"] = "missing"
         elif name not in RELEASES:
             component["state"] = "own"
+        elif name == "ffmpeg" and driver_below_golden(nvidia):
+            component["state"], component["driver"] = "limited", nvidia
         elif not component["latest"]:
             component["state"] = "unknown"
         else:

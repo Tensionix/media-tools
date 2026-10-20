@@ -2,6 +2,32 @@
 
 [Русский](CHANGELOG_RU.md) · [About](README_EN.md) · [User guide](USER_GUIDE_EN.md)
 
+## 3.1.0 — 18 October 2026
+
+**FFmpeg by the NVIDIA driver.** Without an NVIDIA card and with the LTS driver 610.88 and newer the newest stable Gyan
+build is installed, 9.0.2 at least; a newer one that fails the NVENC test goes back to 9.0.2. Below 610.88 an older
+branch (8.0.1 or 7.1) keeps NVENC working, and the installer, the window before the download and the amber dot of
+FFmpeg in the header say that not every operation is possible. The sources of a former FFmpeg build are removed once
+the new build's are in place.
+
+**Camera RAW.** The program says what opens it instead of a flat green frame or an error of FFmpeg. ProRes RAW ENCODE,
+FRAME RATE and COLOR refuse — FFmpeg gives the signal of the sensor without the white balance and the matrix of the
+camera — and CUT, PACKAGE and AUDIO take it as it is. ARRIRAW, Sony RAW and X-OCN (known by the header of the MXF), RED
+R3D, Nikon N-RAW, Blackmagic RAW and Canon Cinema RAW FFmpeg does not read: CUT and PACKAGE refuse them too, and their
+files, which no operation takes, are named in the preflight. A Source of RAW alone is refused before the run, among other
+videos such a file fails by itself. The line names the program and its download page (DaVinci Resolve, Final Cut Pro,
+ARRI Reference Tool, REDCINE-X PRO, Blackmagic RAW Player, Sony RAW Viewer, Canon Cinema RAW Development); the table is
+`config\camera_raw.yaml`.
+
+**ProRes RAW on the video card.** SERVICE → "Install ProRes RAW development" builds cineraw of libcraw from its sources
+(about 185 MB downloaded, 5 minutes; MSYS2 only for the build), and ProRes RAW is developed as it was shot — the white
+balance and the colour matrix of the camera — on a card with Vulkan 1.4 (NVIDIA RTX). ENCODE → RAW writes it into
+ProRes 4444, DNxHR 444, H.264 or H.265 with the sound, the timecode and BT.709; ENCODE, FRAME RATE and COLOR take ProRes
+RAW, developing it first. The pieces of a clip develop side by side, no frame touches the disk, the joins are exact to
+the frame; 4.2K on an RTX 5070 — about 5 frames a second.
+
+**The header.** A newer FFmpeg is marked, as yt-dlp, Deno and mpv are; SETTINGS → COMPONENTS updates it.
+
 ## 3.0.0 — 15 October 2026
 
 **A new window.** The window is a program of its own — C# on Avalonia, `App\AudionMediaTools.exe`, started by

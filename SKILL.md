@@ -86,6 +86,7 @@ The ribbon of the window, each mode with the call that does the same:
 | ENCODE | EDITING | `media_cli.cmd run --operation editing_run` |
 | ENCODE | STORAGE | `media_cli.cmd run --operation storage_run` |
 | ENCODE | DELIVERY | `media_cli.cmd run --operation delivery_run` |
+| ENCODE | RAW | `media_cli.cmd run --operation raw_develop_run` |
 | PACKAGE | VIDEO | `media_cli.cmd run --operation remux_run --set remux_stream_mode=video` |
 | PACKAGE | AUDIO | `media_cli.cmd run --operation remux_run --set remux_stream_mode=audio` |
 | PACKAGE | VIDEO AND AUDIO | `media_cli.cmd run --operation remux_run --set remux_stream_mode=video_audio` |
@@ -117,9 +118,10 @@ SOURCE INFO, SERVICE and the buttons beside a field:
 | `hardware_capabilities` | Hardware capabilities: Run short FFmpeg smoke tests for CPU, QSV/NVENC/AMF H.264 and HEVC, SVT-AV1 and dav1d. |
 | `preset_test_matrix` | Preset Test Matrix: Run portable 1-second smoke tests across audio, remux, FPS, LUT, archive, editing, storage and delivery presets. |
 | `install_7zip` | Install 7-Zip: Install or refresh portable 7-Zip; required before FFmpeg 7z payloads. |
-| `install_ffmpeg` | Install FFmpeg: Install or refresh portable FFmpeg Gyan GPL payload into Tools/ffmpeg. |
+| `install_ffmpeg` | Install FFmpeg: Install or refresh the portable FFmpeg of Gyan (GPL) in Tools\ffmpeg by the NVIDIA driver: the newest stable, 9.0.2 at least, without an NVIDIA card and from the LTS driver 610.88; below it 8.0.1 (570-610.87) or 7.1 so that NVENC works, and not every operation is possible. |
 | `install_ytdlp` | Install yt-dlp: Install or refresh portable yt-dlp and Deno into Tools. |
 | `install_mpv` | Install mpv: Install or refresh portable mpv into Tools/mpv: the player of the trim. |
+| `install_cineraw` | Install ProRes RAW development: Build cineraw of libcraw into Tools/cineraw from its sources: a portable MSYS2 for the build (about 185 MB downloaded, 5 minutes), removed afterwards; cineraw develops ProRes RAW on a video card with Vulkan 1.4 (NVIDIA RTX). |
 | `youtube_formats` | Formats of the link: What formats the link offers - resolution, codecs, size - listed in the journal, nothing downloaded. One of them is taken with the profile Own video. |
 | `youtube_cookies_import` | Take under DPAPI: The cookies file of the field Cookies file sealed with DPAPI for this account of Windows into config\cookies.dpapi: downloads with Cookies - File take this copy, and the open file is no longer needed. |
 <!-- /map -->
@@ -136,7 +138,7 @@ What each section is for, and the preset to begin with (all of them: `Docs\OPERA
 | PACKAGE → SUBTITLES `subtitles_extract` | the subtitle streams to `.mks` | - |
 | AUDIO `audio_run` | sound out of a video (`extract`), converted inside it with the picture copied (`in_video`), or sound files converted (`audio_files`) | `audio_profile=copy_auto` (as it is), `wav_24_48`, `flac_24_48`, `m4a384`, `lufs14_m4a` (loudness -14), `lufs_report` (measure only) |
 | CUT `trim_run` | keep a piece, cut one out, split - without loss | `trim_file=NAME`, `trim_action=keep|cut|split`, `trim_start`, `trim_end` (`00:00:05,000` or seconds); the start lands on a keyframe, the end on the exact frame |
-| FRAME RATE `fps_run` | to 23.976 | `fps_mode=varispeed` (slowed, every frame kept, sound follows) or `conform` (frames dropped or doubled, speed kept), `fps_target=24000/1001` |
+| FRAME RATE `fps_run` | to 23.976 | `fps_mode=varispeed` (every frame kept, the sound follows the speed and its pitch moves) or `conform` (every frame kept, the sound stretched and its pitch kept), `fps_target=24000/1001` |
 | COLOR `grading_run` | a LUT, a gamma before it, HDR to SDR | `lut_file=LUTs\NAME.cube`, `grading_profile=lut_x264`; `preexpose_x264`, `pregamma_hevc10`, `hdr_hable_x264` |
 | DOWNLOAD `youtube_run` | a video or its sound by a link | `youtube_url=LINK`, `youtube_profile=best_mp4`; `safe_mp4` for a link that breaks off; `audio_custom` + `youtube_audio_format=m4a`; `youtube_source_mode=batch` takes `input\urls.txt` |
 
@@ -168,7 +170,15 @@ The encoder of ENCODE, FRAME RATE and COLOR is `encode_backend=cpu|cuda|amd|qsv`
 A file already in the Target is passed by unless `--set overwrite=true`: the journal says `[SKIP] NAME already exists and
 Overwrite is off`, FFmpeg is not started for it, and the outcome counts it in `skipped`, not in `processed` - a second run
 into the same Target reads `done` with `processed` 0. A file of a kind the operation does not take is skipped with its
-reason in the journal too. Two sources of one name in one run - `take.flac` and `take.wav` to M4A - write two files: the
+reason in the journal too. ProRes RAW is developed on the video card by cineraw once `install_cineraw` has built it into
+`Tools\cineraw` (`system_core\services\raw_develop.py`): `raw_develop_run --set raw_target=prores4444|dnxhr444|h264|h265`
+writes it as it was shot, and ENCODE, FRAME RATE and COLOR develop it first into a ProRes 4444 master they read
+(`[RAW] ... developed first`); a machine without a Vulkan 1.4 card that reads storage images without a format (NVIDIA RTX)
+gets the reason in a `[FAIL]` line. Without cineraw ProRes RAW is refused by ENCODE, FRAME RATE and COLOR and copied by
+CUT and PACKAGE. Other camera RAW is not developed (`system_core\core\camera_raw.py`, the table `config\camera_raw.yaml`):
+ARRIRAW, Sony RAW / X-OCN, R3D, N-RAW, BRAW and Canon Cinema RAW are read by no operation - the `[PREFLIGHT] ... camera
+RAW` line names the program that opens the file and its page; tell the person that, do not look for a way round. Two
+sources of one name in one run - `take.flac` and `take.wav` to M4A - write two files: the
 second gets the extension of its own (`take_wav.m4a`), and the journal says so. A result that would be one of its own
 sources is refused before FFmpeg starts, Overwrite or not.
 
@@ -208,6 +218,8 @@ sources is refused before FFmpeg starts, Overwrite or not.
   screen (an installed PowerShell 7: `App\AudionPs.exe` has no WindowsDesktop assemblies);
   `Source\Tools\shots.ps1` walks a Debug build by steps and pictures it. Never the real mouse.
 - The environment: `install\verify_portable_env.cmd` (the builder's step 71).
+- The download pages of the programs that open camera RAW: `runtime\python.exe tests\probe_raw_pages.py` (on the
+  network, now and then; MOVED - put the new address into `config\camera_raw.yaml`).
 
 ### Build
 

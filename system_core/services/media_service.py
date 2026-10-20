@@ -24,6 +24,7 @@ from system_core.core.audio_contract import (
     resample_filter_args,
     soxr_resample_filter,
 )
+from system_core.core.camera_raw import develops, ffmpeg_reads, hint, raw_of, refuses
 from system_core.core.encoder_backends import (
     decode_args as _backend_decode_args,
     decode_backend_from_params as _decode_backend,
@@ -51,6 +52,7 @@ from system_core.core.logging_utils import timestamp
 from system_core.core.manifest import CommandNode, load_manifest
 from system_core.core.path_cache import cached_output_path, cached_source_path, only_formats
 from system_core.core.script_profiles import load_script_profiles, script_profile
+from system_core.services import raw_develop
 from system_core.core.trim_contract import (
     audio_channel_complaint,
     audio_channel_filter,
@@ -280,13 +282,45 @@ def _safe_suffix(value: str) -> str:
 def _source_relative_parent(source: Path, source_root: Path | None) -> Path:
     if source_root is None:
         return Path()
+    # A ProRes RAW master in the workspace stands for its source.
+    source = raw_develop.original_of(source)
     try:
         return source.resolve().parent.relative_to(source_root.resolve())
     except (OSError, ValueError):
         return Path()
 
 
+def _without_camera_raw(context: JobContext, files: list[Path], source_dir: Path, service: str) -> tuple[list[Path], int]:
+    """The files a service takes without the camera RAW it refuses (core\\camera_raw.py: the services that decode the
+    picture - every one, the ones that copy the stream - what FFmpeg does not read): each said in one line with what
+    opens it and failed, the rest go on; the preflight has said it before the run."""
+    reads = ffmpeg_reads(_ffprobe(context.paths.root))
+    kept: list[Path] = []
+    for path in files:
+        raw = raw_of(path, reads)
+        if raw and refuses(service, raw):
+            label = _source_display_name(path, source_dir)
+            if develops(context.paths.root, service, raw):
+                # cineraw develops it on the video card into a ProRes 4444 master the service reads; the result is named
+                # and placed as the source (raw_develop.original_of), the master goes when the run ends.
+                if _as_bool(context.operation.parameters.get("dry_run"), False):
+                    context.log(f"[DRY RUN] {label}: {raw.name} would be developed first on the video card by cineraw.")
+                    kept.append(path)
+                    continue
+                try:
+                    kept.append(raw_develop.develop_master(context, path, label))
+                except RuntimeError as error:
+                    context.log(f"[FAIL] {label}: {raw.name} was not developed - {error}")
+                continue
+            done = "developed" if raw.read else "read"
+            context.log(f"[FAIL] {label}: {raw.name} is not {done} by the program - {hint(raw)}")
+        else:
+            kept.append(path)
+    return kept, len(files) - len(kept)
+
+
 def _source_display_name(source: Path, source_root: Path | None = None) -> str:
+    source = raw_develop.original_of(source)
     if source_root is not None:
         try:
             relative = source.resolve().relative_to(source_root.resolve()).as_posix()
@@ -922,6 +956,8 @@ INSTALLER_SCRIPTS = {
     "install_ffmpeg": ("Install-Portable-FFmpeg-Gyan.cmd", "portable FFmpeg Gyan Stable"),
     "install_ytdlp": ("Install-Portable-yt-dlp.cmd", "portable yt-dlp"),
     "install_mpv": ("Install-Portable-mpv.cmd", "portable mpv"),
+    # Built here from its sources: libcraw publishes no builds (install\Install-Cineraw.ps1).
+    "install_cineraw": ("Install-Cineraw.cmd", "cineraw - ProRes RAW on the video card"),
 }
 
 
@@ -942,11 +978,16 @@ def install_portable_mpv(context: JobContext) -> dict[str, object]:
     return _run_installer(context, *INSTALLER_SCRIPTS["install_mpv"])
 
 
+def install_cineraw(context: JobContext) -> dict[str, object]:
+    return _run_installer(context, *INSTALLER_SCRIPTS["install_cineraw"])
+
+
 def installer_plan(root: Path, operation: str) -> dict[str, object]:
     """What an installer of SERVICE would download, said by the script itself and nothing fetched: it runs to the point of
     its download (the release, the policy of the NVIDIA driver, the mirror) with AUDION_INSTALL_PLAN=1 and says every
     file - install\\Plan-Download.ps1: "[PLAN] component|file|url|bytes"; "cache" for an url is a verified archive at
-    hand. The window names the files, their source and their size before it runs the installer."""
+    hand. The window names the files, their source and their size before it runs the installer; a [WARN] of the policy
+    (FFmpeg under an NVIDIA driver below the LTS 610.88: not every operation is possible) is said with them."""
     if operation not in INSTALLER_SCRIPTS:
         raise ValueError(f"{operation!r} is no installer of SERVICE")
     script = Path(root) / "install" / INSTALLER_SCRIPTS[operation][0]
@@ -968,6 +1009,8 @@ def installer_plan(root: Path, operation: str) -> dict[str, object]:
                           "size": int(size) if size.isdigit() else None})
         elif line.startswith("[POLICY]"):
             notes.append(line[len("[POLICY]"):].strip())
+        elif line.startswith("[WARN] NVIDIA driver"):
+            notes.append(line[len("[WARN]"):].strip())
         elif line.startswith(("[ERROR]", "WARNING:", "[WARN]")) or "Exception" in line:
             trouble.append(line)
     ok = done.returncode == 0 and bool(files)
@@ -2701,6 +2744,9 @@ def encode_targets(context: JobContext) -> dict[str, object]:
     files = _media_files(source_dir, extensions)
     if _as_bool(params.get("limit_first_file"), False):
         files = files[:1]
+    files, camera_raw_failed = _without_camera_raw(context, files, source_dir, "encode_targets")
+    if camera_raw_failed and not files:
+        return {"files": 0, "failed": camera_raw_failed}
 
     targets = _as_list(params.get("target_codecs"))
     if not targets:
@@ -2784,7 +2830,7 @@ def encode_targets(context: JobContext) -> dict[str, object]:
 
     # A file an archive target would not keep as it is was refused: the run says so, not green.
     return {"ok": refused == 0, "processed": processed, "skipped": skipped, "refused": refused, "files": len(files),
-            "targets": targets, "dry_run": dry_run}
+            "failed": camera_raw_failed, "targets": targets, "dry_run": dry_run}
 
 
 def _audio_stream_rows(root: Path, source: Path) -> list[dict[str, Any]]:
@@ -3585,6 +3631,9 @@ def remux_media(context: JobContext) -> dict[str, object]:
             "the pixels are copied untouched, and an editor turns the picture on playback."
         )
     files = _media_files(source_dir, _remux_candidate_extensions(stream_mode))
+    files, camera_raw_failed = _without_camera_raw(context, files, source_dir, "remux_media")
+    if camera_raw_failed and not files:
+        return {"files": 0, "failed": camera_raw_failed}
     if not files:
         context.log(f"No matching files in {source_dir}")
         return {"files": 0}
@@ -3593,7 +3642,7 @@ def remux_media(context: JobContext) -> dict[str, object]:
     dry_run = _as_bool(params.get("dry_run"), False)
     overwrite = _as_bool(params.get("overwrite"), True)
     processed = 0
-    failed = 0
+    failed = camera_raw_failed
     skipped = 0
     jobs: list[tuple[Path, str, str, list[str]]] = []
     for source in files:
@@ -3890,6 +3939,9 @@ def fps_convert(context: JobContext) -> dict[str, object]:
     output_dir = cached_output_path(root)
     extensions = _normalize_extensions(_as_list(params.get("input_formats"))) or {"mp4", "mov", "mkv", "mxf", "avi", "webm", "mts", "m2ts"}
     files = _media_files(source_dir, extensions)
+    files, camera_raw_failed = _without_camera_raw(context, files, source_dir, "fps_convert")
+    if camera_raw_failed and not files:
+        return {"files": 0, "failed": camera_raw_failed}
     if not files:
         context.log(f"No matching media files in {source_dir}")
         return {"files": 0}
@@ -3961,7 +4013,8 @@ def fps_convert(context: JobContext) -> dict[str, object]:
         processed += 1
         context.progress(index / len(files))
 
-    return {"processed": processed, "skipped": skipped, "files": len(files), "target": target_arg, "mode": mode, "dry_run": dry_run}
+    return {"processed": processed, "skipped": skipped, "files": len(files), "failed": camera_raw_failed, "target": target_arg,
+            "mode": mode, "dry_run": dry_run}
 
 
 def _color_default_target(script: str, profile: dict[str, Any] | None = None) -> str:
@@ -4026,6 +4079,9 @@ def run_color_grade(context: JobContext) -> dict[str, object]:
     files = _media_files(source_dir, extensions)
     if _as_bool(params.get("limit_first_file"), False):
         files = files[:1]
+    files, camera_raw_failed = _without_camera_raw(context, files, source_dir, "run_color_grade")
+    if camera_raw_failed and not files:
+        return {"files": 0, "failed": camera_raw_failed}
     if not files:
         context.log(f"No matching media files in {source_dir}")
         return {"files": 0}
@@ -4096,7 +4152,8 @@ def run_color_grade(context: JobContext) -> dict[str, object]:
             processed += 1
             context.progress((processed + skipped) / max(1, total))
 
-    return {"processed": processed, "skipped": skipped, "files": len(files), "targets": targets, "dry_run": dry_run}
+    return {"processed": processed, "skipped": skipped, "files": len(files), "failed": camera_raw_failed, "targets": targets,
+            "dry_run": dry_run}
 
 
 def _youtube_profile_args(profile: str, parallel: int) -> list[str]:
@@ -6541,6 +6598,9 @@ def _trim_media_run(context: JobContext) -> dict[str, object]:
         return {"ok": False, "files": 0}
     if _as_bool(params.get("limit_first_file"), False):
         files = files[:1]
+    files, camera_raw_failed = _without_camera_raw(context, files, source_dir, "trim_media")
+    if camera_raw_failed and not files:
+        return {"ok": False, "files": 0, "refused": camera_raw_failed}
 
     dry_run = _as_bool(params.get("dry_run"), False)
     overwrite = _as_bool(params.get("overwrite"), True)
@@ -6553,8 +6613,8 @@ def _trim_media_run(context: JobContext) -> dict[str, object]:
     gap_mode = _trim_pattern(params) == "middle"
     skipped = 0
     # A file or a row the planner refused is an error the operator has to see,
-    # unlike a result kept because Overwrite is off. The run's `ok` counts it.
-    refused = 0
+    # unlike a result kept because Overwrite is off. The run's `ok` counts it. Camera RAW is one of them.
+    refused = camera_raw_failed
     for source in files:
         file_params = dict(params)
         marks = per_file_points.get(source)

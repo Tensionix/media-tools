@@ -744,6 +744,10 @@ def execute_operation(
         try:
             result = _load_callable(operation.service)(context)
         finally:
+            # The ProRes RAW masters a service read (services\raw_develop.py) are gone with its run.
+            from system_core.services.raw_develop import release_masters
+
+            release_masters(paths.workspace)
             _prune_new_empty_folders([paths.output, paths.workspace], folders_before)
         # One rule for every service, whatever it leaves out: a run it says was cancelled is a stop, a file that failed
         # is a failure. A service returning `cancelled` and no `ok` read as done with a green status and exit code 0.
