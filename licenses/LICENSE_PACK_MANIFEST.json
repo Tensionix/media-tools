@@ -1,7 +1,7 @@
 {
   "schema": "audion.build_licenses.pack_manifest.v1",
-  "generated_utc": "2026-10-20T15:42:37Z",
-  "run_id": "20261020T154230Z_audion-media-tools_8613e932",
+  "generated_utc": "2026-10-21T00:45:41Z",
+  "run_id": "20261021T004534Z_audion-media-tools_fe0a6a4f",
   "project_id": "audion-media-tools",
   "project_name": "Audion Media Tools",
   "scan_root": ".",
@@ -9,7 +9,7 @@
   "files": [
     {
       "name": "THIRD_PARTY_NOTICES.txt",
-      "sha256": "90687f27d3ee26c6082c1f40796490561d4222d55fb78e4835232847438cee06",
+      "sha256": "a50e8416c59696b90583ff34d90e176ad90dfc4b55b5bce52b8e4ba6d411aa12",
       "size": 688410
     },
     {
@@ -19,18 +19,18 @@
     },
     {
       "name": "COMPONENTS.json",
-      "sha256": "ee4dced4b11780974d7ec450b0954d5a668a0ac4df21d1da30f8b514413bb2fe",
+      "sha256": "082c7a97cdb2571c8d424f476704cc1f0aea6a605afd9415a908a3a33cdab68d",
       "size": 187386
     },
     {
       "name": "_records.json",
-      "sha256": "c20b36a89b456af72d9988334f6a2fcfd84c31e3f25a3fcd6d0f35e8eb57c108",
+      "sha256": "d7e77259ff272bc3b0ba0b584522445b1b4689968acbaf017ac7dd124f249cdb",
       "size": 48982
     },
     {
       "name": "LICENSE_SCAN_REPORT.md",
-      "sha256": "c4cbce9172a62a01892e72d87bfe5cec8cf83be8c98c36eb37ccb004e283a2a9",
-      "size": 8858
+      "sha256": "f23004cf8d8ee661b97afe17c6f31569fed5154db3a067037544fc8e786c6c2a",
+      "size": 8889
     }
   ]
 }

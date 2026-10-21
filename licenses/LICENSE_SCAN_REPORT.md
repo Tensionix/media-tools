@@ -1,7 +1,7 @@
 # Audion Build Licenses Scan Report
 
 - Project: **Audion Media Tools** (`audion-media-tools`)
-- Run: `20261020T154230Z_audion-media-tools_8613e932`
+- Run: `20261021T004534Z_audion-media-tools_fe0a6a4f`
 - Scan root (from the project root): `.`
 - Output (from the project root): `licenses`
 - Status: **PASS**
@@ -17,7 +17,7 @@ No issues detected.
 
 | Component | Change | Old | New |
 |---|---|---:|---:|
-| 7-Zip | `UNCHANGED` | 26.4.0 | 26.4.0 |
+| 7-Zip | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.4.0 | 26.4.0 |
 | Audion launcher | `UNCHANGED` | bundled | bundled |
 | Avalonia | `UNCHANGED` | 12.1.4 | 12.1.4 |
 | Avalonia.Angle.Windows.Natives | `UNCHANGED` | 2.1.27548.20260419 | 2.1.27548.20260419 |
@@ -78,7 +78,7 @@ No issues detected.
 | mpv | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | mpv v0.41.0-1224-g6a262d11f | mpv v0.41.0-1224-g6a262d11f |
 | Newtonsoft.Json | `UNCHANGED` | 13.0.4 | 13.0.4 |
 | packaging | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.3 | 26.3 |
-| pip | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.2.1 | 26.2.1 |
+| pip | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.2.1 | 26.2.2 |
 | pip-tools | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 7.6.2 | 7.6.2 |
 | pluggy | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.7.0 | 1.7.0 |
 | Pygments | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 2.21.0 | 2.21.0 |
@@ -88,7 +88,7 @@ No issues detected.
 | PyYAML | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 6.0.3 | 6.0.3 |
 | runtime.native.System.Data.SqlClient.sni | `UNCHANGED` | 4.4.0 | 4.4.0 |
 | runtime.win-x64.runtime.native.System.Data.SqlClient.sni | `UNCHANGED` | 4.4.0 | 4.4.0 |
-| setuptools | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 84.2.0 | 84.2.0 |
+| setuptools | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 84.2.0 | 84.2.1 |
 | Simple Icons | `UNCHANGED` | 16.32.0 | 16.32.0 |
 | SkiaSharp | `UNCHANGED` | 3.119.4 | 3.119.4 |
 | SkiaSharp.NativeAssets.Win32 | `UNCHANGED` | 3.119.4 | 3.119.4 |

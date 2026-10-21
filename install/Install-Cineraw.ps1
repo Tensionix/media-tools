@@ -208,7 +208,7 @@ if ($help -notmatch 'usage: cineraw') { throw "cineraw.exe does not start outsid
 $record = [ordered]@{
     component = 'cineraw'
     version = 'libcraw-' + $LibcrawCommit.Substring(0, 7)
-    license = 'BSD-2-Clause (libcraw); LGPL-2.1-or-later (FFmpeg, no GPL parts); ZPL-2.1 and MIT (winpthreads)'
+    license = 'BSD-2-Clause (libcraw); LGPL-2.1-or-later (FFmpeg, no GPL parts); MIT and BSD-3-Clause (winpthreads)'
     upstream_commit = $LibcrawCommit
     upstream_url = "https://github.com/cyanreg/libcraw/commit/$LibcrawCommit"
     ffmpeg_version = $FfmpegVersion

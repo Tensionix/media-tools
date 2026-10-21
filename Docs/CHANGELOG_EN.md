@@ -2,6 +2,15 @@
 
 [Русский](CHANGELOG_RU.md) · [About](README_EN.md) · [User guide](USER_GUIDE_EN.md)
 
+## 3.1.1 — 21 October 2026
+
+**The licence of winpthreads named right.** The record `Tools\cineraw\cineraw-source.json` the installer of cineraw
+writes names it as its text does: MIT and, for the parts from Lockless Inc., BSD-3-Clause; it was "ZPL-2.1 and MIT".
+
+**The texts on cineraw.** The README, the guide and the tooltip of cineraw in the header of the window say that
+cineraw comes with the program - built from its sources when the program is built - and SERVICE → "Install ProRes RAW
+development" builds it again.
+
 ## 3.1.0 — 18 October 2026
 
 **FFmpeg by the NVIDIA driver.** Without an NVIDIA card and with the LTS driver 610.88 and newer the newest stable Gyan
@@ -19,12 +28,13 @@ videos such a file fails by itself. The line names the program and its download 
 ARRI Reference Tool, REDCINE-X PRO, Blackmagic RAW Player, Sony RAW Viewer, Canon Cinema RAW Development); the table is
 `config\camera_raw.yaml`.
 
-**ProRes RAW on the video card.** SERVICE → "Install ProRes RAW development" builds cineraw of libcraw from its sources
-(about 185 MB downloaded, 5 minutes; MSYS2 only for the build), and ProRes RAW is developed as it was shot — the white
-balance and the colour matrix of the camera — on a card with Vulkan 1.4 (NVIDIA RTX). ENCODE → RAW writes it into
-ProRes 4444, DNxHR 444, H.264 or H.265 with the sound, the timecode and BT.709; ENCODE, FRAME RATE and COLOR take ProRes
-RAW, developing it first. The pieces of a clip develop side by side, no frame touches the disk, the joins are exact to
-the frame; 4.2K on an RTX 5070 — about 5 frames a second.
+**ProRes RAW on the video card.** cineraw comes with the program: it is built from the sources of libcraw when the
+program is built, and SERVICE → "Install ProRes RAW development" builds it again (about 185 MB downloaded, 5 minutes;
+MSYS2 only for the build). ProRes RAW is developed as it was shot — the white balance and the colour matrix of the
+camera — on a card with Vulkan 1.4 (NVIDIA RTX). ENCODE → RAW writes it into ProRes 4444, DNxHR 444, H.264 or H.265 with
+the sound, the timecode and BT.709; ENCODE, FRAME RATE and COLOR take ProRes RAW, developing it first. The pieces of a
+clip develop side by side, no frame touches the disk, the joins are exact to the frame; 4.2K on an RTX 5070 — about 5
+frames a second.
 
 **The header.** A newer FFmpeg is marked, as yt-dlp, Deno and mpv are; SETTINGS → COMPONENTS updates it.
 

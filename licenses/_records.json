@@ -803,7 +803,7 @@
   },
   {
     "name": "pip",
-    "version": "26.2.1",
+    "version": "26.2.2",
     "license": "MIT",
     "source": "site-packages",
     "license_files": [
@@ -955,7 +955,7 @@
   },
   {
     "name": "setuptools",
-    "version": "84.2.0",
+    "version": "84.2.1",
     "license": "MIT",
     "source": "site-packages",
     "license_files": [
