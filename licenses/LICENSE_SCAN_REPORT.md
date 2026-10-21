@@ -1,7 +1,7 @@
 # Audion Build Licenses Scan Report
 
 - Project: **Audion Media Tools** (`audion-media-tools`)
-- Run: `20261021T004534Z_audion-media-tools_fe0a6a4f`
+- Run: `20261021T231544Z_audion-media-tools_0d993819`
 - Scan root (from the project root): `.`
 - Output (from the project root): `licenses`
 - Status: **PASS**
@@ -17,7 +17,7 @@ No issues detected.
 
 | Component | Change | Old | New |
 |---|---|---:|---:|
-| 7-Zip | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.4.0 | 26.4.0 |
+| 7-Zip | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.4.0 | 26.5.0 |
 | Audion launcher | `UNCHANGED` | bundled | bundled |
 | Avalonia | `UNCHANGED` | 12.1.4 | 12.1.4 |
 | Avalonia.Angle.Windows.Natives | `UNCHANGED` | 2.1.27548.20260419 | 2.1.27548.20260419 |
@@ -36,7 +36,7 @@ No issues detected.
 | cineraw | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | present-in-release | present-in-release |
 | click | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 8.5.0 | 8.5.0 |
 | colorama | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.4.6 | 0.4.6 |
-| Deno | `UNCHANGED` | 2.9.7 | 2.9.7 |
+| Deno | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 2.9.7 | 2.9.8 |
 | FFmpeg | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 9.0.2-full_build-www.gyan.dev | 9.0.2-full_build-www.gyan.dev |
 | fzf | `UNCHANGED` | bundled | bundled |
 | HarfBuzzSharp | `UNCHANGED` | 8.3.1.3 | 8.3.1.3 |
@@ -75,10 +75,10 @@ No issues detected.
 | Microsoft.Windows.Compatibility | `UNCHANGED` | 10.0.5 | 10.0.5 |
 | Microsoft.WSMan.Management | `UNCHANGED` | 7.6.7 | 7.6.7 |
 | Microsoft.WSMan.Runtime | `UNCHANGED` | 7.6.7 | 7.6.7 |
-| mpv | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | mpv v0.41.0-1224-g6a262d11f | mpv v0.41.0-1224-g6a262d11f |
+| mpv | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | mpv v0.41.0-1224-g6a262d11f | mpv v0.41.0-1227-ge471496c5 |
 | Newtonsoft.Json | `UNCHANGED` | 13.0.4 | 13.0.4 |
 | packaging | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.3 | 26.3 |
-| pip | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.2.1 | 26.2.2 |
+| pip | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 26.2.2 | 26.2.2 |
 | pip-tools | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 7.6.2 | 7.6.2 |
 | pluggy | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 1.7.0 | 1.7.0 |
 | Pygments | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 2.21.0 | 2.21.0 |
@@ -88,7 +88,7 @@ No issues detected.
 | PyYAML | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 6.0.3 | 6.0.3 |
 | runtime.native.System.Data.SqlClient.sni | `UNCHANGED` | 4.4.0 | 4.4.0 |
 | runtime.win-x64.runtime.native.System.Data.SqlClient.sni | `UNCHANGED` | 4.4.0 | 4.4.0 |
-| setuptools | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 84.2.0 | 84.2.1 |
+| setuptools | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 84.2.1 | 84.2.1 |
 | Simple Icons | `UNCHANGED` | 16.32.0 | 16.32.0 |
 | SkiaSharp | `UNCHANGED` | 3.119.4 | 3.119.4 |
 | SkiaSharp.NativeAssets.Win32 | `UNCHANGED` | 3.119.4 | 3.119.4 |
@@ -127,7 +127,7 @@ No issues detected.
 | System.Windows.Extensions | `UNCHANGED` | 10.0.5 | 10.0.5 |
 | Tmds.DBus.Protocol | `UNCHANGED` | 0.94.1 | 0.94.1 |
 | wheel | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 0.48.0 | 0.48.0 |
-| yt-dlp | `UNCHANGED` | 2026.8.19 | 2026.8.19 |
+| yt-dlp | `VERSION_OR_ARTIFACT_CHANGED_LICENSE_SAME` | 2026.8.19 | 2026.10.21 |
 
 ## Licence rules
 

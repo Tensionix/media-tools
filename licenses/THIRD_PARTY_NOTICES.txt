@@ -10,7 +10,7 @@ Repeated legal texts are included once and referenced by document ID.
 BUNDLED COMPONENTS
 --------------------------------------------------------------------------------
 1. 7-Zip
-   Version: 26.4.0
+   Version: 26.5.0
    License: GNU LGPL / BSD; unRAR restriction where included; see bundled 7-Zip license
    Source type: optional-tool
    Provider: not recorded
@@ -143,7 +143,7 @@ BUNDLED COMPONENTS
    Legal documents: L-cac35c02686e
 
 20. Deno
-   Version: 2.9.7
+   Version: 2.9.8
    License: MIT; bundled runtime dependencies require review
    Source type: optional-tool
    Provider: not recorded
@@ -416,7 +416,7 @@ BUNDLED COMPONENTS
    Legal documents: L-882c3d656c34
 
 59. mpv
-   Version: mpv v0.41.0-1224-g6a262d11f
+   Version: mpv v0.41.0-1227-ge471496c5
    License: GPL v2 or later
    Source type: optional-tool
    Provider: not recorded
@@ -780,7 +780,7 @@ BUNDLED COMPONENTS
    Legal documents: L-30c236186791
 
 111. yt-dlp
-   Version: 2026.8.19
+   Version: 2026.10.21
    License: Unlicense
    Source type: optional-tool
    Provider: not recorded

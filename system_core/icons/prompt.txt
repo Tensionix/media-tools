@@ -1,24 +1,24 @@
 {
   "project": "Audion Media Tools",
-  "source_file": "E:\\TOOLS\\PROJECTS\\_incoming_gpt_image_icons\\Сгенерированное изображение 11.png",
-  "pipeline": "GPT-Image bitmap candidate saved from UI, normalized to 1024 PNG and multi-size ICO",
+  "source_file": "app.svg",
+  "pipeline": "Original native SVG revision 4 recovered from the icon design conversation; full-color PNG rendered from SVG.",
+  "design": "Centered yellow film reel, three round openings, red rounded tile, no film tail.",
   "sizes": {
     "app.png": "1024x1024",
+    "source.png": "1024x1024",
     "app.ico": [
       "16x16",
+      "20x20",
       "24x24",
       "32x32",
+      "40x40",
       "48x48",
       "64x64",
+      "96x96",
       "128x128",
       "256x256"
     ]
   },
-  "style_rules": [
-    "background #17212B",
-    "maximum 3 objects",
-    "no repeated objects",
-    "no text",
-    "bitmap-first"
-  ]
+  "color_mode": "RGBA, 8 bits per channel, 32 bits per pixel, no indexed palette",
+  "validation": "All ten existing ICO frames match the restored SVG-derived PNG pixel for pixel. Existing ICO preserved."
 }

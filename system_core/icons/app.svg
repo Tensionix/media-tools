@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <title>Audion Media Tools — Centered Film Reel</title>
+  <desc>A large centered yellow film reel with three round openings on a red rounded tile.</desc>
+  <defs>
+    <linearGradient id="tile" x1="120" y1="0" x2="866" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F32C19"/><stop offset=".52" stop-color="#ED0000"/><stop offset="1" stop-color="#B40A12"/>
+    </linearGradient>
+    <linearGradient id="tileRim" x1="140" y1="0" x2="850" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF765A"/><stop offset=".48" stop-color="#EC3026"/><stop offset="1" stop-color="#A60B15"/>
+    </linearGradient>
+    <linearGradient id="yellow" x1="248" y1="220" x2="814" y2="854" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFDE6A"/><stop offset=".46" stop-color="#FFB700"/><stop offset="1" stop-color="#E99A00"/>
+    </linearGradient>
+    <linearGradient id="yellowRim" x1="250" y1="210" x2="800" y2="860" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF0AB" stop-opacity=".9"/><stop offset="1" stop-color="#FFC142" stop-opacity=".32"/>
+    </linearGradient>
+    <clipPath id="tileClip"><rect width="1024" height="1024" rx="224"/></clipPath>
+  </defs>
+  <g clip-path="url(#tileClip)">
+    <rect width="1024" height="1024" rx="224" fill="url(#tile)"/>
+    <rect x="3" y="3" width="1018" height="1018" rx="221" stroke="url(#tileRim)" stroke-width="6"/>
+    <circle cx="512" cy="538" r="368" fill="#790511" opacity=".28"/>
+    <circle cx="512" cy="526" r="368" fill="#BA7000"/>
+    <circle id="reel-face" cx="512" cy="512" r="368" fill="url(#yellow)"/>
+    <circle cx="512" cy="512" r="365" stroke="url(#yellowRim)" stroke-width="6"/>
+    <circle class="reel-opening" cx="512" cy="280" r="98" fill="url(#tile)" stroke="#DA9000" stroke-width="5"/>
+    <circle class="reel-opening" cx="311" cy="628" r="98" fill="url(#tile)" stroke="#DA9000" stroke-width="5"/>
+    <circle class="reel-opening" cx="713" cy="628" r="98" fill="url(#tile)" stroke="#DA9000" stroke-width="5"/>
+    <rect x="480" y="480" width="64" height="64" rx="12" fill="url(#tile)" stroke="#DA9000" stroke-width="4"/>
+  </g>
+</svg>

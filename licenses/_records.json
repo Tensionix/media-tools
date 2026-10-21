@@ -1,7 +1,7 @@
 [
   {
     "name": "7-Zip",
-    "version": "26.4.0",
+    "version": "26.5.0",
     "license": "GNU LGPL / BSD; unRAR restriction where included; see bundled 7-Zip license",
     "source": "optional-tool",
     "license_files": [
@@ -250,7 +250,7 @@
   },
   {
     "name": "Deno",
-    "version": "2.9.7",
+    "version": "2.9.8",
     "license": "MIT; bundled runtime dependencies require review",
     "source": "optional-tool",
     "license_files": [
@@ -761,7 +761,7 @@
   },
   {
     "name": "mpv",
-    "version": "mpv v0.41.0-1224-g6a262d11f",
+    "version": "mpv v0.41.0-1227-ge471496c5",
     "license": "GPL v2 or later",
     "source": "optional-tool",
     "license_files": [
@@ -1482,7 +1482,7 @@
   },
   {
     "name": "yt-dlp",
-    "version": "2026.8.19",
+    "version": "2026.10.21",
     "license": "Unlicense",
     "source": "optional-tool",
     "license_files": [

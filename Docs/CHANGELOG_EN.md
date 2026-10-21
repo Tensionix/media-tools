@@ -2,6 +2,13 @@
 
 [Русский](CHANGELOG_RU.md) · [About](README_EN.md) · [User guide](USER_GUIDE_EN.md)
 
+## 3.1.2 — 22 October 2026
+
+**The sources of the icon.** `system_core\icons` holds the original vector of the icon again, `app.svg` - a yellow
+film reel with three openings on a red rounded tile; `source.png` and `app.png` are rendered from it at 1024×1024. The
+icon of the program, `app.ico`, is the same: all ten of its frames match them pixel for pixel. How the icon was made -
+`prompt.txt`.
+
 ## 3.1.1 — 21 October 2026
 
 **The licence of winpthreads named right.** The record `Tools\cineraw\cineraw-source.json` the installer of cineraw

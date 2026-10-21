@@ -9,9 +9,9 @@ record and does not replace review of the applicable license terms.
 BUNDLED COMPONENTS WITH SOURCE REFERENCES
 --------------------------------------------------------------------------------
 Component: 7-Zip
-Version/profile: 26.4.0
+Version/profile: 26.5.0
 Method: upstream_pin
-version: 26.4.0
+version: 26.5.0
 url: https://www.7-zip.org/download.html
 
 Component: Avalonia
@@ -98,9 +98,9 @@ Method: bundled_archive
 url: https://github.com/cyanreg/libcraw
 
 Component: Deno
-Version/profile: 2.9.7
+Version/profile: 2.9.8
 Method: upstream_pin
-version: 2.9.7
+version: 2.9.8
 url: https://github.com/denoland/deno/releases
 winget_id: DenoLand.Deno
 
@@ -322,11 +322,11 @@ version: 7.6.7
 url: https://github.com/PowerShell/PowerShell
 
 Component: mpv
-Version/profile: mpv v0.41.0-1224-g6a262d11f
+Version/profile: mpv v0.41.0-1227-ge471496c5
 Method: bundled_archive
-version: mpv v0.41.0-1224-g6a262d11f
-url: https://codeload.github.com/mpv-player/mpv/tar.gz/6a262d11f
-path: Tools\mpv-6a262d11f-source.tar.gz
+version: mpv v0.41.0-1227-ge471496c5
+url: https://codeload.github.com/mpv-player/mpv/tar.gz/e471496c5
+path: Tools\mpv-e471496c5-source.tar.gz
 
 Component: Newtonsoft.Json
 Version/profile: 13.0.4
