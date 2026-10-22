@@ -182,6 +182,13 @@ sources of one name in one run - `take.flac` and `take.wav` to M4A - write two f
 second gets the extension of its own (`take_wav.m4a`), and the journal says so. A result that would be one of its own
 sources is refused before FFmpeg starts, Overwrite or not.
 
+For equal-duration parts, run `trim_run` with `trim_action=split`, `trim_split_mode=duration`
+and `trim_split_duration=01:29:00,000` (hours, minutes, seconds, milliseconds - the window's default and form) or
+`89` (minutes).
+Manual points and IN/OUT are ignored in this mode; `trim_split_mode=points` restores the existing manual split.
+Parts are numbered from the start, the last holds the remainder, and a shorter file gives one whole part.
+Video joints snap to keyframes; sound follows the selected exact/lossless cut mode. Up to 10000 automatic parts.
+
 ### Download by a link
 
 1. `media_cli.cmd run --operation youtube_formats --set youtube_url=LINK` - what the link offers, nothing downloaded.

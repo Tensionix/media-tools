@@ -36,7 +36,7 @@ public sealed partial class Form
     /// <summary>The kinds this form draws; anything else is said in the journal, not left as an empty place.</summary>
     static readonly HashSet<string> Drawn = new()
     {
-        "radio", "select", "checkbox", "checkboxes", "number", "int", "integer", "float", "text", "file", "remux_format",
+        "radio", "select", "checkbox", "checkboxes", "number", "int", "integer", "float", "text", "timecode", "file", "remux_format",
         "profile_buttons", "profile_select", "lut_select",
     };
 
@@ -281,11 +281,17 @@ public sealed partial class Form
         "format" => Lang.T("Формат"),
         "options" => Lang.T("Опции"),
         "audio" => Lang.T("Аудио"),
+        "channels" => Lang.T("Каналы"),
+        "mastering" => Lang.T("Мастеринг"),
+        "lame" => "MP3 / LAME",
         "color" => Lang.T("Цвет"),
         "fps" => "FPS",
         "parameters" => Lang.T("Параметры"),
         "encoding" => Lang.T("Кодирование"),
         "package" => Lang.T("Упаковка"),
+        "metadata" => Lang.T("Метаданные"),
+        "streams" => Lang.T("Потоки"),
+        "trim" => Lang.T("Нарезка"),
         "run" => Lang.T("Запуск"),
         "" => "",
         _ => char.ToUpperInvariant(block[0]) + block[1..].Replace('_', ' '),
@@ -297,6 +303,7 @@ public sealed partial class Form
         {
             "radio" or "select" or "remux_format" or "lut_select" => Choice(field),
             "number" or "int" or "integer" or "float" => NumberBox(field),
+            "timecode" => TimeField(field),
             "file" => FileBox(field),
             _ => TextBox(field),
         };
@@ -665,6 +672,17 @@ public sealed partial class Form
         box.LostFocus += (_, _) => Take();
         box.KeyDown += (_, e) => { if (e.Key == Key.Enter) { Take(); e.Handled = true; } };
         // The box a person types in is not rewritten under the cursor: only a value that came from elsewhere is put in.
+        Watch(field, () => { if (!box.IsFocused && (box.Text ?? "") != _values.Get(field)) box.Text = _values.Get(field); });
+        return box;
+    }
+
+    /// <summary>A length as a timecode, in the box a point of a trim has (Form.Trim.cs): typed through the mask, ▲▼ step the section.</summary>
+    TextBox TimeField(Field field)
+    {
+        var box = TimeBox("field_" + field.Id, field.Placeholder, field.Tip, text => _values.Set(field, text), () => _values.Get(field));
+        box.Width = 190;
+        box.HorizontalAlignment = HorizontalAlignment.Left;
+        box.Margin = new Thickness(0, 0, 0, 4);
         Watch(field, () => { if (!box.IsFocused && (box.Text ?? "") != _values.Get(field)) box.Text = _values.Get(field); });
         return box;
     }

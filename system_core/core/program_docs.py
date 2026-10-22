@@ -62,12 +62,12 @@ WORDS = {
 
 KINDS = {
     "en": {"radio": "choice", "select": "choice", "remux_format": "container", "checkboxes": "ticks", "checkbox": "tick",
-           "text": "text", "file": "file", "number": "number", "int": "number", "integer": "number", "float": "number",
+           "text": "text", "timecode": "timecode", "file": "file", "number": "number", "int": "number", "integer": "number", "float": "number",
            "profile_buttons": "presets", "profile_select": "presets", "preset_buttons": "presets", "lut_select": "LUT",
            "trim_file": "file of the trim", "trim_variants": "pieces of the trim", "trim_points": "points of a split",
            "trim_player": "player"},
     "ru": {"radio": "выбор", "select": "выбор", "remux_format": "контейнер", "checkboxes": "флажки", "checkbox": "флажок",
-           "text": "текст", "file": "файл", "number": "число", "int": "число", "integer": "число", "float": "число",
+           "text": "текст", "timecode": "таймкод", "file": "файл", "number": "число", "int": "число", "integer": "число", "float": "число",
            "profile_buttons": "пресеты", "profile_select": "пресеты", "preset_buttons": "пресеты", "lut_select": "LUT",
            "trim_file": "файл нарезки", "trim_variants": "куски нарезки", "trim_points": "точки разделения",
            "trim_player": "плеер"},

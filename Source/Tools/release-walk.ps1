@@ -40,7 +40,7 @@ $copies = @(
     @($App, 'App', @(), @()),
     @((Join-Path $project 'system_core'), 'system_core', @('__pycache__', 'powershell'), @()),
     @((Join-Path $project 'runtime'), 'runtime', @('__pycache__'), @()),
-    @((Join-Path $project 'config'), 'config', @(), @('window_settings.json*', 'path_history.json*', 'cookies.dpapi*')),
+    @((Join-Path $project 'config'), 'config', @(), @('window_settings.json*', 'path_history.json*', 'cookies.dpapi*', 'cookies.txt*', 'download-archive.txt*')),
     @((Join-Path $project 'Tools\ffmpeg\bin'), 'Tools\ffmpeg\bin', @(), @('ffplay.exe')),
     @((Join-Path $project 'Tools\mpv'), 'Tools\mpv', @(), @())
 )
@@ -174,7 +174,7 @@ function LastJournal([string]$like) {
 }
 function StartWindow {
     $env:AUDION_WALK = '1'
-    try { $process = Start-Process -FilePath $exe -PassThru }
+    try { $process = Start-Process -FilePath $exe -WindowStyle Hidden -PassThru }
     finally { Remove-Item Env:\AUDION_WALK -ErrorAction SilentlyContinue }
     # A window with no button on the taskbar is no "main window" to .NET: it is looked for among the
     # windows of the desktop by the id of its process.
@@ -308,6 +308,31 @@ try {
     $until = (Get-Date).AddSeconds(15)
     while ((Players).Count -gt 0 -and (Get-Date) -lt $until) { Start-Sleep -Milliseconds 300 }
     Say ((Players).Count -eq 0) 'CLOSE ends the player'
+
+    # Equal parts is a form choice: the length replaces manual point rows and comes back through the server.
+    Press (Find $root 'page_cut_split' 10)
+    Press (Find $root 'field_trim_split_mode_duration' 10)
+    Start-Sleep -Milliseconds 600
+    $equal = Find $root 'field_trim_split_mode_duration' 5
+    Say ($null -ne $equal -and (IsOn $equal) -and (TextOf $root 'field_trim_split_duration') -eq '01:29:00,000' -and -not (Shown $root 'trim_add')) 'CUT -> SPLIT: Equal parts shows 01:29:00,000 and hides manual rows'
+    $before = TextOf $root 'StatusText'
+    Press (Find $root 'preview_trim_run' 10)
+    $state = WaitOutcome $root 'done' 60 $before
+    $said = LastJournal '*trim_run.log'
+    Say ($state -eq 'done' -and $said -match 'part1' -and $said -match '\[DRY RUN\]' -and (FilesIn $out).Count -eq 0) 'Equal parts COMMAND: a shorter file is planned as part1 without writing'
+    Press (Find $root 'field_trim_split_mode_points' 10)
+    Start-Sleep -Milliseconds 600
+    Say ((Shown $root 'trim_add') -and -not (Shown $root 'field_trim_split_duration')) 'By points restores manual rows and hides part length'
+
+    # Copy passes the full saved form through CLI validation, including its hidden auto resampler.
+    Press (Find $root 'section_audio' 10)
+    Press (Find $root 'page_audio_extract' 10)
+    Press (Find $root 'preset_audio_profile_copy_auto' 10)
+    $before = TextOf $root 'StatusText'
+    Press (Find $root 'preview_audio_run' 10)
+    $state = WaitOutcome $root 'done' 60 $before
+    $said = LastJournal '*audio_run.log'
+    Say ($state -eq 'done' -and $said -match '\-c:a copy' -and $said -notmatch 'aresample' -and (FilesIn $out).Count -eq 0) 'AUDIO -> EXTRACT Copy: COMMAND passes validation and uses stream copy without a resampler'
 
     # A preset of STORAGE: its button on, and the form takes its codec.
     Press (Find $root 'section_encode' 10)

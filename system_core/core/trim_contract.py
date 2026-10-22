@@ -53,6 +53,7 @@ TRIM_PATTERNS = ("start", "end", "both", "split", "middle")
 # How far a split and the variants of a keep or a cut may go. Not a limit of the
 # cutting: a limit of the panel, where each point is a field on screen.
 SPLIT_MAX_POINTS = 30
+SPLIT_MAX_AUTOMATIC_PARTS = 10000
 TRIM_MAX_VARIANTS = 20
 
 # A timecode rate is the integer the fractional rate rounds up to: 23.976 counts
@@ -86,6 +87,35 @@ def parse_seconds(value: Any) -> float:
     for part in parts:
         total = total * 60.0 + float(part.replace(",", "."))
     return total
+
+
+def parse_split_interval(value: Any) -> float:
+    """Read a part length: plain minutes or hours:minutes:seconds:milliseconds."""
+    text = str(value if value is not None else "").strip()
+    if not isinstance(value, bool) and _TIME_TOKEN.fullmatch(text):
+        seconds = float(text.replace(",", ".")) * 60
+    elif re.fullmatch(r"\d+:[0-5]\d:[0-5]\d(?:[.,]\d{1,3}|:\d{3})?", text):
+        if text.count(":") == 3:
+            head, milliseconds = text.rsplit(":", 1)
+            text = f"{head}.{milliseconds}"
+        seconds = parse_seconds(text)
+    else:
+        raise ValueError("Enter a positive part length in minutes (89) or as HH:MM:SS:mmm (01:29:00:000).")
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("The part length must be finite and greater than zero.")
+    return seconds
+
+
+def split_interval_points(value: Any, duration: float) -> list[float]:
+    """Multiples of the interval from zero; the remainder is always the last part."""
+    interval = Fraction(str(parse_split_interval(value)))
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError("Source duration could not be read.")
+    # Multiplication of a rational interval avoids accumulating rounding error.
+    count = max(0, math.ceil(Fraction(str(duration)) / interval) - 1)
+    if count >= SPLIT_MAX_AUTOMATIC_PARTS:
+        raise ValueError(f"Choose a longer part length: at most {SPLIT_MAX_AUTOMATIC_PARTS} parts are supported.")
+    return [float(interval * index) for index in range(1, count + 1)]
 
 
 def format_seconds(seconds: float, *, decimals: int = 3, separator: str = ".") -> str:
@@ -580,6 +610,7 @@ def plan_split(
     rate: Fraction,
     keyframes: Iterable[float],
     frame_exact: bool = True,
+    split_interval: Any = None,
 ) -> TrimSplit:
     """Plan a split at any number of points, so the parts add back up to the file.
 
@@ -589,10 +620,11 @@ def plan_split(
     """
     if duration <= 0:
         raise ValueError("Source duration could not be read.")
-    requested = sorted(parse_seconds(item) for item in points if str(item if item is not None else "").strip())
-    if not requested:
+    requested = (split_interval_points(split_interval, duration) if split_interval is not None else
+                 sorted(parse_seconds(item) for item in points if str(item if item is not None else "").strip()))
+    if not requested and split_interval is None:
         raise ValueError("A split needs a point to cut at.")
-    if len(requested) > SPLIT_MAX_POINTS:
+    if split_interval is None and len(requested) > SPLIT_MAX_POINTS:
         raise ValueError(f"A split takes at most {SPLIT_MAX_POINTS} points, and {len(requested)} were given.")
     for point in requested:
         if point <= 0 or point >= duration:
@@ -1153,6 +1185,7 @@ def plan_audio_trim(
     sample_rate: int,
     total_samples: int | None = None,
     points: Iterable[Any] | None = None,
+    split_interval: Any = None,
 ) -> AudioTrim:
     """Turn a trim pattern into sample numbers for a file of sound alone.
 
@@ -1180,10 +1213,11 @@ def plan_audio_trim(
 
     if mode == "split":
         given = [item for item in (points or ()) if _point_given(item)] or [start, end]
-        asked = sorted(parse_seconds(item) for item in given if _point_given(item))
-        if not asked:
+        asked = (split_interval_points(split_interval, total / rate) if split_interval is not None else
+                 sorted(parse_seconds(item) for item in given if _point_given(item)))
+        if not asked and split_interval is None:
             raise ValueError("A split needs a point to cut at.")
-        if len(asked) > SPLIT_MAX_POINTS:
+        if split_interval is None and len(asked) > SPLIT_MAX_POINTS:
             raise ValueError(f"A split takes at most {SPLIT_MAX_POINTS} points, and {len(asked)} were given.")
         cuts: list[int] = []
         for point in asked:

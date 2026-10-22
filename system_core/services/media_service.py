@@ -78,6 +78,8 @@ from system_core.core.trim_contract import (
     parse_keyframe_times,
     plan_gap,
     plan_split,
+    parse_split_interval,
+    split_interval_points,
     TrimCut,
     parse_rate,
     parse_seconds,
@@ -4816,8 +4818,10 @@ def _trim_pattern(params: dict[str, Any]) -> str:
     return derived or "start"
 
 
-def _trim_split_points(params: dict[str, Any]) -> list[Any]:
+def _trim_split_points(params: dict[str, Any], *, duration: float | None = None) -> list[Any]:
     """The points a split cuts at: the panel's list, or IN and OUT from a wrapper."""
+    if str(params.get("trim_split_mode") or "points") == "duration":
+        return split_interval_points(params.get("trim_split_duration", "89"), float(duration or 0))
     points = params.get("trim_points")
     if isinstance(points, (list, tuple)):
         given = [item for item in points if str(item if item is not None else "").strip()]
@@ -4827,8 +4831,8 @@ def _trim_split_points(params: dict[str, Any]) -> list[Any]:
 
 
 def _trim_part_suffix(index: int, total: int) -> str:
-    """`part1` up to nine parts, `part01` from ten on, so Explorer keeps them in order."""
-    width = 2 if total >= 10 else 1
+    """Pad to the total's width, so Explorer keeps any number of parts in order."""
+    width = len(str(total))
     return f"part{index:0{width}d}"
 
 
@@ -5206,7 +5210,8 @@ def _trim_split_plans(
     rate = parse_rate(stream_rate(facts.get("r_frame_rate"), facts.get("avg_frame_rate")) or "")
     origin = float(facts.get("origin") or 0.0)
 
-    points = _trim_split_points(params)
+    interval = params.get("trim_split_duration", "89") if params.get("trim_split_mode") == "duration" else None
+    points = _trim_split_points(params, duration=duration)
     asked: list[float] = []
     for point in points:
         if str(point if point is not None else "").strip():
@@ -5222,12 +5227,15 @@ def _trim_split_plans(
             rate=rate,
             keyframes=keyframes,
             frame_exact=not variable_rate,
+            split_interval=interval,
         )
     except ValueError as exc:
         raise RuntimeError(str(exc)) from exc
 
     label = _source_display_name(source, source_dir)
     context.log(f"Split {label} into {len(split.parts)} parts:")
+    if interval is not None:
+        context.log(f"    equal part length: {format_seconds(parse_split_interval(interval))}; the last part is the remainder")
     for point, boundary, offset in zip(split.requested, split.boundaries, split.offsets):
         if abs(offset) < 1e-6:
             context.log(f"    point {format_seconds(point)} is a keyframe")
@@ -6150,7 +6158,8 @@ def _trim_audio_plans(
         "end": params.get("trim_end"),
         "duration": duration,
         "sample_rate": rate,
-        "points": _trim_split_points(params),
+        "points": params.get("trim_points") if params.get("trim_split_mode") == "duration" else _trim_split_points(params),
+        "split_interval": params.get("trim_split_duration", "89") if params.get("trim_split_mode") == "duration" else None,
     }
     try:
         trim = plan_audio_trim(**arguments, total_samples=total)

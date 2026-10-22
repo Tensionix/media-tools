@@ -1310,6 +1310,12 @@ operation_groups:
         label_ru: "Ресемплер"
         default: "soxr"
         options:
+          - value: "auto"
+            label: "Copy - keep the source"
+            label_ru: "Copy — сохранить исходное"
+            visible_if: {audio_format: "copy"}
+            tooltip: "The Copy preset keeps the stream unchanged; no resampler is used."
+            tooltip_ru: "Пресет Copy сохраняет поток без изменений; ресемплер не используется."
           - {value: "soxr", label: "SoX 100% quality", label_ru: "SoX 100% quality"}
       - id: audio_resync
         type: "checkbox"
@@ -2113,6 +2119,32 @@ operation_groups:
           - {value: "keep", label: "Keep it", label_ru: "Оставить", tone: "copy", tooltip: "Keeps what lies between the points and drops the rest. Which end goes is already in the fields: IN alone drops the head, OUT alone drops the tail, both drop both ends. Each row added with + is a variant of its own, written to its own file: _keep01, _keep02.", tooltip_ru: "Оставляет то, что между точками, остальное уходит. Какой край уйдёт, уже сказано полями: один IN — уходит начало, один OUT — конец, обе точки — оба края. Каждая строка, добавленная плюсом, — отдельный вариант в своём файле: _keep01, _keep02."}
           - {value: "cut", label: "Cut it out", label_ru: "Вырезать", tone: "copy", tooltip: "The opposite: the piece between IN and OUT goes and the two ends are joined into one file. The tail starts at the first keyframe past OUT - starting earlier would leave part of the removed piece in - and the log says how much more than asked for went. A sound file loses exactly the piece between the points. Each row added with + is a variant of its own: one piece cut out of the whole take, in its own file - _cut01, _cut02.", tooltip_ru: "Наоборот: кусок между IN и OUT уходит, а начало и конец склеиваются в один файл. Хвост начинается с первого ключевого кадра после OUT — раньше нельзя, иначе часть вырезаемого останется, — и журнал говорит, насколько больше запрошенного ушло. У звукового файла уходит ровно кусок между точками. Каждая строка, добавленная плюсом, — отдельный вариант: из целого дубля вырезан один кусок, в своём файле — _cut01, _cut02."}
           - {value: "split", label: "Split", label_ru: "Разделить", tone: "copy", tooltip: "Nothing is discarded. N points cut the file into N + 1 parts: _part1, _part2 and on, _part01 from ten parts. Each point moves to its nearest keyframe and the parts meet there, so they add back up to the original frame for frame. A sound file splits on the exact sample.", tooltip_ru: "Ничего не выбрасывается. N точек режут файл на N + 1 частей: _part1, _part2 и дальше, с десяти частей — _part01. Каждая точка сдвигается к ближайшему ключевому кадру, и части стыкуются в нём — вместе они дают исходник кадр в кадр. Звуковой файл делится ровно по сэмплу.", hint: "Take the points one after another, walking forward through the take; + adds the next one.", hint_ru: "Берите точки одну за другой, двигаясь по дублю вперёд; плюс добавляет следующую."}
+      - id: trim_split_mode
+        type: "radio"
+        choice_style: "buttons"
+        group: "trim"
+        span: "full"
+        visible_if: {trim_action: "split"}
+        label: "Split preset"
+        label_ru: "Пресет разделения"
+        tooltip: "Choose your cut points or generate equal-length parts automatically. Parts are numbered from the start of the file; the remainder is last."
+        tooltip_ru: "Задать точки вручную или автоматически разделить на равные части. Части нумеруются от начала файла, остаток идёт последним."
+        default: "points"
+        refresh_on_change: true
+        options:
+          - {value: "points", label: "By points", label_ru: "По точкам", tone: "copy", tooltip: "Set each cut point manually or take it from the player.", tooltip_ru: "Задать каждую точку разреза вручную или взять из плеера."}
+          - {value: "duration", label: "Equal parts", label_ru: "Равные части", tone: "copy", tooltip: "Cut at multiples of the part length from the start. Video boundaries move to the nearest keyframe; sound follows the selected sample or packet mode.", tooltip_ru: "Резать через заданный интервал от начала. Границы видео сдвигаются к ближайшим ключевым кадрам; звук режется по сэмплам или пакетам согласно выбранному режиму."}
+      - id: trim_split_duration
+        type: "timecode"
+        group: "trim"
+        span: "full"
+        visible_if: {all: [{trim_action: "split"}, {trim_split_mode: "duration"}]}
+        label: "Part length"
+        label_ru: "Длительность части"
+        tooltip: "Hours, minutes, seconds and milliseconds, as a point is written: 01:29:00,000. Typed digit by digit, the separators put themselves; ▲▼ step the section the caret stands in. The last part is the remainder. If the file is shorter, one whole part is written. Up to 10000 parts."
+        tooltip_ru: "Часы, минуты, секунды и миллисекунды, как у точки: 01:29:00,000. Цифры набираются подряд, разделители ставятся сами; ▲▼ шагают по секции, где стоит курсор. Последняя часть — остаток. Если файл короче, записывается одна целая часть. До 10000 частей."
+        placeholder: "01:29:00,000"
+        default: "01:29:00,000"
       - id: trim_start
         # Row 1 of the rows below: drawn by trim_rows, carried to the engine from here.
         hidden: true
@@ -2140,6 +2172,7 @@ operation_groups:
         # Draws IN and OUT as row 1 and holds the rows after it: each row of a
         # keep or a cut is a run of its own. For a split it draws the points.
         type: "trim_rows"
+        hidden_if: {all: [{trim_action: "split"}, {trim_split_mode: "duration"}]}
         group: "trim"
         span: "full"
         label: "Points"
@@ -2192,13 +2225,13 @@ operation_groups:
             tooltip: "The same for the end of the piece: the position becomes OUT of the last row and the player's B point."
             tooltip_ru: "То же для конца куска: позиция становится OUT последней строки и точкой B в плеере."
           - value: "take_a"
-            visible_if: {trim_action: "split"}
+            visible_if: {all: [{trim_action: "split"}, {trim_split_mode: "points"}]}
             label: "Take A"
             label_ru: "Взять A"
             tooltip: "The A point set in the player with `l` becomes the last split point here - only if it lies past the points before it."
             tooltip_ru: "Точка A, поставленная в плеере клавишей `l`, становится здесь последней точкой разреза — только если она дальше предыдущих."
           - value: "mark_point"
-            visible_if: {trim_action: "split"}
+            visible_if: {all: [{trim_action: "split"}, {trim_split_mode: "points"}]}
             label: "Mark here"
             label_ru: "Отметить здесь"
             tooltip: "The position the player stands at becomes the last split point - only past the points before it. A slider dragged back by accident changes nothing."

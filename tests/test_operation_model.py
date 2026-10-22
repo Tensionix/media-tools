@@ -37,6 +37,8 @@ CHANGED_DEFAULTS = {"Download\\urls.txt": "input\\urls.txt", "Download\\cookies.
 # which Media Downloader 5.6.6 has, and where the cookies come from - File by default, the file the former window read.
 NEW_FIELDS = {"youtube_run": {"youtube_sections": "", "youtube_playlist_items": "", "cookies_source": "file"},
               "audio_run": {"downmix_formula": "ffmpeg", "audio_resync": False},
+              # Equal parts (22.10.2026): manual points stay the default for existing forms.
+              "trim_run": {"trim_split_mode": "points", "trim_split_duration": "01:29:00,000"},
               # The scan of an interlaced source (the owner, 16.10.2026: "чересстрочная дрянь в 2026 году выглядит
               # несмешно"): progressive, a frame of each field, by default. A progressive source is not touched.
               **dict.fromkeys(("editing_run", "storage_run", "delivery_run", "grading_run"), {"scan_mode": "double"})}

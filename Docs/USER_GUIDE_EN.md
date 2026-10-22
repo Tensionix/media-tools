@@ -105,6 +105,20 @@ a field step the section the caret stands in — hours, minutes, seconds, or a f
 Points are taken only while the player shows the file chosen in the section; after
 the arrows, press `Open in the player`.
 
+To split automatically, choose **Equal parts** under SPLIT and set **Part length** as a
+timecode, as a point is written: `01:29:00,000` - hours, minutes, seconds and milliseconds.
+The digits are typed one after another and the separators put themselves; ▲▼ step the
+section the caret stands in. Points are counted from the start: 01:29, 02:58, 04:27,
+05:56. Files are numbered `_part1`, `_part2` and onwards; the last holds the remainder.
+A file shorter than the interval becomes one whole part. Manual point fields are
+hidden; **By points** restores them with their previous values.
+
+Video is copied, with boundaries moved to the nearest keyframes, so part lengths
+can differ slightly from the requested interval. Sound files split on samples in
+Exact mode and for lossless formats; compressed audio copied without encoding
+splits on packets. The 30-point manual entry limit does not apply to automatic
+splitting, which supports up to 10000 parts.
+
 The dozen keys that do the whole job:
 
 | key | what it does |

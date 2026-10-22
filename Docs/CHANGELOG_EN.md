@@ -2,6 +2,19 @@
 
 [Русский](CHANGELOG_RU.md) · [About](README_EN.md) · [User guide](USER_GUIDE_EN.md)
 
+## 3.2.1 — 23 October 2026
+
+**Equal parts.** CUT → SPLIT has an Equal parts preset: the part length is a timecode, as the points are -
+`01:29:00,000`; the console command takes minutes (`89`) too. Parts are numbered from the start,
+with the remainder last; By points keeps manual entry available. Video is copied at
+keyframes; sound follows the selected cut mode.
+
+**Copy extraction.** The Copy preset's `auto` resampler value now passes parameter
+validation, so the window can extract audio without encoding or resampling.
+
+**The headings of the blocks in Russian.** CUT, METADATA, STREAMS, CHANNELS, MASTERING and MP3 / LAME are named
+in Russian again in the Russian window, not by the words of the manifest.
+
 ## 3.1.2 — 22 October 2026
 
 **The sources of the icon.** `system_core\icons` holds the original vector of the icon again, `app.svg` - a yellow

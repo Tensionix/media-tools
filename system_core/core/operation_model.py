@@ -69,8 +69,10 @@ ADVANCED_PRIORITIES = frozenset({"advanced", "expert", "rare"})
 
 LANGUAGES = ("en", "ru")
 WORDS = {
-    "en": {"tick": "Select at least one item: {field}"},
-    "ru": {"tick": "Выберите хотя бы один пункт: {field}"},
+    "en": {"tick": "Select at least one item: {field}",
+           "split_duration": "Enter a positive part length as a timecode: 01:29:00,000."},
+    "ru": {"tick": "Выберите хотя бы один пункт: {field}",
+           "split_duration": "Введите положительную длительность части таймкодом: 01:29:00,000."},
 }
 
 
@@ -629,6 +631,8 @@ class Form:
 
         action = self.trim_action()
         if action == "split":
+            if self.actual("trim_split_mode") == "duration":
+                return False
             points = self.split_points()
             return bool(points[-1].strip()) and len(points) < SPLIT_MAX_POINTS
         rows = [{"start": str(self.values.get("trim_start") or ""), "end": str(self.values.get("trim_end") or "")}, *self.trim_rows()]
@@ -652,6 +656,13 @@ class Form:
         The window counted the ticks of every row of the form, shown or not.
         """
         words = WORDS[safe_language(language)]
+        if self.trim_action() == "split" and self.actual("trim_split_mode") == "duration":
+            from system_core.core.trim_contract import parse_split_interval
+
+            try:
+                parse_split_interval(self.actual("trim_split_duration"))
+            except ValueError:
+                return words["split_duration"]
         for field in form_fields(self.node):
             if field_kind(field) not in TICK_ROWS:
                 continue
