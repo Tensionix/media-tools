@@ -304,7 +304,7 @@ BUNDLED COMPONENTS
    Legal documents: L-6b39d18b4151
 
 43. Microsoft.NETCore.App.Runtime.win-x64
-   Version: 10.0.13
+   Version: 10.0.14
    License: MIT
    Source type: dotnet-package
    Provider: Microsoft
@@ -472,7 +472,7 @@ BUNDLED COMPONENTS
    Legal documents: L-1b22b049b526
 
 67. pytest
-   Version: 9.1.1
+   Version: 9.2.0
    License: MIT
    Source type: site-packages
    Provider: not recorded
@@ -780,7 +780,7 @@ BUNDLED COMPONENTS
    Legal documents: L-30c236186791
 
 111. yt-dlp
-   Version: 2026.10.21
+   Version: 2026.10.26
    License: Unlicense
    Source type: optional-tool
    Provider: not recorded
@@ -9129,7 +9129,7 @@ You are solely responsible for determining the appropriateness of using and dist
 [L-ca836a5f9ecc] LICENSE_1.txt
 SHA256: ca836a5f9ecca3b2f350230faa20a48fb8b145653b5568d784862df864706b9b
 Components: pytest
-Captured from: pytest-9.1.1/LICENSE_1.txt
+Captured from: pytest-9.2.0/LICENSE_1.txt
 --------------------------------------------------------------------------------
 The MIT License (MIT)
 
@@ -9714,7 +9714,7 @@ That's all there is to it!
 [L-cfc21f5e8bd6] LICENSE.TXT
 SHA256: cfc21f5e8bd655ae997eec916138b707b1d290b83272c02a95c9f821b8c87310
 Components: Microsoft.NETCore.App.Runtime.win-x64, runtime.native.System.Data.SqlClient.sni, System.Drawing.Common, System.ServiceModel.Http, System.ServiceModel.NetFramingBase, System.ServiceModel.NetTcp, System.ServiceModel.Primitives, System.Web.Services.Description
-Captured from: nuget/Microsoft.NETCore.App.Runtime.win-x64/10.0.13/LICENSE.TXT
+Captured from: nuget/Microsoft.NETCore.App.Runtime.win-x64/10.0.14/LICENSE.TXT
 --------------------------------------------------------------------------------
 The MIT License (MIT)
 

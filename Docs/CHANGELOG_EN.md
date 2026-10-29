@@ -2,6 +2,20 @@
 
 [Русский](CHANGELOG_RU.md) · [About](README_EN.md) · [User guide](USER_GUIDE_EN.md)
 
+**Contents**
+
+- [3.2.2 — 29 October 2026](#322--29-october-2026)
+- [3.2.1 — 23 October 2026](#321--23-october-2026)
+- [3.1.2 — 22 October 2026](#312--22-october-2026)
+- [3.1.1 — 21 October 2026](#311--21-october-2026)
+- [3.1.0 — 18 October 2026](#310--18-october-2026)
+- [3.0.0 — 15 October 2026](#300--15-october-2026)
+
+## 3.2.2 — 29 October 2026
+
+**The new logos.** ABOUT shows the new Audion logo, and the Tensionix logo in curves instead of the amber mark beside a
+typed name.
+
 ## 3.2.1 — 23 October 2026
 
 **Equal parts.** CUT → SPLIT has an Equal parts preset: the part length is a timecode, as the points are -
